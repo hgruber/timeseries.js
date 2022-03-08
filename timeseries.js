@@ -1,34 +1,55 @@
 var canvas = document.getElementById('timeseries');
 var c = canvas.getContext('2d');
-var width = canvas.clientWidth;
-var height = canvas.clientHeight;
-canvas.width = width;
-canvas.height = height;
+canvas.width = canvas.clientWidth;
+canvas.height = canvas.clientHeight;
 var style = window.getComputedStyle(canvas);
 var BB = canvas.getBoundingClientRect();
-var offsetX = BB.left;
-var offsetY = BB.top;
+var offset = {
+  x: BB.left,
+  y: BB.top
+}
 var startDragX = 0,
   startTmin, startTmax;
-leftMargin = 70;
-rightMargin = 50;
-topMargin = 50;
-bottomMargin = 90;
-plotWidth = width - leftMargin - rightMargin;
-plotHeight = height - topMargin - bottomMargin;
+margin = {
+  top: 50,
+  right: 12,
+  bottom: 70,
+  left: 70
+}
+plotWidth = canvas.width - margin.left - margin.right;
+plotHeight = canvas.height - margin.top - margin.bottom;
 tmax = Date.now();
 tmin = tmax - 86400000;
 ymin = 0;
 ymax = 1;
-zf = 0.1; // the smaller the smoother the wheel zoom
+zf = 0.2; // the smaller the smoother the wheel zoom
+ss = 5; // the minimal pixel distance for Axis decorations
+
+var f = {
+  s: 1000,
+  m: 60000,
+  h: 3600000,
+  d: 86400000,
+  mon: 2678400000
+}
+
+var grid = {
+  seconds: {},
+  minutes: {},
+  hours: {},
+  days: {},
+  months: {},
+  years: {},
+  decades: {},
+  centuries: {},
+  millenia: {}
+}
 
 window.onresize = function() {
-  width = canvas.clientWidth;
-  height = canvas.clientHeight;
-  canvas.width = width;
-  canvas.height = height;
-  plotWidth = width - leftMargin - rightMargin;
-  plotHeight = height - topMargin - bottomMargin;
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+  plotWidth = canvas.width - margin.left - margin.right;
+  plotHeight = canvas.height - margin.top - margin.bottom;
   plotAll();
 }
 
@@ -41,9 +62,9 @@ canvas.onmousedown = function(e) {
 
 canvas.onmousemove = function(e) {
   if (startDragX == 0) return;
-  offset = (startDragX - e.clientX) / plotWidth * (tmax - tmin);
-  tmin = startTmin + offset;
-  tmax = startTmax + offset;
+  move = (startDragX - e.clientX) / plotWidth * (tmax - tmin);
+  tmin = startTmin + move;
+  tmax = startTmax + move;
   plotAll();
 }
 
@@ -51,9 +72,13 @@ canvas.onmouseup = function(e) {
   startDragX = 0;
 }
 
+canvas.onmouseout = function(e) {
+  starDragX = 0;
+}
+
 canvas.onwheel = function(e) {
   r = tmax - tmin;
-  lr = (e.clientX - offsetX - leftMargin) / plotWidth;
+  lr = (e.clientX - offset.x - margin.left) / plotWidth;
   rr = 1 - lr;
   if (e.deltaY > 0) {
     tmin -= zf * lr * r;
@@ -65,7 +90,50 @@ canvas.onwheel = function(e) {
   plotAll()
 }
 
+function create_grid() {
+  pixels = plotWidth / (tmax - tmin);
+  grid.minutes.items = [];
+  grid.minutes.space = pixels * f.m;
+  if (grid.minutes.space > ss)
+    for (t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m)
+      grid.minutes.items.push({
+        tm: t
+      });
+  grid.hours.items = [];
+  grid.hours.space = pixels * f.h;
+  if (grid.hours.space > ss)
+    for (t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h)
+      grid.hours.items.push({
+        tm: t
+      });
+  grid.days.items = [];
+  space = pixels * f.d;
+  if (space > ss)
+    for (t = Math.floor(tmin / f.d) * f.d; t < tmax; t += f.d)
+      grid.days.items.push({
+        tm: +(new Date(new Date(t).toDateString()))
+      });
+  grid.months.items = [];
+  space = pixels * f.d * 31;
+  if (space > ss) {
+    dm = new Date(tmin);
+    t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1));
+    grid.months.items.push({
+      tm: new Date(t)
+    });
+    while (true) {
+      dm = new Date(t + f.d * 32);
+      t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1));
+      if (t <= tmax) grid.months.items.push({
+        tm: new Date(t)
+      });
+      else break;
+    }
+  }
+}
+
 function plotAll() {
+  create_grid();
   background();
   plotData();
   frame();
@@ -73,24 +141,25 @@ function plotAll() {
   xAxis();
 }
 
+function time(t) {
+  return String(t.getHours()) + ':' +
+    String(t.getMinutes()).padStart(2, '0');
+}
+
 function X(t) {
-  return (t - tmin) / (tmax - tmin) * plotWidth + leftMargin;
+  return (t - tmin) / (tmax - tmin) * plotWidth + margin.left;
 }
 
 function rT(x) {
-  return (x - leftMargin) / plotWidth * (tmax - tmin) + tmin;
+  return (x - margin.left) / plotWidth * (tmax - tmin) + tmin;
 }
 
 function Y(y) {
-  return (ymax - y) / (ymax - ymin) * plotHeight + topMargin;
+  return (ymax - y) / (ymax - ymin) * plotHeight + margin.top;
 }
 
 function rY(Y) {
-  return ymax - (Y - topMargin) / plotHeight * (ymax - ymin);
-}
-
-function timedensity() {
-  return 
+  return ymax - (Y - margin.top) / plotHeight * (ymax - ymin);
 }
 
 function rotateText(text, x, y) {
@@ -101,22 +170,40 @@ function rotateText(text, x, y) {
   c.restore();
 }
 
-function time(t) {
-  return String(t.getHours()) + ':' +
-    String(t.getMinutes()).padStart(2, '0');
-}
-
 function background() {
   c.fillStyle = 'white';
-  c.fillRect(leftMargin, topMargin, plotWidth, plotHeight);
+  c.fillRect(margin.left, margin.top, plotWidth, plotHeight);
+  grid.hours.items.forEach((item, i) => {
+    x = X(item.tm);
+    //c.fillStyle = '#efe';
+    //c.fillRect(x, margin.top, 10, plotHeight);
+    c.strokeStyle = '#ddd';
+    c.beginPath();
+    c.moveTo(x, margin.top);
+    c.lineTo(x, margin.top + plotHeight);
+    c.stroke();
+  });
 }
 
 function frame() {
   c.fillStyle = style.backgroundColor;
-  c.fillRect(0, 0, width, topMargin);
-  c.fillRect(0, topMargin, leftMargin, height - topMargin);
-  c.fillRect(leftMargin, height - bottomMargin, width - leftMargin, bottomMargin);
-  c.fillRect(width - rightMargin, topMargin, rightMargin, plotHeight);
+  c.fillRect(0, 0, canvas.width, margin.top);
+  c.fillRect(0, margin.top, margin.left, canvas.height - margin.top);
+  c.fillRect(margin.left, canvas.height - margin.bottom, canvas.width - margin.left, margin.bottom);
+  c.fillRect(canvas.width - margin.right, margin.top, margin.right, plotHeight);
+  c.beginPath();
+  c.moveTo(margin.left, margin.top);
+  c.lineTo(canvas.width - margin.right, margin.top);
+  c.lineTo(canvas.width - margin.right, canvas.height - margin.bottom);
+  c.lineTo(margin.left, canvas.height - margin.bottom);
+  c.lineTo(margin.left, margin.top);
+  c.strokeStyle = style.color;
+  c.stroke();
+  c.textAlign = 'left';
+  c.textBaseline = 'bottom';
+  c.fillStyle = style.color;
+  c.font = style.font;
+  //c.fillText(new Date(tmin), margin.left, margin.top);
 }
 
 function xAxis() {
@@ -124,41 +211,33 @@ function xAxis() {
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
-  for (var i = Math.floor(tmin / 3600000 + 1) * 3600000; i < tmax; i += 3600000) {
-    c.beginPath();
-    c.moveTo(X(i), height - bottomMargin);
-    c.lineTo(X(i), height - bottomMargin - 4);
-    c.fillStyle = style.color;
-    c.stroke();
-    rotateText(time(new Date(i)), X(i) + 1, height - bottomMargin + 4);
-  }
+  grid.hours.items.forEach((item, i) => {
+    if (i > 0) rotateText(time(new Date(item.tm)), X(item.tm), canvas.height - margin.bottom + 4);
+  });
+  c.textAlign = 'left';
+  c.textBaseline = 'bottom';
+  grid.days.items.forEach((item, i) => {
+    d = new Date(item.tm);
+    if (item.tm>tmin) x = X(item.tm);
+    else x = margin.left;
+    c.fillText(d.getDate() + '.' + (d.getMonth() + 1) + '.', x, margin.top)
+  });
+  grid.months.items.forEach((item, i) => {
+    if (item.tm>tmin) x = X(item.tm);
+    else x = margin.left;
+    c.fillText(new Date(item.tm).toLocaleString('default', { month: 'long' }), x, margin.top - 20);
+  });
 }
 
 function yAxis() {
-  c.beginPath();
-  c.moveTo(leftMargin, topMargin);
-  c.lineTo(width - rightMargin, topMargin);
-  c.lineTo(width - rightMargin, height - bottomMargin);
-  c.lineTo(leftMargin, height - bottomMargin);
-  c.lineTo(leftMargin, topMargin);
-  c.strokeStyle = style.color;
-  c.stroke();
   c.fillStyle = style.color;
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
-  c.fillText(String(width), leftMargin - 10, topMargin);
-  c.fillText(String(height), leftMargin - 10, height - bottomMargin);
+  c.fillText(String(canvas.width), margin.left - 10, margin.top);
+  c.fillText(String(canvas.height), margin.left - 10, canvas.height - margin.bottom);
 }
 
-function plotData() {
-  for (var i = 0; i < 10000; i++) {
-    var farbwert_r = Math.floor(Math.random() * 255);
-    var farbwert_g = Math.floor(Math.random() * 255);
-    var farbwert_b = Math.floor(Math.random() * 255);
-    c.fillStyle = 'rgba(' + farbwert_r + ',' + farbwert_g + ',' + farbwert_b + ', 0.4)';
-    c.fillRect(X(Date.now() - 6000000), Y(Math.random()), 10, 10);
-  }
-}
+function plotData() {}
 
 plotAll();

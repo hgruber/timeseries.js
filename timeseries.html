@@ -7,7 +7,6 @@
 	<meta name="description" content="Kurzbeschreibung">
 	<style>
 		body {
-			margin: 0;
 			background: #50c0ff;
 		}
 
@@ -22,6 +21,9 @@
 
 		div {
 			border: solid #000 1px;
+			left: 0;
+			right: 0;
+			height: 500px;
 		}
 	</style>
 	<script src="timeseries.js" defer></script>
@@ -29,7 +31,7 @@
 
 <body>
 	<h1>timeseries.js</h1>
-	<div style="width: 100vw; height: 700px;">
+	<div id="graph">
 		<canvas id="timeseries"></canvas>
 	</div>
 </body>
