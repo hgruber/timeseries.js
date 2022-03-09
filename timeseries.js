@@ -90,8 +90,29 @@ canvas.onwheel = function(e) {
   plotAll()
 }
 
+function label_day(d, l) {
+  if (l > 130) return d.toLocaleString('default', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'numeric',
+  });
+  if (l > 60) return d.toLocaleString('default', {
+    weekday: 'short',
+    day: 'numeric',
+  });
+  if (l > 24) return d.toLocaleString('default', {
+    day: 'numeric',
+  }) + '.';
+  if (l > 20) return d.toLocaleString('default', {
+    day: 'numeric',
+  });
+  return '';
+}
+
 function create_grid() {
   pixels = plotWidth / (tmax - tmin);
+
+  // minutes
   grid.minutes.items = [];
   grid.minutes.space = pixels * f.m;
   if (grid.minutes.space > ss)
@@ -99,6 +120,8 @@ function create_grid() {
       grid.minutes.items.push({
         tm: t
       });
+
+  // hours
   grid.hours.items = [];
   grid.hours.space = pixels * f.h;
   if (grid.hours.space > ss)
@@ -106,24 +129,34 @@ function create_grid() {
       grid.hours.items.push({
         tm: t
       });
+
+  // days
   grid.days.items = [];
   space = pixels * f.d;
   if (space > ss)
-    for (t = +(new Date(new Date(tmin).toDateString())); t <= tmax + f.h; t += f.d + f.h)
+    for (t = new Date(new Date(tmax).toDateString()); t >= tmin - f.d; t = new Date(new Date(t - 12 * f.h).toDateString())) {
+      if (t < tmin) x = margin.left;
+      else x = X(t);
+      l = grid.days.items.length;
+      if (l) len = grid.days.items[l - 1].x - x;
+      else len = canvas.width - margin.right - x;
+      date = label_day(t, len);
       grid.days.items.push({
-        tm: +(new Date(new Date(t).toDateString()))
+        tm: t,
+        date: date,
+        x: x,
+        len: len
       });
+    }
+
+  // months
   grid.months.items = [];
   space = pixels * f.d * 31;
+  dm = new Date(tmin);
   if (space > ss) {
-    dm = new Date(tmin);
-    t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1));
-    grid.months.items.push({
-      tm: new Date(t)
-    });
     while (true) {
+      t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00');
       dm = new Date(t + f.d * 32);
-      t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1');
       if (t <= tmax) grid.months.items.push({
         tm: new Date(t)
       });
@@ -173,11 +206,25 @@ function rotateText(text, x, y) {
 function background() {
   c.fillStyle = 'white';
   c.fillRect(margin.left, margin.top, plotWidth, plotHeight);
+  grid.days.items.forEach((item, i) => {
+    wd = item.tm.getDay();
+    if (wd == 0 || wd == 6) c.fillStyle = '#fbb';
+    else {
+      if (wd % 2) c.fillStyle = '#eee';
+      else c.fillStyle = '#bdd';
+    }
+    c.fillRect(item.x, margin.top, item.len, plotHeight);
+    c.strokeStyle = '#000';
+    c.beginPath();
+    c.moveTo(item.x, margin.top);
+    c.lineTo(item.x, margin.top + plotHeight);
+    c.stroke();
+  });
   grid.hours.items.forEach((item, i) => {
     x = X(item.tm);
     //c.fillStyle = '#efe';
     //c.fillRect(x, margin.top, 10, plotHeight);
-    c.strokeStyle = '#ddd';
+    c.strokeStyle = '#aaa';
     c.beginPath();
     c.moveTo(x, margin.top);
     c.lineTo(x, margin.top + plotHeight);
@@ -217,14 +264,7 @@ function xAxis() {
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
   grid.days.items.forEach((item, i) => {
-    d = new Date(item.tm);
-    if (item.tm > tmin) x = X(item.tm);
-    else x = margin.left;
-    c.fillText(new Date(item.tm).toLocaleString('default', {
-      weekday: 'long',
-      day: 'numeric',
-      month: 'numeric'
-    }), x, margin.top)
+    c.fillText(item.date, item.x, margin.top);
   });
   grid.months.items.forEach((item, i) => {
     if (item.tm > tmin) x = X(item.tm);
