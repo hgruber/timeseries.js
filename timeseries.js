@@ -109,7 +109,7 @@ function create_grid() {
   grid.days.items = [];
   space = pixels * f.d;
   if (space > ss)
-    for (t = Math.floor(tmin / f.d) * f.d; t < tmax; t += f.d)
+    for (t = +(new Date(new Date(tmin).toDateString())); t <= tmax + f.h; t += f.d + f.h)
       grid.days.items.push({
         tm: +(new Date(new Date(t).toDateString()))
       });
@@ -123,7 +123,7 @@ function create_grid() {
     });
     while (true) {
       dm = new Date(t + f.d * 32);
-      t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1));
+      t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1');
       if (t <= tmax) grid.months.items.push({
         tm: new Date(t)
       });
@@ -218,14 +218,21 @@ function xAxis() {
   c.textBaseline = 'bottom';
   grid.days.items.forEach((item, i) => {
     d = new Date(item.tm);
-    if (item.tm>tmin) x = X(item.tm);
+    if (item.tm > tmin) x = X(item.tm);
     else x = margin.left;
-    c.fillText(d.getDate() + '.' + (d.getMonth() + 1) + '.', x, margin.top)
+    c.fillText(new Date(item.tm).toLocaleString('default', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'numeric'
+    }), x, margin.top)
   });
   grid.months.items.forEach((item, i) => {
-    if (item.tm>tmin) x = X(item.tm);
+    if (item.tm > tmin) x = X(item.tm);
     else x = margin.left;
-    c.fillText(new Date(item.tm).toLocaleString('default', { month: 'long' }), x, margin.top - 20);
+    c.fillText(new Date(item.tm).toLocaleString('default', {
+      month: 'long',
+      year: 'numeric'
+    }), x, margin.top - 20);
   });
 }
 
