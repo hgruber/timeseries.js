@@ -16,6 +16,7 @@ margin = {
   bottom: 70,
   left: 70
 }
+nls = 'default';
 plotWidth = canvas.width - margin.left - margin.right;
 plotHeight = canvas.height - margin.top - margin.bottom;
 var now = Date.now();
@@ -66,7 +67,6 @@ display_hours = [{
   c: 12
 }]; // text width p in pixels displays onl every c's hour
 
-
 function plotAll() {
   prepare_grid();
   background();
@@ -87,6 +87,7 @@ window.onresize = function() {
 
 canvas.onmousedown = function(e) {
   // is in canvas ...
+  console.log(e.clientX, e.clientY)
   startDragX = e.clientX;
   startTmin = tmin;
   startTmax = tmax;
@@ -131,28 +132,47 @@ function follow_view() {
     setTimeout(follow_view, mspp);
     return;
   }
-  if (now < tmax)
-    t = tmax - now;
+  if (now < tmax) t = tmax - now;
+  else return;
   if (t > 1000) t = 1000;
   setTimeout(follow_view, t);
 }
 
 function label_day(d, l) {
-  if (l > 130) return d.toLocaleString('default', {
+  if (l > 130) return d.toLocaleString(nls, {
     weekday: 'long',
     day: 'numeric',
     month: 'numeric',
   });
-  if (l > 60) return d.toLocaleString('default', {
+  if (l > 60) return d.toLocaleString(nls, {
     weekday: 'short',
     day: 'numeric',
   });
-  if (l > 24) return d.toLocaleString('default', {
-    day: 'numeric',
-  }) + '.';
-  if (l > 20) return d.toLocaleString('default', {
+  if (l>14) return d.toLocaleString(nls, {
     day: 'numeric',
   });
+  return '';
+}
+
+function label_month(d,l) {
+  if (l > 130) return d.toLocaleString(nls, {
+    month: 'long',
+    year: 'numeric'
+  });
+  if (l > 105) return d.toLocaleString(nls, {
+    month: 'long',
+    year: '2-digit'
+  });
+  if (l > 65) return d.toLocaleString(nls, {
+    month: 'short',
+    year: '2-digit'
+  });
+  if (l > 40) return d.toLocaleString(nls, {
+    month: 'short'
+  });
+  if (l>14) return d.toLocaleString(nls, {
+    month: 'short'
+  }).substr(0,1);
   return '';
 }
 
@@ -166,7 +186,7 @@ function prepare_grid() {
   if (grid.minutes.space > ss)
     for (t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m)
       grid.minutes.items.push({
-        tm: t
+        tm: new Date(t)
       });
 
   // hours
@@ -175,7 +195,7 @@ function prepare_grid() {
   if (grid.hours.space > ss)
     for (t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h)
       grid.hours.items.push({
-        tm: t
+        tm: new Date(t)
       });
 
   // days
@@ -188,10 +208,9 @@ function prepare_grid() {
       l = grid.days.items.length;
       if (l) len = grid.days.items[l - 1].x - x;
       else len = canvas.width - margin.right - x;
-      date = label_day(t, len);
       grid.days.items.push({
         tm: t,
-        date: date,
+        date: label_day(t, len),
         x: x,
         len: len
       });
@@ -200,15 +219,23 @@ function prepare_grid() {
   // months
   grid.months.items = [];
   space = pixels * f.d * 31;
-  dm = new Date(tmin);
+  dm = new Date(tmax);
   if (space > ss) {
     while (true) {
-      t = Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00');
-      dm = new Date(t + f.d * 32);
-      if (t <= tmax) grid.months.items.push({
-        tm: new Date(t)
+      t = new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'));
+      if (t < tmin) x = margin.left;
+      else x = X(t);
+      l = grid.months.items.length;
+      if (l) len = grid.months.items[l - 1].x - x;
+      else len = canvas.width - margin.right - x;
+      grid.months.items.push({
+        tm: t,
+        date: label_month(t, len),
+        x: x,
+        len: len
       });
-      else break;
+      dm = new Date(t - 1);
+      if (dm < tmin) break;
     }
   }
 }
@@ -250,7 +277,7 @@ function background() {
     if (wd == 0 || wd == 6) c.fillStyle = '#fbb';
     else {
       if (wd % 2) c.fillStyle = '#eee';
-      else c.fillStyle = '#bdd';
+      else c.fillStyle = '#ddd';
     }
     c.fillRect(item.x, margin.top, item.len, plotHeight);
     c.strokeStyle = '#888';
@@ -261,8 +288,6 @@ function background() {
   });
   grid.hours.items.forEach((item, i) => {
     x = X(item.tm);
-    //c.fillStyle = '#efe';
-    //c.fillRect(x, margin.top, 10, plotHeight);
     c.strokeStyle = '#aaa';
     c.beginPath();
     c.moveTo(x, margin.top);
@@ -313,12 +338,7 @@ function frame() {
   });
   // months
   grid.months.items.forEach((item, i) => {
-    if (item.tm > tmin) x = X(item.tm);
-    else x = margin.left;
-    c.fillText(new Date(item.tm).toLocaleString('default', {
-      month: 'long',
-      year: 'numeric'
-    }), x, margin.top - 20);
+    c.fillText(item.date, item.x, margin.top - 20);
   });
 }
 
