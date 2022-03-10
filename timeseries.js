@@ -10,24 +10,24 @@ var offset = {
 }
 var startDragX = 0,
   startTmin, startTmax;
-margin = {
+var margin = {
   top: 50,
   right: 12,
   bottom: 70,
   left: 70
 }
-nls = 'default';
-plotWidth = canvas.width - margin.left - margin.right;
-plotHeight = canvas.height - margin.top - margin.bottom;
+var nls = 'default';
+var plotWidth = canvas.width - margin.left - margin.right;
+var plotHeight = canvas.height - margin.top - margin.bottom;
 var now = Date.now();
-tmax = now;
-tmin = tmax - 86400000;
-ymin = 0;
-ymax = 1;
-zf = 0.2; // the smaller the smoother the wheel zoom
-ss = 5; // the minimal pixel distance for Axis decorations
-pixels = plotWidth / (tmax - tmin); // pixels per millisecond
-mspp = 1. / pixels; // milliseconds per pixels
+var tmax = now;
+var tmin = tmax - 86400000;
+var ymin = 0;
+var ymax = 1;
+var zf = 0.2; // the smaller the smoother the wheel zoom
+var ss = 5; // the minimal pixel distance for Axis decorations
+var pixels = plotWidth / (tmax - tmin); // pixels per millisecond
+var mspp = 1. / pixels; // milliseconds per pixels
 
 var f = {
   s: 1000,
@@ -49,7 +49,7 @@ var grid = {
   millenia: {}
 }
 
-display_hours = [{
+var display_hours = [{
   p: 40,
   c: 1
 }, {
@@ -58,14 +58,73 @@ display_hours = [{
 }, {
   p: 13,
   c: 3
-}, {
-}, {
+}, {}, {
   p: 7,
   c: 6
 }, {
   p: 3,
   c: 12
 }]; // text width p in pixels displays onl every c's hour
+
+//
+// create possible labels to create array with maximum length
+// stored in labels.day_pixels
+// this can vary with font-size as well as with language settings
+//
+var labels = {}
+labels.day = [{
+  weekday: 'long',
+  day: 'numeric',
+  month: 'numeric'
+}, {
+  weekday: 'short',
+  day: 'numeric'
+}, {
+  day: 'numeric'
+}]
+
+labels.month = [{
+  month: 'long',
+  year: 'numeric'
+}, {
+  month: 'long',
+  year: '2-digit'
+}, {
+  month: 'short',
+  year: '2-digit'
+}, {
+  month: 'short'
+}, {
+  month: 'short'
+}]
+
+labels.day_pixels = new Array(labels.day.length).fill(0);
+for (var i = 0; i < 7; i++) {
+  c.font = style.font;
+  labels.day.forEach((format, j) => {
+    l = c.measureText(new Date((i + 355) * 86400000).toLocaleString(nls, format)).width;
+    if (l > labels.day_pixels[j]) labels.day_pixels[j] = l;
+  });
+}
+
+labels.month_pixels = new Array(labels.month.length).fill(0);
+for (var i = 0; i < 12; i++) {
+  c.font = style.font;
+  labels.month.forEach((format, j) => {
+    l = c.measureText(new Date((i*30+5) * 86400000).toLocaleString(nls, format)).width;
+    if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
+  });
+}
+
+function label(date, format, size) {
+  for (var i = 0; i < labels[format].length; i++)
+    if (size > labels[format + '_pixels'][i]) return date.toLocaleString(nls, labels[format][i]);
+  return '';
+}
+
+/////////////////////
+// End of settings //
+/////////////////////
 
 function plotAll() {
   prepare_grid();
@@ -95,7 +154,7 @@ canvas.onmousedown = function(e) {
 
 canvas.onmousemove = function(e) {
   if (startDragX == 0) return;
-  move = (startDragX - e.clientX) / plotWidth * (tmax - tmin);
+  var move = (startDragX - e.clientX) / plotWidth * (tmax - tmin);
   tmin = startTmin + move;
   tmax = startTmax + move;
   plotAll();
@@ -110,9 +169,9 @@ canvas.onmouseout = function(e) {
 }
 
 canvas.onwheel = function(e) {
-  r = tmax - tmin;
-  lr = (e.clientX - offset.x - margin.left) / plotWidth;
-  rr = 1 - lr;
+  var r = tmax - tmin;
+  var lr = (e.clientX - offset.x - margin.left) / plotWidth;
+  var rr = 1 - lr;
   if (e.deltaY > 0) {
     tmin -= zf * lr * r;
     tmax += zf * rr * r;
@@ -138,23 +197,7 @@ function follow_view() {
   setTimeout(follow_view, t);
 }
 
-function label_day(d, l) {
-  if (l > 130) return d.toLocaleString(nls, {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'numeric',
-  });
-  if (l > 60) return d.toLocaleString(nls, {
-    weekday: 'short',
-    day: 'numeric',
-  });
-  if (l>14) return d.toLocaleString(nls, {
-    day: 'numeric',
-  });
-  return '';
-}
-
-function label_month(d,l) {
+function label_month(d, l) {
   if (l > 130) return d.toLocaleString(nls, {
     month: 'long',
     year: 'numeric'
@@ -170,9 +213,9 @@ function label_month(d,l) {
   if (l > 40) return d.toLocaleString(nls, {
     month: 'short'
   });
-  if (l>14) return d.toLocaleString(nls, {
+  if (l > 14) return d.toLocaleString(nls, {
     month: 'short'
-  }).substr(0,1);
+  }).substr(0, 1);
   return '';
 }
 
@@ -184,7 +227,7 @@ function prepare_grid() {
   grid.minutes.items = [];
   grid.minutes.space = pixels * f.m;
   if (grid.minutes.space > ss)
-    for (t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m)
+    for (var t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m)
       grid.minutes.items.push({
         tm: new Date(t)
       });
@@ -193,7 +236,7 @@ function prepare_grid() {
   grid.hours.items = [];
   grid.hours.space = pixels * f.h;
   if (grid.hours.space > ss)
-    for (t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h)
+    for (var t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h)
       grid.hours.items.push({
         tm: new Date(t)
       });
@@ -202,7 +245,7 @@ function prepare_grid() {
   grid.days.items = [];
   space = pixels * f.d;
   if (space > ss)
-    for (t = new Date(new Date(tmax).toDateString()); t >= tmin - f.d; t = new Date(new Date(t - 12 * f.h).toDateString())) {
+    for (var t = new Date(new Date(tmax).toDateString()); t >= tmin - f.d; t = new Date(new Date(t - 12 * f.h).toDateString())) {
       if (t < tmin) x = margin.left;
       else x = X(t);
       l = grid.days.items.length;
@@ -210,7 +253,7 @@ function prepare_grid() {
       else len = canvas.width - margin.right - x;
       grid.days.items.push({
         tm: t,
-        date: label_day(t, len),
+        date: label(t, 'day', len),
         x: x,
         len: len
       });
