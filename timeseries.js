@@ -18,12 +18,15 @@ margin = {
 }
 plotWidth = canvas.width - margin.left - margin.right;
 plotHeight = canvas.height - margin.top - margin.bottom;
-tmax = Date.now();
+var now = Date.now();
+tmax = now;
 tmin = tmax - 86400000;
 ymin = 0;
 ymax = 1;
 zf = 0.2; // the smaller the smoother the wheel zoom
 ss = 5; // the minimal pixel distance for Axis decorations
+pixels = plotWidth / (tmax - tmin); // pixels per millisecond
+mspp = 1. / pixels; // milliseconds per pixels
 
 var f = {
   s: 1000,
@@ -43,6 +46,35 @@ var grid = {
   decades: {},
   centuries: {},
   millenia: {}
+}
+
+display_hours = [{
+  p: 40,
+  c: 1
+}, {
+  p: 20,
+  c: 2
+}, {
+  p: 13,
+  c: 3
+}, {
+}, {
+  p: 7,
+  c: 6
+}, {
+  p: 3,
+  c: 12
+}]; // text width p in pixels displays onl every c's hour
+
+
+function plotAll() {
+  prepare_grid();
+  background();
+  plotData();
+  frame();
+  yAxis();
+  redLine();
+  console.log('plot finished');
 }
 
 window.onresize = function() {
@@ -90,6 +122,21 @@ canvas.onwheel = function(e) {
   plotAll()
 }
 
+function follow_view() {
+  now = Date.now();
+  if (tmax - mspp < now && now < tmax + 10 * mspp) {
+    tmin = tmin + now - tmax;
+    tmax = now;
+    plotAll();
+    setTimeout(follow_view, mspp);
+    return;
+  }
+  if (now < tmax)
+    t = tmax - now;
+  if (t > 1000) t = 1000;
+  setTimeout(follow_view, t);
+}
+
 function label_day(d, l) {
   if (l > 130) return d.toLocaleString('default', {
     weekday: 'long',
@@ -109,8 +156,9 @@ function label_day(d, l) {
   return '';
 }
 
-function create_grid() {
-  pixels = plotWidth / (tmax - tmin);
+function prepare_grid() {
+  pixels = plotWidth / (tmax - tmin); // pixels per millisecond
+  mspp = 1. / pixels; // milliseconds per pixels
 
   // minutes
   grid.minutes.items = [];
@@ -165,15 +213,6 @@ function create_grid() {
   }
 }
 
-function plotAll() {
-  create_grid();
-  background();
-  plotData();
-  frame();
-  yAxis();
-  xAxis();
-}
-
 function time(t) {
   return String(t.getHours()) + ':' +
     String(t.getMinutes()).padStart(2, '0');
@@ -214,7 +253,7 @@ function background() {
       else c.fillStyle = '#bdd';
     }
     c.fillRect(item.x, margin.top, item.len, plotHeight);
-    c.strokeStyle = '#000';
+    c.strokeStyle = '#888';
     c.beginPath();
     c.moveTo(item.x, margin.top);
     c.lineTo(item.x, margin.top + plotHeight);
@@ -230,6 +269,11 @@ function background() {
     c.lineTo(x, margin.top + plotHeight);
     c.stroke();
   });
+  if (now >= tmax) return;
+  if (now < tmin) x = margin.left;
+  else x = X(now);
+  c.fillStyle = '#aaaa';
+  c.fillRect(x, margin.top, plotWidth, plotHeight);
 }
 
 function frame() {
@@ -246,26 +290,28 @@ function frame() {
   c.lineTo(margin.left, margin.top);
   c.strokeStyle = style.color;
   c.stroke();
-  c.textAlign = 'left';
-  c.textBaseline = 'bottom';
-  c.fillStyle = style.color;
-  c.font = style.font;
-  //c.fillText(new Date(tmin), margin.left, margin.top);
-}
-
-function xAxis() {
   c.fillStyle = style.color;
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
+  // hours
   grid.hours.items.forEach((item, i) => {
-    if (i > 0) rotateText(time(new Date(item.tm)), X(item.tm), canvas.height - margin.bottom + 4);
+    if (i == 0) return;
+    t = new Date(item.tm)
+    for (let dd in display_hours) {
+      if (grid.hours.space > display_hours[dd].p) {
+        if (t.getHours() % display_hours[dd].c == 0) rotateText(time(t), X(item.tm), canvas.height - margin.bottom + 4);
+        return;
+      }
+    }
   });
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
+  // days
   grid.days.items.forEach((item, i) => {
     c.fillText(item.date, item.x, margin.top);
   });
+  // months
   grid.months.items.forEach((item, i) => {
     if (item.tm > tmin) x = X(item.tm);
     else x = margin.left;
@@ -285,6 +331,14 @@ function yAxis() {
   c.fillText(String(canvas.height), margin.left - 10, canvas.height - margin.bottom);
 }
 
+function redLine() {
+  c.beginPath();
+  c.moveTo(X(now), 0);
+  c.lineTo(X(now), canvas.height);
+  c.strokeStyle = '#ff000088';
+  c.stroke();
+}
+
 function plotData() {}
 
-plotAll();
+follow_view();
