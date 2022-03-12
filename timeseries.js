@@ -20,12 +20,13 @@ var nls = 'default';
 var plotWidth = canvas.width - margin.left - margin.right;
 var plotHeight = canvas.height - margin.top - margin.bottom;
 var now = Date.now();
+var follow_timers = 0;
 var tmax = now;
 var tmin = tmax - 86400000;
 var ymin = 0;
 var ymax = 1;
-var zf = 0.2; // the smaller the smoother the wheel zoom
-var ss = 5; // the minimal pixel distance for Axis decorations
+var zf = 0.1; // the smaller the smoother the wheel zoom
+var ss = 2; // the minimal pixel distance for Axis decorations
 var pixels = plotWidth / (tmax - tmin); // pixels per millisecond
 var mspp = 1. / pixels; // milliseconds per pixels
 
@@ -50,19 +51,19 @@ var grid = {
 }
 
 var display_hours = [{
-  p: 40,
+  p: 2,
   c: 1
 }, {
-  p: 20,
+  p: 1.5,
   c: 2
 }, {
-  p: 13,
-  c: 3
+  p: 1,
+  c: 4
 }, {}, {
-  p: 7,
+  p: 0.75,
   c: 6
 }, {
-  p: 3,
+  p: 0.5,
   c: 12
 }]; // text width p in pixels displays onl every c's hour
 
@@ -72,6 +73,7 @@ var display_hours = [{
 // this can vary with font-size as well as with language settings
 //
 var labels = {}
+
 labels.day = [{
   weekday: 'long',
   day: 'numeric',
@@ -98,9 +100,11 @@ labels.month = [{
   month: 'short'
 }]
 
+c.font = style.font;
+var font_height = c.measureText('2').actualBoundingBoxAscent;
+
 labels.day_pixels = new Array(labels.day.length).fill(0);
 for (var i = 0; i < 7; i++) {
-  c.font = style.font;
   labels.day.forEach((format, j) => {
     l = c.measureText(new Date((i + 355) * 86400000).toLocaleString(nls, format)).width;
     if (l > labels.day_pixels[j]) labels.day_pixels[j] = l;
@@ -109,9 +113,8 @@ for (var i = 0; i < 7; i++) {
 
 labels.month_pixels = new Array(labels.month.length).fill(0);
 for (var i = 0; i < 12; i++) {
-  c.font = style.font;
   labels.month.forEach((format, j) => {
-    l = c.measureText(new Date((i*30+5) * 86400000).toLocaleString(nls, format)).width;
+    l = c.measureText(new Date((i * 30 + 5) * 86400000).toLocaleString(nls, format)).width;
     if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
   });
 }
@@ -122,9 +125,48 @@ function label(date, format, size) {
   return '';
 }
 
+function vertical_label(t, x, y) {
+  var r = grid.hours.space / font_height;
+  for (let dd in display_hours) {
+    if (r > display_hours[dd].p) {
+      text = String(t.getHours()) + ':' + String(t.getMinutes()).padStart(2, '0');
+      if (t%f.m > 0) text += ':' + String(t.getSeconds()).padStart(2, '0');
+      if (t.getHours() % display_hours[dd].c == 0) rotateText(text, x, y);
+      return;
+    }
+  }
+}
+
 /////////////////////
 // End of settings //
 /////////////////////
+
+function timer(f, t) {
+  follow_timers++;
+  setTimeout(f, t);
+  //console.log('Timer ' + follow_timers + ' set for ' + t + ' milliseconds');
+}
+
+function follow_view() {
+  follow_timers--;
+  now = Date.now();
+  if (tmax - mspp < now && now < tmax + 10 * mspp) {
+    tmin = tmin + now - tmax;
+    tmax = now;
+    t = mspp;
+    if (mspp > 5000) t = 5000;
+    timer(follow_view, t);
+    plotAll();
+    return;
+  }
+  if (now < tmax && tmin < now) {
+    t = tmax - now;
+    if (t > 1000) t = 1000;
+    timer(follow_view, t);
+    plotAll();
+    return
+  }
+}
 
 function plotAll() {
   prepare_grid();
@@ -133,7 +175,9 @@ function plotAll() {
   frame();
   yAxis();
   redLine();
-  console.log('plot finished');
+  //console.log('plot finished: ' + follow_timers);
+  //console.log(grid);
+  if (follow_timers<0) timer(follow_view, 1000);
 }
 
 window.onresize = function() {
@@ -179,49 +223,21 @@ canvas.onwheel = function(e) {
     tmin += zf * lr * r;
     tmax -= zf * rr * r;
   }
-  plotAll()
-}
-
-function follow_view() {
-  now = Date.now();
-  if (tmax - mspp < now && now < tmax + 10 * mspp) {
-    tmin = tmin + now - tmax;
-    tmax = now;
-    plotAll();
-    setTimeout(follow_view, mspp);
-    return;
-  }
-  if (now < tmax) t = tmax - now;
-  else return;
-  if (t > 1000) t = 1000;
-  setTimeout(follow_view, t);
-}
-
-function label_month(d, l) {
-  if (l > 130) return d.toLocaleString(nls, {
-    month: 'long',
-    year: 'numeric'
-  });
-  if (l > 105) return d.toLocaleString(nls, {
-    month: 'long',
-    year: '2-digit'
-  });
-  if (l > 65) return d.toLocaleString(nls, {
-    month: 'short',
-    year: '2-digit'
-  });
-  if (l > 40) return d.toLocaleString(nls, {
-    month: 'short'
-  });
-  if (l > 14) return d.toLocaleString(nls, {
-    month: 'short'
-  }).substr(0, 1);
-  return '';
+  plotAll();
 }
 
 function prepare_grid() {
   pixels = plotWidth / (tmax - tmin); // pixels per millisecond
   mspp = 1. / pixels; // milliseconds per pixels
+
+  // seconds
+  grid.seconds.items = [];
+  grid.seconds.space = pixels * f.s;
+  if (grid.seconds.space > ss)
+    for (var t = Math.floor(tmin / f.s) * f.s; t < tmax; t += f.s)
+      grid.seconds.items.push({
+        tm: new Date(t)
+      });
 
   // minutes
   grid.minutes.items = [];
@@ -273,7 +289,7 @@ function prepare_grid() {
       else len = canvas.width - margin.right - x;
       grid.months.items.push({
         tm: t,
-        date: label_month(t, len),
+        date: label(t, 'month', len),
         x: x,
         len: len
       });
@@ -281,11 +297,6 @@ function prepare_grid() {
       if (dm < tmin) break;
     }
   }
-}
-
-function time(t) {
-  return String(t.getHours()) + ':' +
-    String(t.getMinutes()).padStart(2, '0');
 }
 
 function X(t) {
@@ -337,6 +348,22 @@ function background() {
     c.lineTo(x, margin.top + plotHeight);
     c.stroke();
   });
+  grid.minutes.items.forEach((item, i) => {
+    x = X(item.tm);
+    c.strokeStyle = '#aaa';
+    c.beginPath();
+    c.moveTo(x, margin.top);
+    c.lineTo(x, margin.top + plotHeight);
+    c.stroke();
+  });
+  grid.seconds.items.forEach((item, i) => {
+    x = X(item.tm);
+    c.strokeStyle = '#aaa';
+    c.beginPath();
+    c.moveTo(x, margin.top);
+    c.lineTo(x, margin.top + plotHeight);
+    c.stroke();
+  });
   if (now >= tmax) return;
   if (now < tmin) x = margin.left;
   else x = X(now);
@@ -362,16 +389,20 @@ function frame() {
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
+  // seconds
+  grid.seconds.items.forEach((item, i) => {
+    if (i == 0) return;
+    vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
+  });
+  // minutes
+  grid.minutes.items.forEach((item, i) => {
+    if (i == 0) return;
+    vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
+  });
   // hours
   grid.hours.items.forEach((item, i) => {
     if (i == 0) return;
-    t = new Date(item.tm)
-    for (let dd in display_hours) {
-      if (grid.hours.space > display_hours[dd].p) {
-        if (t.getHours() % display_hours[dd].c == 0) rotateText(time(t), X(item.tm), canvas.height - margin.bottom + 4);
-        return;
-      }
-    }
+    vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
