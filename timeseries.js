@@ -153,19 +153,16 @@ function follow_view() {
   if (tmax - mspp < now && now < tmax + 10 * mspp) {
     tmin = tmin + now - tmax;
     tmax = now;
+  } else if (now > tmax) return;
+  if (now < rT(0)) {
+    timer(follow_view, now - rT(0));
+    return;
+  } else {
     t = mspp;
     if (mspp > 5000) t = 5000;
     timer(follow_view, t);
-    plotAll();
-    return;
   }
-  if (now < tmax && tmin < now) {
-    t = tmax - now;
-    if (t > 1000) t = 1000;
-    timer(follow_view, t);
-    plotAll();
-    return
-  }
+  plotAll();
 }
 
 function plotAll() {
@@ -175,7 +172,7 @@ function plotAll() {
   frame();
   yAxis();
   redLine();
-  //console.log('plot finished: ' + follow_timers);
+  console.log('plot finished: ' + follow_timers);
   //console.log(grid);
   if (follow_timers<0) timer(follow_view, 1000);
 }
