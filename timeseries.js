@@ -26,7 +26,6 @@ var tmin = tmax - 86400000;
 var ymin = 0;
 var ymax = 1;
 var zf = 0.1; // the smaller the smoother the wheel zoom
-var ss = 2; // the minimal pixel distance for Axis decorations
 var pixels = plotWidth / (tmax - tmin); // pixels per millisecond
 var mspp = 1. / pixels; // milliseconds per pixels
 
@@ -39,6 +38,7 @@ var f = {
 }
 
 var grid = {
+  milliseconds: {},
   seconds: {},
   minutes: {},
   hours: {},
@@ -50,22 +50,15 @@ var grid = {
   millenia: {}
 }
 
-var display_hours = [{
-  p: 2,
-  c: 1
-}, {
-  p: 1.5,
-  c: 2
-}, {
-  p: 1,
-  c: 4
-}, {}, {
-  p: 0.75,
-  c: 6
-}, {
-  p: 0.5,
-  c: 12
-}]; // text width p in pixels displays onl every c's hour
+c.font = style.font;
+var font_height = c.measureText('2').actualBoundingBoxAscent;
+var dvtl = 20; // the minimal pixel distance for vertical time lines
+var dtl = 6 * font_height; // the minimal pixel distance for time labels
+
+var part1000 = [1, 5, 10, 50, 100, 500];
+var part60 = [1, 5, 10, 15, 30];
+var part24 = [1, 2, 4, 12];
+var part10 = [1, 2, 5];
 
 //
 // create possible labels to create array with maximum length
@@ -96,12 +89,7 @@ labels.month = [{
   year: '2-digit'
 }, {
   month: 'short'
-}, {
-  month: 'short'
 }]
-
-c.font = style.font;
-var font_height = c.measureText('2').actualBoundingBoxAscent;
 
 labels.day_pixels = new Array(labels.day.length).fill(0);
 for (var i = 0; i < 7; i++) {
@@ -126,16 +114,21 @@ function label(date, format, size) {
 }
 
 function vertical_label(t, x, y) {
-  var r = grid.hours.space / font_height;
-  for (let dd in display_hours) {
-    if (r > display_hours[dd].p) {
-      text = String(t.getHours()) + ':' + String(t.getMinutes()).padStart(2, '0');
-      if (t%f.m > 0) text += ':' + String(t.getSeconds()).padStart(2, '0');
-      if (t.getHours() % display_hours[dd].c == 0) rotateText(text, x, y);
-      return;
-    }
-  }
+  text = String(t.getHours()) + ':' + String(t.getMinutes()).padStart(2, '0');
+  if (t % f.m > 0) text = ':' + String(t.getSeconds()).padStart(2, '0');
+  if (t % 1000 > 0) text += '.' + String(t.getMilliseconds()).padStart(3, '0');
+  if (x >= margin.left) rotateText(text, x, y);
 }
+
+function vertical_line(t, color) {
+  var x = X(+t);
+  c.strokeStyle = color;
+  c.beginPath();
+  c.moveTo(x, margin.top);
+  c.lineTo(x, margin.top + plotHeight);
+  c.stroke();
+}
+
 
 /////////////////////
 // End of settings //
@@ -174,7 +167,7 @@ function plotAll() {
   redLine();
   console.log('plot finished: ' + follow_timers);
   //console.log(grid);
-  if (follow_timers<0) timer(follow_view, 1000);
+  if (follow_timers < 0) timer(follow_view, 1000);
 }
 
 window.onresize = function() {
@@ -210,6 +203,7 @@ canvas.onmouseout = function(e) {
 }
 
 canvas.onwheel = function(e) {
+  if (pixels > 25 && e.deltaY < 0) return;
   var r = tmax - tmin;
   var lr = (e.clientX - offset.x - margin.left) / plotWidth;
   var rr = 1 - lr;
@@ -223,41 +217,78 @@ canvas.onwheel = function(e) {
   plotAll();
 }
 
+// how many tic to use for a given interval
+// p is defined array part10, part24 or part60
+// t is timeinterval in ms
+// d is minimum pixel distance allowed between tics
+function time_part(p, t, d) {
+  for (var pp in p)
+    if (pixels * t * p[pp] > d) return p[pp];
+}
+
 function prepare_grid() {
   pixels = plotWidth / (tmax - tmin); // pixels per millisecond
   mspp = 1. / pixels; // milliseconds per pixels
 
-  // seconds
-  grid.seconds.items = [];
-  grid.seconds.space = pixels * f.s;
-  if (grid.seconds.space > ss)
-    for (var t = Math.floor(tmin / f.s) * f.s; t < tmax; t += f.s)
-      grid.seconds.items.push({
-        tm: new Date(t)
+  // milliseconds
+  var part = time_part(part1000, 1, dvtl);
+  var partl = time_part(part1000, 1, dtl);
+  grid.milliseconds.items = [];
+  if (part)
+    for (var t = Math.floor(tmin); t < Math.ceil(tmax); t++) {
+      if (t % part == 0) grid.milliseconds.items.push({
+        tm: new Date(t),
+        label: (t % partl == 0)
       });
+    }
+
+  // seconds
+  part = time_part(part60, f.s, dvtl);
+  partl = time_part(part60, f.s, dtl);
+  grid.seconds.items = [];
+  if (part)
+    for (var t = Math.floor(tmin / f.s) * f.s; t < tmax; t += f.s) {
+      var d = new Date(t);
+      s = d / 1000;
+      if (s % part == 0) grid.seconds.items.push({
+        tm: d,
+        label: (s % partl == 0)
+      });
+    }
 
   // minutes
+  part = time_part(part60, f.m, dvtl);
+  partl = time_part(part60, f.m, dtl);
   grid.minutes.items = [];
-  grid.minutes.space = pixels * f.m;
-  if (grid.minutes.space > ss)
-    for (var t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m)
-      grid.minutes.items.push({
-        tm: new Date(t)
+  if (part)
+    for (var t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m) {
+      var d = new Date(t);
+      var m = d.getMinutes();
+      if (m % part == 0) grid.minutes.items.push({
+        tm: d,
+        label: (m % partl == 0)
       });
+    }
 
   // hours
   grid.hours.items = [];
-  grid.hours.space = pixels * f.h;
-  if (grid.hours.space > ss)
-    for (var t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h)
-      grid.hours.items.push({
-        tm: new Date(t)
+  part = time_part(part24, f.h, dvtl);
+  partl = time_part(part24, f.h, dtl);
+  var ds = f.h * part;
+  if (part)
+    for (var t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h) {
+      var d = new Date(t);
+      var h = d.getHours();
+      if (h % part == 0) grid.hours.items.push({
+        tm: d,
+        label: (h % partl == 0)
       });
+    }
 
   // days
   grid.days.items = [];
   space = pixels * f.d;
-  if (space > ss)
+  if (space > dvtl)
     for (var t = new Date(new Date(tmax).toDateString()); t >= tmin - f.d; t = new Date(new Date(t - 12 * f.h).toDateString())) {
       if (t < tmin) x = margin.left;
       else x = X(t);
@@ -276,7 +307,7 @@ function prepare_grid() {
   grid.months.items = [];
   space = pixels * f.d * 31;
   dm = new Date(tmax);
-  if (space > ss) {
+  if (space > dvtl) {
     while (true) {
       t = new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'));
       if (t < tmin) x = margin.left;
@@ -331,35 +362,19 @@ function background() {
       else c.fillStyle = '#ddd';
     }
     c.fillRect(item.x, margin.top, item.len, plotHeight);
-    c.strokeStyle = '#888';
-    c.beginPath();
-    c.moveTo(item.x, margin.top);
-    c.lineTo(item.x, margin.top + plotHeight);
-    c.stroke();
+    vertical_line(item.tm, '#888');
   });
-  grid.hours.items.forEach((item, i) => {
-    x = X(item.tm);
-    c.strokeStyle = '#aaa';
-    c.beginPath();
-    c.moveTo(x, margin.top);
-    c.lineTo(x, margin.top + plotHeight);
-    c.stroke();
+  grid.hours.items.forEach(function(item, i) {
+    vertical_line(item.tm, '#aaa')
   });
-  grid.minutes.items.forEach((item, i) => {
-    x = X(item.tm);
-    c.strokeStyle = '#aaa';
-    c.beginPath();
-    c.moveTo(x, margin.top);
-    c.lineTo(x, margin.top + plotHeight);
-    c.stroke();
+  grid.minutes.items.forEach(function(item, i) {
+    vertical_line(item.tm, '#aaa')
   });
-  grid.seconds.items.forEach((item, i) => {
-    x = X(item.tm);
-    c.strokeStyle = '#aaa';
-    c.beginPath();
-    c.moveTo(x, margin.top);
-    c.lineTo(x, margin.top + plotHeight);
-    c.stroke();
+  grid.seconds.items.forEach(function(item, i) {
+    vertical_line(item.tm, '#aaa')
+  });
+  grid.milliseconds.items.forEach(function(item, i) {
+    vertical_line(item.tm, '#aaa')
   });
   if (now >= tmax) return;
   if (now < tmin) x = margin.left;
@@ -386,20 +401,25 @@ function frame() {
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
+  // milliseconds
+  grid.milliseconds.items.forEach((item, i) => {
+    if (item.label)
+      vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
+  });
   // seconds
   grid.seconds.items.forEach((item, i) => {
-    if (i == 0) return;
-    vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
+    if (item.label)
+      vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   // minutes
   grid.minutes.items.forEach((item, i) => {
-    if (i == 0) return;
-    vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
+    if (item.label)
+      vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   // hours
   grid.hours.items.forEach((item, i) => {
-    if (i == 0) return;
-    vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
+    if (item.label)
+      vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
@@ -409,7 +429,9 @@ function frame() {
   });
   // months
   grid.months.items.forEach((item, i) => {
-    c.fillText(item.date, item.x, margin.top - 20);
+    if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d)) shift = 0;
+    else shift = 20;
+    c.fillText(item.date, item.x, margin.top - shift);
   });
 }
 
