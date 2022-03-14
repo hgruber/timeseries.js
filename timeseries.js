@@ -115,6 +115,74 @@ for (var i = 0; i < 12; i++) {
   });
 }
 
+function Easter(Y) {
+  var C = Math.floor(Y / 100);
+  var N = Y - 19 * Math.floor(Y / 19);
+  var K = Math.floor((C - 17) / 25);
+  var I = C - Math.floor(C / 4) - Math.floor((C - K) / 3) + 19 * N + 15;
+  I = I - 30 * Math.floor((I / 30));
+  I = I - Math.floor(I / 28) * (1 - Math.floor(I / 28) * Math.floor(29 / (I + 1)) * Math.floor((21 - N) / 11));
+  var J = Y + Math.floor(Y / 4) + I + 2 - C + Math.floor(C / 4);
+  J = J - 7 * Math.floor(J / 7);
+  var L = I - J;
+  var M = 3 + Math.floor((L + 40) / 44);
+  var D = L + 28 - 31 * Math.floor(M / 4);
+  return D + '.' + M;
+}
+
+var holidays = {
+  '1.1': 'Neujahr',
+  '1.5': 'Maifeiertag',
+  '-2': 'Karfreitag',
+  '+0': 'Ostersonntag',
+  '+1': 'Ostermontag',
+  '+39': 'Himmelfahrt',
+  '+49': 'Pfingstsonntag',
+  '+50': 'Pfingstmontag',
+  '+60': 'Fronleichnahm',
+  '3.10': 'Tag der Einheit',
+  '24.12': 'Heilig Abend',
+  '25.12': '1. Weihnachtstag',
+  '26.12': '2. Weihnachtstag',
+  '31.12': 'Sylvester'
+};
+holiday_pixels = 0;
+for (const [key, holiday] of Object.entries(holidays)) {
+  var l = c.measureText(holiday).width;
+  if (l > holiday_pixels) holiday_pixels = l;
+};
+var easterYears = {}; // store dates for every year
+var hL = {}; // store all holidays here
+
+// newdate.getDate() + 87
+function isHoliday(date) {
+  var Y = date.getFullYear();
+  var d = date.getDate() + '.' + (date.getMonth() + 1);
+  var di = d + '.' + Y;
+  if (hL.hasOwnProperty(di)) return hL[di];
+  var EasterDate;
+  if (!easterYears.hasOwnProperty(Y.toString())) {
+    easterYears[Y] = Easter(Y);
+  }
+  var a = easterYears[Y].split('.');
+  for (var day in holidays) {
+    if (d == day) {
+      hL[di] = holidays[day];
+      return holidays[day];
+    } else if (day[0] == '-' || day[0] == '+') {
+      var checkDay = new Date(Y, a[1] - 1, a[0]);
+      checkDay.setDate(checkDay.getDate() + Number(day));
+      checkDay = checkDay.getDate() + '.' + (checkDay.getMonth() + 1);
+      if (d == checkDay) {
+        hL[di] = holidays[day];
+        return holidays[day];
+      }
+    }
+  }
+  hL[di] = false;
+  return false;
+}
+
 function label(date, format, size) {
   for (var i = 0; i < labels[format].length; i++)
     if (size > labels[format + '_pixels'][i]) return date.toLocaleString(nls, labels[format][i]);
@@ -136,7 +204,6 @@ function vertical_line(t, color) {
   c.lineTo(x, margin.top + plotHeight);
   c.stroke();
 }
-
 
 /////////////////////
 // End of settings //
@@ -308,6 +375,7 @@ function prepare_grid() {
       grid.days.items.push({
         tm: t,
         date: label(t, 'day', len),
+        holiday: isHoliday(t),
         x: x,
         len: len
       });
@@ -341,7 +409,7 @@ function prepare_grid() {
   grid.years.items = [];
   space = pixels * f.d * 365;
   if (space > dvtl) {
-    for (t = new Date(Date.parse(dm.getFullYear() + '-1-1 00:00')); t >= tmin - 366 * f.d; t = new Date(Date.parse(new Date(t - 70 * f.d).getFullYear()+ '-1-1 00:00'))) {
+    for (t = new Date(Date.parse(dm.getFullYear() + '-1-1 00:00')); t >= tmin - 366 * f.d; t = new Date(Date.parse(new Date(t - 70 * f.d).getFullYear() + '-1-1 00:00'))) {
       if (t < tmin) x = margin.left;
       else x = X(t);
       l = grid.years.items.length;
@@ -393,7 +461,7 @@ function background() {
   });
   grid.days.items.forEach((item) => {
     wd = item.tm.getDay();
-    if (wd == 0 || wd == 6) c.fillStyle = '#fbbb';
+    if (wd == 0 || wd == 6 || item.holiday) c.fillStyle = '#fbbb';
     else {
       if (wd % 2) c.fillStyle = '#eeeb';
       else c.fillStyle = '#dddb';
@@ -462,7 +530,10 @@ function frame() {
   c.textBaseline = 'bottom';
   // days
   grid.days.items.forEach((item, i) => {
-    c.fillText(item.date, item.x, margin.top);
+    if (item.holiday && holiday_pixels < item.len)
+      c.fillText(item.holiday, item.x, margin.top);
+    else
+      c.fillText(item.date, item.x, margin.top);
   });
   // months
   grid.months.items.forEach((item, i) => {
