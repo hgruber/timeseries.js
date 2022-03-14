@@ -52,8 +52,8 @@ var grid = {
 
 c.font = style.font;
 var font_height = c.measureText('2').actualBoundingBoxAscent;
-var dvtl = 20; // the minimal pixel distance for vertical time lines
-var dtl = 6 * font_height; // the minimal pixel distance for time labels
+var dvtl = 10; // the minimal pixel distance for vertical time lines
+var dtl = 3 * font_height; // the minimal pixel distance for time labels
 
 var part1000 = [1, 5, 10, 50, 100, 500];
 var part60 = [1, 5, 10, 15, 30];
@@ -89,7 +89,15 @@ labels.month = [{
   year: '2-digit'
 }, {
   month: 'short'
+}, {
+  month: 'narrow'
 }]
+
+labels.year = [{
+  year: 'numeric'
+}]
+
+labels.year_pixels = new Array(labels.year.length).fill(36);
 
 labels.day_pixels = new Array(labels.day.length).fill(0);
 for (var i = 0; i < 7; i++) {
@@ -204,6 +212,7 @@ canvas.onmouseout = function(e) {
 
 canvas.onwheel = function(e) {
   if (pixels > 25 && e.deltaY < 0) return;
+  if (pixels < 6e-9 && e.deltaY > 0) return;
   var r = tmax - tmin;
   var lr = (e.clientX - offset.x - margin.left) / plotWidth;
   var rr = 1 - lr;
@@ -229,6 +238,7 @@ function time_part(p, t, d) {
 function prepare_grid() {
   pixels = plotWidth / (tmax - tmin); // pixels per millisecond
   mspp = 1. / pixels; // milliseconds per pixels
+  dtm = new Date(tmax);
 
   // milliseconds
   var part = time_part(part1000, 1, dvtl);
@@ -306,7 +316,7 @@ function prepare_grid() {
   // months
   grid.months.items = [];
   space = pixels * f.d * 31;
-  dm = new Date(tmax);
+  dm = dtm;
   if (space > dvtl) {
     while (true) {
       t = new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'));
@@ -323,6 +333,26 @@ function prepare_grid() {
       });
       dm = new Date(t - 1);
       if (dm < tmin) break;
+    }
+  }
+
+  // years
+  dm = dtm;
+  grid.years.items = [];
+  space = pixels * f.d * 365;
+  if (space > dvtl) {
+    for (t = new Date(Date.parse(dm.getFullYear() + '-1-1 00:00')); t >= tmin - 366 * f.d; t = new Date(Date.parse(new Date(t - 70 * f.d).getFullYear()+ '-1-1 00:00'))) {
+      if (t < tmin) x = margin.left;
+      else x = X(t);
+      l = grid.years.items.length;
+      if (l) len = grid.years.items[l - 1].x - x;
+      else len = canvas.width - margin.right - x;
+      grid.years.items.push({
+        tm: t,
+        date: label(t, 'year', len),
+        x: x,
+        len: len
+      });
     }
   }
 }
@@ -354,26 +384,33 @@ function rotateText(text, x, y) {
 function background() {
   c.fillStyle = 'white';
   c.fillRect(margin.left, margin.top, plotWidth, plotHeight);
-  grid.days.items.forEach((item, i) => {
+  grid.months.items.forEach((item) => {
+    mo = item.tm.getMonth();
+    if (mo % 2) c.fillStyle = '#bbf';
+    else c.fillStyle = '#eee';
+    c.fillRect(item.x, margin.top, item.len, plotHeight);
+    vertical_line(item.tm, '#888');
+  });
+  grid.days.items.forEach((item) => {
     wd = item.tm.getDay();
-    if (wd == 0 || wd == 6) c.fillStyle = '#fbb';
+    if (wd == 0 || wd == 6) c.fillStyle = '#fbbb';
     else {
-      if (wd % 2) c.fillStyle = '#eee';
-      else c.fillStyle = '#ddd';
+      if (wd % 2) c.fillStyle = '#eeeb';
+      else c.fillStyle = '#dddb';
     }
     c.fillRect(item.x, margin.top, item.len, plotHeight);
     vertical_line(item.tm, '#888');
   });
-  grid.hours.items.forEach(function(item, i) {
+  grid.hours.items.forEach((item) => {
     vertical_line(item.tm, '#aaa')
   });
-  grid.minutes.items.forEach(function(item, i) {
+  grid.minutes.items.forEach((item) => {
     vertical_line(item.tm, '#aaa')
   });
-  grid.seconds.items.forEach(function(item, i) {
+  grid.seconds.items.forEach((item) => {
     vertical_line(item.tm, '#aaa')
   });
-  grid.milliseconds.items.forEach(function(item, i) {
+  grid.milliseconds.items.forEach((item) => {
     vertical_line(item.tm, '#aaa')
   });
   if (now >= tmax) return;
@@ -433,6 +470,11 @@ function frame() {
     else shift = 20;
     c.fillText(item.date, item.x, margin.top - shift);
   });
+  // years
+  if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d))
+    grid.years.items.forEach((item, i) => {
+      c.fillText(item.date, item.x, margin.top - 20);
+    });
 }
 
 function yAxis() {
