@@ -29,6 +29,23 @@ var zf = 0.1; // the smaller the smoother the wheel zoom
 var pixels = plotWidth / (tmax - tmin); // pixels per millisecond
 var mspp = 1. / pixels; // milliseconds per pixels
 
+var holidays = {
+  '1.1': 'Neujahr',
+  '1.5': 'Maifeiertag',
+  '-2': 'Karfreitag',
+  '+0': 'Ostersonntag',
+  '+1': 'Ostermontag',
+  '+39': 'Himmelfahrt',
+  '+49': 'Pfingstsonntag',
+  '+50': 'Pfingstmontag',
+  '+60': 'Fronleichnahm',
+  '3.10': 'Tag der Einheit',
+  '24.12': 'Heilig Abend',
+  '25.12': '1. Weihnachtstag',
+  '26.12': '2. Weihnachtstag',
+  '31.12': 'Sylvester'
+};
+
 var f = {
   s: 1000,
   m: 60000,
@@ -37,18 +54,9 @@ var f = {
   mon: 2678400000
 }
 
-var grid = {
-  milliseconds: {},
-  seconds: {},
-  minutes: {},
-  hours: {},
-  days: {},
-  months: {},
-  years: {},
-  decades: {},
-  centuries: {},
-  millenia: {}
-}
+// grid holds all information about the timeaxis
+// 0 - milliseconds, 1 -
+var grid = [];
 
 c.font = style.font;
 var font_height = c.measureText('2').actualBoundingBoxAscent;
@@ -97,12 +105,17 @@ labels.year = [{
   year: 'numeric'
 }]
 
-labels.year_pixels = new Array(labels.year.length).fill(36);
+holiday_pixels = {};
+for (const [key, holiday] of Object.entries(holidays)) {
+  holiday_pixels[holiday] = c.measureText(holiday).width;
+};
+
+labels.year_pixels = new Array(labels.year.length).fill(c.measureText('2000').width);
 
 labels.day_pixels = new Array(labels.day.length).fill(0);
 for (var i = 0; i < 7; i++) {
   labels.day.forEach((format, j) => {
-    l = c.measureText(new Date((i + 355) * 86400000).toLocaleString(nls, format)).width;
+    l = c.measureText(new Date((i + 355) * f.d).toLocaleString(nls, format)).width;
     if (l > labels.day_pixels[j]) labels.day_pixels[j] = l;
   });
 }
@@ -110,7 +123,7 @@ for (var i = 0; i < 7; i++) {
 labels.month_pixels = new Array(labels.month.length).fill(0);
 for (var i = 0; i < 12; i++) {
   labels.month.forEach((format, j) => {
-    l = c.measureText(new Date((i * 30 + 5) * 86400000).toLocaleString(nls, format)).width;
+    l = c.measureText(new Date((i * 30 + 5) * f.d).toLocaleString(nls, format)).width;
     if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
   });
 }
@@ -130,27 +143,6 @@ function Easter(Y) {
   return D + '.' + M;
 }
 
-var holidays = {
-  '1.1': 'Neujahr',
-  '1.5': 'Maifeiertag',
-  '-2': 'Karfreitag',
-  '+0': 'Ostersonntag',
-  '+1': 'Ostermontag',
-  '+39': 'Himmelfahrt',
-  '+49': 'Pfingstsonntag',
-  '+50': 'Pfingstmontag',
-  '+60': 'Fronleichnahm',
-  '3.10': 'Tag der Einheit',
-  '24.12': 'Heilig Abend',
-  '25.12': '1. Weihnachtstag',
-  '26.12': '2. Weihnachtstag',
-  '31.12': 'Sylvester'
-};
-holiday_pixels = 0;
-for (const [key, holiday] of Object.entries(holidays)) {
-  var l = c.measureText(holiday).width;
-  if (l > holiday_pixels) holiday_pixels = l;
-};
 var easterYears = {}; // store dates for every year
 var hL = {}; // store all holidays here
 
@@ -194,6 +186,10 @@ function vertical_label(t, x, y) {
   if (t % f.m > 0) text = ':' + String(t.getSeconds()).padStart(2, '0');
   if (t % 1000 > 0) text += '.' + String(t.getMilliseconds()).padStart(3, '0');
   if (x >= margin.left) rotateText(text, x, y);
+}
+
+function horizontal_label(text, x, y) {
+  c.fillText(text, x, y);
 }
 
 function vertical_line(t, color) {
@@ -310,45 +306,57 @@ function prepare_grid() {
   // milliseconds
   var part = time_part(part1000, 1, dvtl);
   var partl = time_part(part1000, 1, dtl);
-  grid.milliseconds.items = [];
+  grid[0] = [];
   if (part)
     for (var t = Math.floor(tmin); t < Math.ceil(tmax); t++) {
-      if (t % part == 0) grid.milliseconds.items.push({
-        tm: new Date(t),
-        label: (t % partl == 0)
-      });
+      if (t % part == 0) {
+        var d = new Date(t);
+        grid[0].push({
+          tm: d,
+          label: ((t % partl == 0 && t % 1000 > 0) ? ':' + String(d.getSeconds()).padStart(2, '0') + '.' + String(d.getMilliseconds()).padStart(3, '0') : false),
+          x: X(t),
+          len: part * pixels,
+          fill: 'rgba(255,255,255,0)'
+        });
+      }
     }
 
   // seconds
   part = time_part(part60, f.s, dvtl);
   partl = time_part(part60, f.s, dtl);
-  grid.seconds.items = [];
+  grid[1] = [];
   if (part)
     for (var t = Math.floor(tmin / f.s) * f.s; t < tmax; t += f.s) {
       var d = new Date(t);
       s = d / 1000;
-      if (s % part == 0) grid.seconds.items.push({
+      if (s % part == 0) grid[1].push({
         tm: d,
-        label: (s % partl == 0)
+        label: (s % partl == 0),
+        x: X(t),
+        len: part * pixels * f.s,
+        fill: 'rgba(255,255,255,0)'
       });
     }
 
   // minutes
   part = time_part(part60, f.m, dvtl);
   partl = time_part(part60, f.m, dtl);
-  grid.minutes.items = [];
+  grid[2] = [];
   if (part)
     for (var t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m) {
       var d = new Date(t);
       var m = d.getMinutes();
-      if (m % part == 0) grid.minutes.items.push({
+      if (m % part == 0) grid[2].push({
         tm: d,
-        label: (m % partl == 0)
+        label: (m % partl == 0),
+        x: X(t),
+        len: part * pixels * f.m,
+        fill: 'rgba(255,255,255,0)'
       });
     }
 
   // hours
-  grid.hours.items = [];
+  grid[3] = [];
   part = time_part(part24, f.h, dvtl);
   partl = time_part(part24, f.h, dtl);
   var ds = f.h * part;
@@ -356,33 +364,45 @@ function prepare_grid() {
     for (var t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h) {
       var d = new Date(t);
       var h = d.getHours();
-      if (h % part == 0) grid.hours.items.push({
+      if (h % part == 0) grid[3].push({
         tm: d,
-        label: (h % partl == 0)
+        label: (h % partl == 0),
+        x: X(t),
+        len: part * pixels * f.h,
+        fill: ((part == 1) ? ((d.getHours() % 2) ? 'rgba(240,240,255,1)' : 'rgba(225,225,255,1)') : false)
       });
     }
 
   // days
-  grid.days.items = [];
+  grid[4] = [];
   space = pixels * f.d;
   if (space > dvtl)
     for (var t = new Date(new Date(tmax).toDateString()); t >= tmin - f.d; t = new Date(new Date(t - 12 * f.h).toDateString())) {
       if (t < tmin) x = margin.left;
       else x = X(t);
-      l = grid.days.items.length;
-      if (l) len = grid.days.items[l - 1].x - x;
+      l = grid[4].length;
+      if (l) len = grid[4][l - 1].x - x;
       else len = canvas.width - margin.right - x;
-      grid.days.items.push({
+      var h = isHoliday(t);
+      if (h) {
+        if (holiday_pixels[h] > len) h = label(t, 'day', len);
+        else h = (label(t, 'day', len - holiday_pixels[h] - 5) + ' ' + h).trim();
+      }
+      wd = t.getDay();
+      var fill = 'rgba(208,208,208,0.5)';
+      if (wd == 0 || wd == 6 || h) fill = 'rgba(255,176,176,0.5)';
+      else if (wd % 2) fill = 'rgba(224,224,224,0.5)';
+      grid[4].push({
         tm: t,
-        date: label(t, 'day', len),
-        holiday: isHoliday(t),
+        label: ((h) ? h : label(t, 'day', len)),
         x: x,
-        len: len
+        len: len,
+        fill: fill
       });
     }
 
   // months
-  grid.months.items = [];
+  grid[5] = [];
   space = pixels * f.d * 31;
   dm = dtm;
   if (space > dvtl) {
@@ -390,14 +410,15 @@ function prepare_grid() {
       t = new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'));
       if (t < tmin) x = margin.left;
       else x = X(t);
-      l = grid.months.items.length;
-      if (l) len = grid.months.items[l - 1].x - x;
+      l = grid[5].length;
+      if (l) len = grid[5][l - 1].x - x;
       else len = canvas.width - margin.right - x;
-      grid.months.items.push({
+      grid[5].push({
         tm: t,
-        date: label(t, 'month', len),
+        label: label(t, 'month', len),
         x: x,
-        len: len
+        len: len,
+        fill: ((t.getMonth() % 2) ? 'rgba(85,200,148,0.7)' : 'rgba(240,240,240,0.7)')
       });
       dm = new Date(t - 1);
       if (dm < tmin) break;
@@ -406,20 +427,21 @@ function prepare_grid() {
 
   // years
   dm = dtm;
-  grid.years.items = [];
+  grid[6] = [];
   space = pixels * f.d * 365;
   if (space > dvtl) {
     for (t = new Date(Date.parse(dm.getFullYear() + '-1-1 00:00')); t >= tmin - 366 * f.d; t = new Date(Date.parse(new Date(t - 70 * f.d).getFullYear() + '-1-1 00:00'))) {
       if (t < tmin) x = margin.left;
       else x = X(t);
-      l = grid.years.items.length;
-      if (l) len = grid.years.items[l - 1].x - x;
+      l = grid[6].length;
+      if (l) len = grid[6][l - 1].x - x;
       else len = canvas.width - margin.right - x;
-      grid.years.items.push({
+      grid[6].push({
         tm: t,
-        date: label(t, 'year', len),
+        label: label(t, 'year', len),
         x: x,
-        len: len
+        len: len,
+        fill: false
       });
     }
   }
@@ -452,39 +474,44 @@ function rotateText(text, x, y) {
 function background() {
   c.fillStyle = 'white';
   c.fillRect(margin.left, margin.top, plotWidth, plotHeight);
-  grid.months.items.forEach((item) => {
-    mo = item.tm.getMonth();
-    if (mo % 2) c.fillStyle = '#bbf';
-    else c.fillStyle = '#eee';
-    c.fillRect(item.x, margin.top, item.len, plotHeight);
-    vertical_line(item.tm, '#888');
+/*  Object.keys(grid).reverse().forEach(function(layer) {
+    grid[layer].forEach(function(item) {
+      c.fillStyle = item.fill;
+      c.fillRect(item.x, margin.top, item.len, plotHeight);
+      vertical_line(item.tm, 'grey');
+    });
   });
-  grid.days.items.forEach((item) => {
-    wd = item.tm.getDay();
-    if (wd == 0 || wd == 6 || item.holiday) c.fillStyle = '#fbbb';
-    else {
-      if (wd % 2) c.fillStyle = '#eeeb';
-      else c.fillStyle = '#dddb';
+  return; */
+  grid[5].forEach((item) => {
+    c.fillStyle = item.fill;
+    c.fillRect(item.x, margin.top, item.len, plotHeight);
+    vertical_line(item.tm, 'black');
+  });
+  grid[4].forEach((item) => {
+    c.fillStyle = item.fill;
+    c.fillRect(item.x, margin.top, item.len, plotHeight);
+    vertical_line(item.tm, 'grey');
+  });
+  grid[3].forEach((item) => {
+    if (item.fill) {
+      c.fillStyle = item.fill;
+      c.fillRect(item.x, margin.top, f.h * pixels, plotHeight);
     }
-    c.fillRect(item.x, margin.top, item.len, plotHeight);
-    vertical_line(item.tm, '#888');
+    vertical_line(item.tm, 'grey')
   });
-  grid.hours.items.forEach((item) => {
-    vertical_line(item.tm, '#aaa')
+  grid[2].forEach((item) => {
+    vertical_line(item.tm, 'grey')
   });
-  grid.minutes.items.forEach((item) => {
-    vertical_line(item.tm, '#aaa')
+  grid[1].forEach((item) => {
+    vertical_line(item.tm, 'grey')
   });
-  grid.seconds.items.forEach((item) => {
-    vertical_line(item.tm, '#aaa')
-  });
-  grid.milliseconds.items.forEach((item) => {
-    vertical_line(item.tm, '#aaa')
+  grid[0].forEach((item) => {
+    vertical_line(item.tm, 'grey')
   });
   if (now >= tmax) return;
   if (now < tmin) x = margin.left;
   else x = X(now);
-  c.fillStyle = '#aaaa';
+  c.fillStyle = 'rgba(160,160,160, 0.4)';
   c.fillRect(x, margin.top, plotWidth, plotHeight);
 }
 
@@ -507,44 +534,45 @@ function frame() {
   c.textAlign = 'right';
   c.textBaseline = 'middle';
   // milliseconds
-  grid.milliseconds.items.forEach((item, i) => {
+  grid[0].forEach((item, i) => {
     if (item.label)
       vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   // seconds
-  grid.seconds.items.forEach((item, i) => {
+  grid[1].forEach((item, i) => {
     if (item.label)
       vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   // minutes
-  grid.minutes.items.forEach((item, i) => {
+  grid[2].forEach((item, i) => {
     if (item.label)
       vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
   // hours
-  grid.hours.items.forEach((item, i) => {
+  grid[3].forEach((item, i) => {
     if (item.label)
       vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
   });
+  //
+  // this needs to be handled:
   c.textAlign = 'left';
   c.textBaseline = 'bottom';
   // days
-  grid.days.items.forEach((item, i) => {
-    if (item.holiday && holiday_pixels < item.len)
-      c.fillText(item.holiday, item.x, margin.top);
-    else
-      c.fillText(item.date, item.x, margin.top);
+  grid[4].forEach((item, i) => {
+    horizontal_label(item.label, item.x, margin.top);
   });
   // months
-  grid.months.items.forEach((item, i) => {
-    if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d)) shift = 0;
-    else shift = 20;
-    c.fillText(item.date, item.x, margin.top - shift);
+  //
+  // howto detect days gone ?
+  if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d)) shift = 0;
+  else shift = 20;
+  grid[5].forEach((item, i) => {
+    horizontal_label(item.label, item.x, margin.top - shift);
   });
   // years
   if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d))
-    grid.years.items.forEach((item, i) => {
-      c.fillText(item.date, item.x, margin.top - 20);
+    grid[6].forEach((item, i) => {
+      horizontal_label(item.label, item.x, margin.top - 20);
     });
 }
 
@@ -561,7 +589,7 @@ function redLine() {
   c.beginPath();
   c.moveTo(X(now), 0);
   c.lineTo(X(now), canvas.height);
-  c.strokeStyle = '#ff000088';
+  c.strokeStyle = 'rgba(255,0,0,0.5)';
   c.stroke();
 }
 
