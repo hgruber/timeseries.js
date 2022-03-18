@@ -8,14 +8,19 @@ var offset = {
   x: BB.left,
   y: BB.top
 }
+c.font = style.font;
+fm = c.measureText('22:00:00');
+var font_height = fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent + 4;
+var font_width = fm.width;
+var margin = {
+  top: 3 * font_height,
+  right: 1 * font_height,
+  bottom: font_width,
+  left: 70 // should be dependant on y scale
+}
+
 var startDragX = 0,
   startTmin, startTmax;
-var margin = {
-  top: 50,
-  right: 12,
-  bottom: 60,
-  left: 70
-}
 var nls = 'default';
 var plotWidth = canvas.width - margin.left - margin.right;
 var plotHeight = canvas.height - margin.top - margin.bottom;
@@ -58,10 +63,6 @@ var f = {
 // 0 - milliseconds, 1 -
 var grid = [];
 
-c.font = style.font;
-text_metrics = c.measureText('Fg');
-var font_height = text_metrics.actualBoundingBoxAscent;
-console.log(c.measureText('2'));
 var dvtl = 10; // the minimal pixel distance for vertical time lines
 var dtl = 3 * font_height; // the minimal pixel distance for time labels
 
@@ -76,6 +77,14 @@ var part10 = [1, 2, 5];
 // this can vary with font-size as well as with language settings
 //
 var labels = {}
+
+// month in top row, day in second row: 0
+// year in top row, month in second row: 1
+var label_level = 0;
+var grid_level_label = [
+  [5, 6, 7],
+  [4, 5, 6]
+];
 
 labels.day = [{
   weekday: 'long',
@@ -95,8 +104,7 @@ labels.month = [{
   month: 'long',
   year: '2-digit'
 }, {
-  month: 'short',
-  year: '2-digit'
+  month: 'long'
 }, {
   month: 'short'
 }, {
@@ -105,14 +113,15 @@ labels.month = [{
 
 labels.year = [{
   year: 'numeric'
+}, {
+  year: '2-digit'
 }]
 
+// calculate the width of labels
 holiday_pixels = {};
 for (const [key, holiday] of Object.entries(holidays)) {
   holiday_pixels[holiday] = c.measureText(holiday).width;
 };
-
-labels.year_pixels = new Array(labels.year.length).fill(c.measureText('2000').width);
 
 labels.day_pixels = new Array(labels.day.length).fill(0);
 for (var i = 0; i < 7; i++) {
@@ -129,6 +138,8 @@ for (var i = 0; i < 12; i++) {
     if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
   });
 }
+
+labels.year_pixels = [c.measureText('2000').width, c.measureText('20').width]
 
 function Easter(Y) {
   var C = Math.floor(Y / 100);
@@ -226,22 +237,30 @@ window.onresize = function() {
 }
 
 canvas.onmousedown = function(e) {
+  var item = mouse_position(e);
+  if (item.level == 4) {
+    tmin = +item.tm;
+    tmax = +(new Date(new Date(tmin + f.d + 2 * f.h).toDateString()));
+    plotAll();
+    return;
+  }
+  if (item.level == 5) {
+    tmin = +item.tm;
+    var dm = new Date(+tmin + f.mon + 2 * f.d);
+    tmax = +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00')));
+    plotAll();
+    return;
+  }
+  if (item.level == 6) {
+
+    tmin = +item.tm;
+    tmax = +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00')));
+    console.log(tmin, tmax);
+    plotAll();
+    return;
+  }
   x = e.clientX - offset.x;
   y = e.clientY - offset.y;
-  if (margin.left < x && x < plotWidth + margin.left && margin.top-20 < y && y < margin.top ) {
-    var item = get_grid(x,y);
-    if (item.level == 4) {
-      tmin = +item.tm;
-      tmax = +(new Date(new Date(tmin + f.d + 2 * f.h).toDateString()));
-      plotAll();
-    }
-    if (item.level == 5) {
-      tmin = +item.tm;
-      var dm = new Date(+tmin + f.mon + 2 * f.d);
-      tmax = +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00')));
-      plotAll();
-    }
-  }
   startDragX = e.clientX;
   startTmin = tmin;
   startTmax = tmax;
@@ -262,7 +281,7 @@ canvas.onmouseup = function(e) {
 }
 
 canvas.onmouseout = function(e) {
-  starDragX = 0;
+  startDragX = 0;
 }
 
 canvas.onwheel = function(e) {
@@ -290,16 +309,39 @@ function time_part(p, t, d) {
     if (pixels * t * p[pp] > d) return p[pp];
 }
 
-// return grid element of given canvas coordinates
-function get_grid(x,y) {
-  for (var i = 4; i < 7; i++)
-    for (var j = 0; j < grid[i].length; j++) {
-      item = grid[i][j];
-      if (item.x < x && x < item.x + item.len) {
-        item.level = i;
-        return item;
-      }
+function mouse_position(e) {
+  var x = e.clientX - offset.x;
+  var y = e.clientY - offset.y;
+  if (margin.left < x && x < plotWidth + margin.left) {
+    if (margin.top < y && y < plotHeight + margin.top) {
+      // plot area
+      return 'plotarea';
+    } else if (margin.top - 2 * font_height < y && y < margin.top - font_height) {
+      // first label row
+      item = get_grid(x, grid_level_label[0][label_level]);
+      item.y = margin.top - font_height;
+      return item;
     }
+    if (margin.top - font_height < y && y < margin.top) {
+      // second label row
+      item = get_grid(x, grid_level_label[1][label_level]);
+      item.y = margin.top;
+      return item;
+    }
+  }
+  // frame
+  return 'frame';
+}
+
+// return grid element of given canvas coordinates
+function get_grid(x, grid_level) {
+  for (var j = 0; j < grid[grid_level].length; j++) {
+    item = grid[grid_level][j];
+    if (item.x < x && x < item.x + item.len) {
+      item.level = grid_level;
+      return item;
+    }
+  }
 }
 
 function prepare_grid() {
@@ -446,9 +488,17 @@ function prepare_grid() {
         label: label(t, 'year', len),
         x: x,
         len: len,
-        fill: ((t.getFullYear()%2) ? 'rgba(255,255,255,0.4)' : 'rgba(240,240,240,0.4)')
+        fill: ((t.getFullYear() % 2) ? 'rgba(255,255,255,0.4)' : 'rgba(240,240,240,0.4)')
       });
     }
+  }
+
+  if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d)) {
+    // year in top row, month in second row
+    label_level = 1;
+  } else {
+    // month in top row, day in second row
+    label_level = 0;
   }
 }
 
@@ -493,13 +543,13 @@ function horizontal_label(item, position) {
   c.textAlign = 'center';
   c.textBaseline = 'bottom';
   c.fillStyle = item.fill;
-  c.fillRect(item.x, position - 20, item.len, 20);
+  c.fillRect(item.x, position - font_height, item.len, font_height);
   c.fillStyle = style.color;
-  c.fillText(item.label, item.x + item.len/2, position);
+  c.fillText(item.label, item.x + item.len / 2, position - 1);
   c.beginPath();
   c.moveTo(item.x, position);
-  c.lineTo(item.x, position - 20);
-  c.lineTo(item.x + item.len, position - 20);
+  c.lineTo(item.x, position - font_height);
+  c.lineTo(item.x + item.len, position - font_height);
   c.stroke();
 }
 
@@ -539,7 +589,7 @@ function frame() {
   c.lineTo(margin.left, canvas.height - margin.bottom);
   c.lineTo(margin.left, margin.top);
   c.moveTo(canvas.width - margin.right, margin.top);
-  c.lineTo(canvas.width - margin.right, margin.top - 40);
+  c.lineTo(canvas.width - margin.right, margin.top - 2 * font_height);
   c.strokeStyle = style.color;
   c.stroke();
   c.fillStyle = style.color;
@@ -550,23 +600,19 @@ function frame() {
     grid[level].forEach((item, i) => {
       if (item.label)
         vertical_label(item.tm, X(item.tm), canvas.height - margin.bottom + 4);
-      });
+    });
   // days
   grid[4].forEach((item, i) => {
     horizontal_label(item, margin.top);
   });
   // months
-  // howto detect days gone ?
-  // shift is fixed to 20 ... font_height ?
-  if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d)) shift = 0;
-  else shift = 20;
   grid[5].forEach((item, i) => {
-    horizontal_label(item, margin.top - shift);
+    horizontal_label(item, margin.top - (1 - label_level) * font_height);
   });
   // years
-  if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d))
+  if (label_level > 0)
     grid[6].forEach((item, i) => {
-      horizontal_label(item, margin.top - 20);
+      horizontal_label(item, margin.top - font_height);
     });
 }
 
