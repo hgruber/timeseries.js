@@ -218,30 +218,41 @@ function follow_view() {
   plotAll();
 }
 
-function zoom(target_tmin,target_tmax, time) {
+function zoom(target_tmin, target_tmax, time) {
   animation.startT = +Date.now() - 20;
   animation.endT = animation.startT + time;
-  animation.start = { tmin: tmin, tmax: tmax }
-  animation.end = { tmin: target_tmin, tmax: target_tmax }
+  animation.start = {
+    tmin: tmin,
+    tmax: tmax
+  }
+  animation.end = {
+    tmin: target_tmin,
+    tmax: target_tmax
+  }
   animate();
 }
 
 function animate() {
+  function easeInOutExpo(x) {
+    return x === 0 ? 0 :
+      x === 1 ? 1 : x < 0.5 ? Math.pow(2, 20 * x - 10) / 2 :
+      (2 - Math.pow(2, -20 * x + 10)) / 2;
+  }
   now = Date.now();
   done = false;
   if (now > animation.endT) {
     now = animation.endT;
     done = true;
   }
-  t = (now - animation.startT) / (animation.endT - animation.startT);
+  t = easeInOutExpo((now - animation.startT) / (animation.endT - animation.startT));
   for (const [key, value] of Object.entries(animation.start))
-    window[key] = animation.start[key] * (1-t) + animation.end[key] * t;
-  if (! done) setTimeout(animate, 20);
+    window[key] = animation.start[key] * (1 - t) + animation.end[key] * t;
+  if (!done) setTimeout(animate, 10);
   plotAll();
 }
 
 function plotAll() {
-  c.clearRect(0,0, canvas.width, canvas.height);
+  c.clearRect(0, 0, canvas.width, canvas.height);
   prepare_grid();
   background();
   plotData();
@@ -269,7 +280,7 @@ canvas.onmousedown = function(e) {
   }
   if (item.level == 5) {
     var dm = new Date(+item.tm + f.mon + 2 * f.d);
-    zoom(+item.tm,+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), 500);
+    zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), 500);
     return;
   }
   if (item.level == 6) {
