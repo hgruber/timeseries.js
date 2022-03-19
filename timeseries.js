@@ -188,6 +188,8 @@ function isHoliday(date) {
   return false;
 }
 
+var animation = {}
+
 /////////////////////
 // End of settings //
 /////////////////////
@@ -216,7 +218,30 @@ function follow_view() {
   plotAll();
 }
 
+function zoom(target_tmin,target_tmax, time) {
+  animation.startT = +Date.now() - 20;
+  animation.endT = animation.startT + time;
+  animation.start = { tmin: tmin, tmax: tmax }
+  animation.end = { tmin: target_tmin, tmax: target_tmax }
+  animate();
+}
+
+function animate() {
+  now = Date.now();
+  done = false;
+  if (now > animation.endT) {
+    now = animation.endT;
+    done = true;
+  }
+  t = (now - animation.startT) / (animation.endT - animation.startT);
+  for (const [key, value] of Object.entries(animation.start))
+    window[key] = animation.start[key] * (1-t) + animation.end[key] * t;
+  if (! done) setTimeout(animate, 20);
+  plotAll();
+}
+
 function plotAll() {
+  c.clearRect(0,0, canvas.width, canvas.height);
   prepare_grid();
   background();
   plotData();
@@ -239,24 +264,16 @@ window.onresize = function() {
 canvas.onmousedown = function(e) {
   var item = mouse_position(e);
   if (item.level == 4) {
-    tmin = +item.tm;
-    tmax = +(new Date(new Date(tmin + f.d + 2 * f.h).toDateString()));
-    plotAll();
+    zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), 500);
     return;
   }
   if (item.level == 5) {
-    tmin = +item.tm;
-    var dm = new Date(+tmin + f.mon + 2 * f.d);
-    tmax = +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00')));
-    plotAll();
+    var dm = new Date(+item.tm + f.mon + 2 * f.d);
+    zoom(+item.tm,+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), 500);
     return;
   }
   if (item.level == 6) {
-
-    tmin = +item.tm;
-    tmax = +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00')));
-    console.log(tmin, tmax);
-    plotAll();
+    zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), 500);
     return;
   }
   x = e.clientX - offset.x;
@@ -642,5 +659,4 @@ function fog_of_future() {
 }
 
 function plotData() {}
-
 follow_view();
