@@ -10,7 +10,7 @@ var offset = {
 }
 c.font = style.font;
 fm = c.measureText('22:00:00');
-var font_height = fm.fontBoundingBoxAscent + fm.fontBoundingBoxDescent + 4;
+var font_height = 1.4 * fm.actualBoundingBoxAscent + 4;
 var font_width = fm.width;
 var margin = {
   top: 3 * font_height,
