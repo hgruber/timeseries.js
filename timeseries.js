@@ -25,6 +25,7 @@ var nls = 'default';
 var plotWidth = canvas.width - margin.left - margin.right;
 var plotHeight = canvas.height - margin.top - margin.bottom;
 var now = Date.now();
+var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 var follow_timers = 0;
 var tmax = now;
 var tmin = tmax - 86400000;
@@ -675,9 +676,16 @@ function yAxis() {
 function redLine() {
   c.beginPath();
   c.moveTo(X(now), 0);
-  c.lineTo(X(now), canvas.height);
+  c.lineTo(X(now), canvas.height-margin.bottom);
   c.strokeStyle = 'rgba(255,0,0,0.5)';
   c.stroke();
+  c.textAlign = 'left';
+  c.textBaseline = 'middle';
+  c.font = '0.65em Arial';
+  c.fillStyle = 'rgba(255,0,0, 0.5)'
+  rotateText(timezone, X(now), canvas.height);
+  c.font = style.font;
+  c.fillStyle = 'black';
 }
 
 function fog_of_future() {
