@@ -156,6 +156,15 @@ function Easter(Y) {
   return D + '.' + M;
 }
 
+Date.prototype.getWeek = function() {
+ //https://stackoverflow.com/questions/6117814/get-week-of-year-in-javascript-like-in-php
+ var d = new Date(Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()));
+ var dayNum = d.getUTCDay() || 7;
+ d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+ var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+ return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+}
+
 var easterYears = {}; // store dates for every year
 var hL = {}; // store all holidays here
 
@@ -472,7 +481,8 @@ function prepare_grid() {
         label: ((h) ? h : label(t, 'day', len)),
         x: x,
         len: len,
-        fill: fill
+        fill: fill,
+        cw: ((wd == 1) ? t.getWeek() : '')
       });
     }
 
@@ -600,6 +610,15 @@ function background() {
         c.fillRect(item.x, margin.top, item.len, plotHeight);
       }
       vertical_line(item.tm, 'grey');
+      if (item.cw) {
+        c.textAlign = 'left';
+        x = X(item.tm);
+        if (x < margin.left) x = margin.left;
+        c.fillStyle = '#888';
+        c.textAlign = 'left';
+        c.textBaseline = 'bottom';
+        c.fillText(item.cw, x + 1, canvas.height - margin.bottom);
+      }
     });
   });
 }
