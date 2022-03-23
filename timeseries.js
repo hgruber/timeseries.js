@@ -68,7 +68,7 @@ var dvtl = 10; // the minimal pixel distance for vertical time lines
 var dtl = 3 * font_height; // the minimal pixel distance for time labels
 
 var part1000 = [1, 5, 10, 50, 100, 500];
-var part60 = [1, 5, 10, 15, 30];
+var part60 = [1, 5, 15, 30];
 var part24 = [1, 2, 4, 12];
 var part10 = [1, 2, 5];
 
@@ -86,6 +86,7 @@ var grid_level_label = [
   [5, 6, 7],
   [4, 5, 6]
 ];
+var zoom_onclick_time = 500;
 
 labels.day = [{
   weekday: 'long',
@@ -229,6 +230,8 @@ function follow_view() {
 }
 
 function zoom(target_tmin, target_tmax, time) {
+  if (tmin == target_tmin && tmax == target_tmax)
+    return;
   animation.startT = +Date.now() - 20;
   animation.endT = animation.startT + time;
   animation.start = {
@@ -269,7 +272,7 @@ function plotAll() {
   frame();
   yAxis();
   redLine();
-  console.log('plot finished: ' + follow_timers);
+  // console.log('plot finished: ' + follow_timers);
   // console.log(grid);
   if (follow_timers < 0) timer(follow_view, 1000);
 }
@@ -285,16 +288,16 @@ window.onresize = function() {
 canvas.onmousedown = function(e) {
   var item = mouse_position(e);
   if (item.level == 4) {
-    zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), 500);
+    zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), zoom_onclick_time);
     return;
   }
   if (item.level == 5) {
     var dm = new Date(+item.tm + f.mon + 2 * f.d);
-    zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), 500);
+    zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
     return;
   }
   if (item.level == 6) {
-    zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), 500);
+    zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), zoom_onclick_time);
     return;
   }
   x = e.clientX - offset.x;
