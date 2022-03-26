@@ -32,8 +32,10 @@ var tmin = tmax - 86400000;
 var ymin = 0;
 var ymax = 1;
 var zf = 0.1; // the smaller the smoother the wheel zoom
-var pixels = plotWidth / (tmax - tmin); // pixels per millisecond
-var mspp = 1. / pixels; // milliseconds per pixels
+var ppms = plotWidth / (tmax - tmin); // pixels per millisecond
+var mspp = 1. / ppms; // milliseconds per pixels
+var ppv = plotHeight / (ymax - ymin); // pixels per value
+var vpp = 1. / ppv; // values per pixel
 
 var holidays = {
   '1.1': 'Neujahr',
@@ -201,6 +203,103 @@ function isHoliday(date) {
 
 var animation = {}
 
+// needed for timeSeries
+// a and b are arrays of intervals: [ [min_1,max_1], [min_2,max_2], .., [min_n,max_n] ]
+// the difference function returns the difference a-b which again is an array of intervals
+//     if a is your viewport (the data you want to display) and b your cache map
+//     then you have to iterate through the result array and fetch data for every interval
+// the addition function returns the sum a+b which again is an array of intervals
+// the intersection function returns the intersection of a and b which is an array of intervals
+// the iLength function returns the sum (scalar) of a's interval length
+//
+// unit tests for substraction(a, b), intersection(a, b) and addition(a, b)
+/*
+console.log('Result: ' + addition( [[1,3],[8,10],[17,20]] , [[2,11], [14,15]] ) );
+console.log('Result: ' + substraction( [[1,3],[8,10],[17,20]] , [[2,11], [14,15]] ) );
+console.log('Result: ' + intersection(  [[1,3],[8,10],[17,20]] , [[2,11], [14,15]] ) );
+console.log('Result: ' + substraction( [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]], [[2,11], [14,15]] ));
+console.log('Result: ' + addition( [] , [[2,11], [14,15]] ) );
+console.log('Result: ' + substraction( [] , [[2,11], [14,15]] ) );
+console.log('Result: ' + iLength([[1,3],[8,10],[17,20]] ));
+console.log('Result: ' + iLength([[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]]));
+*/
+// "Result: 1,11,14,15,17,20"
+// "Result: 1,2,17,20"
+// "Result: 2,3,8,10"
+// "Result: -Infinity,2,11,14,15,Infinity"
+// "Result: 2,11,14,15"
+// "Result: "
+// "Result: 7"
+// "Result: Infinity"
+
+function substraction(a, b) {
+    function difference(m, s) {
+        if (s[1] <= m[0] || m[1] <= s[0]) return [m];
+        if (s[1] <  m[1]) {
+            if (s[0] <= m[0]) return [ [ s[1], m[1] ] ];
+            return [ [ m[0], s[0] ], [ s[1], m[1] ] ];
+        }
+        if (s[0] <= m[0]) return [];
+        return [ [ m[0], s[0] ] ];
+    }
+    function single(m, s) {
+        diff = [];
+        m.forEach(function(md) {
+            difference(md, s).forEach(function(ret) {
+                diff.push(ret);
+            });
+        });
+        return diff;
+    }
+    if (a === undefined || b === undefined) return [];
+    var diff = a;
+    b.forEach(function(m) {
+        diff = single(diff, m);
+    });
+    return diff;
+}
+
+function intersection(a, b) {
+    if (a === undefined || b === undefined) return [];
+    var b_inverse = substraction([[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]], b);
+    return substraction(a,b_inverse);
+}
+
+function addition(a, b) {
+    function sum(m, s) {
+        if (s[1] < m[0]) return [ s, m ];
+        if (m[1] < s[0]) return [ m, s ];
+        if (s[1] < m[1]) {
+            if (s[0] <= m[0]) return [ [ s[0], m[1] ] ];
+            return [ m ];
+        }
+        if (s[0] <= m[0]) return [ s ];
+        return [ [ m[0], s[1] ] ];
+    }
+    if (a === undefined || b === undefined) return [];
+    var dummy = a.concat(b).sort(function(a,b) {
+        return a[0] - b[0];
+    });
+    var result = dummy.slice();
+    for (i = 1; i < dummy.length; i++) {
+        var s = sum(dummy[i-1],dummy[i]);
+        if (s.length==1) {
+            result.splice(0,1);
+            result[0] = s[0];
+            dummy[i] = s[0];
+        }
+    }
+    return result;
+}
+
+function iLength(a) {
+    var length = 0;
+    a.forEach(function(o) {
+        length = length + Number(o[1]) - Number(o[0]);
+    });
+    return length;
+}
+
 /////////////////////
 // End of settings //
 /////////////////////
@@ -326,8 +425,8 @@ canvas.onmouseout = function(e) {
 }
 
 canvas.onwheel = function(e) {
-  if (pixels > 25 && e.deltaY < 0) return;
-  if (pixels < 6e-9 && e.deltaY > 0) return;
+  if (ppms > 25 && e.deltaY < 0) return;
+  if (ppms < 6e-9 && e.deltaY > 0) return;
   var r = tmax - tmin;
   var lr = (e.clientX - offset.x - margin.left) / plotWidth;
   var rr = 1 - lr;
@@ -347,7 +446,7 @@ canvas.onwheel = function(e) {
 // d is minimum pixel distance allowed between tics
 function time_part(p, t, d) {
   for (var pp in p)
-    if (pixels * t * p[pp] > d) return p[pp];
+    if (ppms * t * p[pp] > d) return p[pp];
 }
 
 function mouse_position(e) {
@@ -386,8 +485,8 @@ function get_grid(x, grid_level) {
 }
 
 function prepare_grid() {
-  pixels = plotWidth / (tmax - tmin); // pixels per millisecond
-  mspp = 1. / pixels; // milliseconds per pixels
+  ppms = plotWidth / (tmax - tmin);
+  mspp = 1. / ppms;
   dtm = new Date(tmax);
 
   // milliseconds
@@ -402,7 +501,7 @@ function prepare_grid() {
           tm: d,
           label: ((t % partl == 0 && t % 1000 > 0) ? ':' + String(d.getSeconds()).padStart(2, '0') + '.' + String(d.getMilliseconds()).padStart(3, '0') : false),
           x: X(t),
-          len: part * pixels,
+          len: part * ppms,
           fill: ((part == 1) ? ((t % 2) ? 'rgba(240,240,240,0.5)' : 'rgba(196,196,196,0.5)') : false)
         });
       }
@@ -420,7 +519,7 @@ function prepare_grid() {
         tm: d,
         label: (s % partl == 0),
         x: X(t),
-        len: part * pixels * f.s,
+        len: part * ppms * f.s,
         fill: ((part == 1) ? ((s % 2) ? 'rgba(255,255,240,0.5)' : 'rgba(255,255,196,0.5)') : false)
       });
     }
@@ -437,7 +536,7 @@ function prepare_grid() {
         tm: d,
         label: (m % partl == 0),
         x: X(t),
-        len: part * pixels * f.m,
+        len: part * ppms * f.m,
         fill: ((part == 1) ? ((m % 2) ? 'rgba(240,255,240,0.5)' : 'rgba(196,255,196,0.5)') : false)
       });
     }
@@ -455,14 +554,14 @@ function prepare_grid() {
         tm: d,
         label: (h % partl == 0),
         x: X(t),
-        len: part * pixels * f.h,
+        len: part * ppms * f.h,
         fill: ((part == 1) ? ((h % 2) ? 'rgba(240,240,255,0.5)' : 'rgba(196,196,255,0.5)') : false)
       });
     }
 
   // days
   grid[4] = [];
-  space = pixels * f.d;
+  space = ppms * f.d;
   if (space > dvtl)
     for (var t = new Date(new Date(tmax).toDateString()); t >= tmin - f.d; t = new Date(new Date(t - 12 * f.h).toDateString())) {
       if (t < tmin) x = margin.left;
@@ -492,7 +591,7 @@ function prepare_grid() {
 
   // months
   grid[5] = [];
-  space = pixels * f.d * 31;
+  space = ppms * f.d * 31;
   var dm = dtm;
   if (space > dvtl) {
     while (true) {
@@ -517,7 +616,7 @@ function prepare_grid() {
   // years
   dm = dtm;
   grid[6] = [];
-  space = pixels * f.d * 365;
+  space = ppms * f.d * 365;
   if (space > dvtl) {
     for (t = new Date(Date.parse(dm.getFullYear() + '-1-1 00:00')); t >= tmin - 366 * f.d; t = new Date(Date.parse(new Date(t - 70 * f.d).getFullYear() + '-1-1 00:00'))) {
       if (t < tmin) x = margin.left;
@@ -535,7 +634,7 @@ function prepare_grid() {
     }
   }
 
-  if (labels.day_pixels[labels.day_pixels.length - 1] > (pixels * f.d)) {
+  if (labels.day_pixels[labels.day_pixels.length - 1] > (ppms * f.d)) {
     // year in top row, month in second row
     label_level = 1;
   } else {
@@ -672,8 +771,8 @@ function yAxis() {
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
-  c.fillText(String(canvas.width), margin.left - 10, margin.top);
-  c.fillText(String(canvas.height), margin.left - 10, canvas.height - margin.bottom);
+  c.fillText(String(ymax), margin.left - 10, margin.top);
+  c.fillText(String(ymin), margin.left - 10, canvas.height - margin.bottom);
 }
 
 function redLine() {
@@ -699,5 +798,36 @@ function fog_of_future() {
   c.fillRect(x, margin.top, plotWidth, plotHeight);
 }
 
-function plotData() {}
+function multibar(plot) {
+  for (const [t, bars] of Object.entries(plot.data)) {
+    var height = 0;
+    for (const [i, bar] of Object.entries(bars)) {
+      var farbwert_r = (((i + 111) % 67) * 798) % 255;
+      var farbwert_g = (((i + 53) % 23) * 1131) % 255;
+      var farbwert_b = (((i + 79) % 19) * 979) % 255;;
+      c.fillStyle = 'rgb(' + farbwert_r + ',' + farbwert_g + ',' + farbwert_b + ', 0.8)';
+      c.fillRect(X(interval[0] + t * plot.interval * 1000),
+        Y(height),
+        ppms * plot.interval * 1000,
+        -ppv * bar);
+      height += bar;
+    }
+  }
+}
+
+function plotData() {
+  data.forEach((plot, i) => {
+    plot.interval_end = plot.interval_start + plot.interval * plot.count;
+    interval = [plot.interval_start * 1000, plot.interval_end * 1000];
+    if (intersection([[tmin,tmax]], [interval]).length) {
+      // y Axis needs proper handling
+      ymin = 0;
+      ymax = plot.max;
+      ppv = plotHeight / (ymax - ymin);
+      vpp = 1. / ppv;
+      if (plot.type == 'multibar') multibar(plot);
+    }
+  });
+}
+
 follow_view();
