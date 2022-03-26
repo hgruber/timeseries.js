@@ -1,3 +1,11 @@
+//////////////////////////////////////////////////////
+// timeseries.js                                    //
+// yet another visualization library for timeseries //
+// but this one is different, see the demo          //
+//////////////////////////////////////////////////////
+// settings                                         //
+//////////////////////////////////////////////////////
+
 var canvas = document.getElementById('timeseries');
 var c = canvas.getContext('2d');
 canvas.width = canvas.clientWidth;
@@ -74,6 +82,8 @@ var part60 = [1, 5, 15, 30];
 var part24 = [1, 2, 4, 12];
 var part10 = [1, 2, 5];
 
+var animation = {}
+
 //
 // create possible labels to create array with maximum length
 // stored in labels.day_pixels
@@ -120,6 +130,10 @@ labels.year = [{
 }, {
   year: '2-digit'
 }]
+
+////////////////////////////////////
+// helper functions and variables //
+////////////////////////////////////
 
 // calculate the width of labels
 holiday_pixels = {};
@@ -172,7 +186,6 @@ Date.prototype.getWeek = function() {
 var easterYears = {}; // store dates for every year
 var hL = {}; // store all holidays here
 
-// newdate.getDate() + 87
 function isHoliday(date) {
   var Y = date.getFullYear();
   var d = date.getDate() + '.' + (date.getMonth() + 1);
@@ -201,27 +214,26 @@ function isHoliday(date) {
   return false;
 }
 
-var animation = {}
-
 // needed for timeSeries
 // a and b are arrays of intervals: [ [min_1,max_1], [min_2,max_2], .., [min_n,max_n] ]
 // the difference function returns the difference a-b which again is an array of intervals
 //     if a is your viewport (the data you want to display) and b your cache map
 //     then you have to iterate through the result array and fetch data for every interval
-// the addition function returns the sum a+b which again is an array of intervals
-// the intersection function returns the intersection of a and b which is an array of intervals
+// the add method returns the sum a + b which again is an array of intervals
+// the intersect function returns the intersection of a and b which is an array of intervals
 // the iLength function returns the sum (scalar) of a's interval length
+// the invert function returns the inverse interval
 //
-// unit tests for substraction(a, b), intersection(a, b) and addition(a, b)
+// unit tests for a.substract(b), a.intersect(b) and a.add(b)
 /*
-console.log('Result: ' + addition( [[1,3],[8,10],[17,20]] , [[2,11], [14,15]] ) );
-console.log('Result: ' + substraction( [[1,3],[8,10],[17,20]] , [[2,11], [14,15]] ) );
-console.log('Result: ' + intersection(  [[1,3],[8,10],[17,20]] , [[2,11], [14,15]] ) );
-console.log('Result: ' + substraction( [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]], [[2,11], [14,15]] ));
-console.log('Result: ' + addition( [] , [[2,11], [14,15]] ) );
-console.log('Result: ' + substraction( [] , [[2,11], [14,15]] ) );
-console.log('Result: ' + iLength([[1,3],[8,10],[17,20]] ));
-console.log('Result: ' + iLength([[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]]));
+console.log('Result: ' + [[1,3],[8,10],[17,20]].add( [[2,11], [14,15]] ) );
+console.log('Result: ' + [[1,3],[8,10],[17,20]].substract( [[2,11], [14,15]] ) );
+console.log('Result: ' + [[1,3],[8,10],[17,20]].intersect( [[2,11], [14,15]] ) );
+console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].substract([[2,11], [14,15]] ));
+console.log('Result: ' + [].add( [[2,11], [14,15]] ) );
+console.log('Result: ' + [].substract( [[2,11], [14,15]] ) );
+console.log('Result: ' + [[1,3],[8,10],[17,20]].iLength());
+console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].iLength();
 */
 // "Result: 1,11,14,15,17,20"
 // "Result: 1,2,17,20"
@@ -232,7 +244,7 @@ console.log('Result: ' + iLength([[Number.NEGATIVE_INFINITY, Number.POSITIVE_INF
 // "Result: 7"
 // "Result: Infinity"
 
-function substraction(a, b) {
+Array.prototype.substract = function(b) {
     function difference(m, s) {
         if (s[1] <= m[0] || m[1] <= s[0]) return [m];
         if (s[1] <  m[1]) {
@@ -251,21 +263,24 @@ function substraction(a, b) {
         });
         return diff;
     }
-    if (a === undefined || b === undefined) return [];
-    var diff = a;
+    if (this === undefined || b === undefined) return [];
+    var diff = this;
     b.forEach(function(m) {
         diff = single(diff, m);
     });
     return diff;
 }
 
-function intersection(a, b) {
-    if (a === undefined || b === undefined) return [];
-    var b_inverse = substraction([[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]], b);
-    return substraction(a,b_inverse);
+Array.prototype.invert = function() {
+  return [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].substract(this);
 }
 
-function addition(a, b) {
+Array.prototype.intersect = function(b) {
+    if (this === undefined || b === undefined) return [];
+    return this.substract(b.invert());
+}
+
+Array.prototype.add = function(b) {
     function sum(m, s) {
         if (s[1] < m[0]) return [ s, m ];
         if (m[1] < s[0]) return [ m, s ];
@@ -276,8 +291,8 @@ function addition(a, b) {
         if (s[0] <= m[0]) return [ s ];
         return [ [ m[0], s[1] ] ];
     }
-    if (a === undefined || b === undefined) return [];
-    var dummy = a.concat(b).sort(function(a,b) {
+    if (this === undefined || b === undefined) return [];
+    var dummy = this.concat(b).sort(function(a,b) {
         return a[0] - b[0];
     });
     var result = dummy.slice();
@@ -292,17 +307,17 @@ function addition(a, b) {
     return result;
 }
 
-function iLength(a) {
+Array.prototype.iLength = function() {
     var length = 0;
-    a.forEach(function(o) {
+    this.forEach(function(o) {
         length = length + Number(o[1]) - Number(o[0]);
     });
     return length;
 }
 
-/////////////////////
-// End of settings //
-/////////////////////
+//////////////////////////
+// timeseries functions //
+//////////////////////////
 
 function timer(f, t) {
   follow_timers++;
@@ -819,7 +834,7 @@ function plotData() {
   data.forEach((plot, i) => {
     plot.interval_end = plot.interval_start + plot.interval * plot.count;
     interval = [plot.interval_start * 1000, plot.interval_end * 1000];
-    if (intersection([[tmin,tmax]], [interval]).length) {
+    if ([[tmin,tmax]].intersect([interval]).length) {
       // y Axis needs proper handling
       ymin = 0;
       ymax = plot.max;
