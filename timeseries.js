@@ -93,6 +93,8 @@ var labels = {}
 
 // month in top row, day in second row: 0
 // year in top row, month in second row: 1
+// decade in top row, year in second row: 2 (not used..)
+// century in top row, decade in second row: 3 (not used..)
 var label_level = 0;
 var grid_level_label = [
   [5, 6, 7],
@@ -175,12 +177,12 @@ function Easter(Y) {
 }
 
 Date.prototype.getWeek = function() {
- //https://stackoverflow.com/questions/6117814/get-week-of-year-in-javascript-like-in-php
- var d = new Date(Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()));
- var dayNum = d.getUTCDay() || 7;
- d.setUTCDate(d.getUTCDate() + 4 - dayNum);
- var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
- return Math.ceil((((d - yearStart) / 86400000) + 1)/7);
+  //https://stackoverflow.com/questions/6117814/get-week-of-year-in-javascript-like-in-php
+  var d = new Date(Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()));
+  var dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
 var easterYears = {}; // store dates for every year
@@ -245,74 +247,88 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
 // "Result: Infinity"
 
 Array.prototype.substract = function(b) {
-    function difference(m, s) {
-        if (s[1] <= m[0] || m[1] <= s[0]) return [m];
-        if (s[1] <  m[1]) {
-            if (s[0] <= m[0]) return [ [ s[1], m[1] ] ];
-            return [ [ m[0], s[0] ], [ s[1], m[1] ] ];
-        }
-        if (s[0] <= m[0]) return [];
-        return [ [ m[0], s[0] ] ];
+  function difference(m, s) {
+    if (s[1] <= m[0] || m[1] <= s[0]) return [m];
+    if (s[1] < m[1]) {
+      if (s[0] <= m[0]) return [
+        [s[1], m[1]]
+      ];
+      return [
+        [m[0], s[0]],
+        [s[1], m[1]]
+      ];
     }
-    function single(m, s) {
-        diff = [];
-        m.forEach(function(md) {
-            difference(md, s).forEach(function(ret) {
-                diff.push(ret);
-            });
-        });
-        return diff;
-    }
-    if (this === undefined || b === undefined) return [];
-    var diff = this;
-    b.forEach(function(m) {
-        diff = single(diff, m);
+    if (s[0] <= m[0]) return [];
+    return [
+      [m[0], s[0]]
+    ];
+  }
+
+  function single(m, s) {
+    diff = [];
+    m.forEach(function(md) {
+      difference(md, s).forEach(function(ret) {
+        diff.push(ret);
+      });
     });
     return diff;
+  }
+  if (this === undefined || b === undefined) return [];
+  var diff = this;
+  b.forEach(function(m) {
+    diff = single(diff, m);
+  });
+  return diff;
 }
 
 Array.prototype.invert = function() {
-  return [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].substract(this);
+  return [
+    [Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]
+  ].substract(this);
 }
 
 Array.prototype.intersect = function(b) {
-    if (this === undefined || b === undefined) return [];
-    return this.substract(b.invert());
+  if (this === undefined || b === undefined) return [];
+  return this.substract(b.invert());
 }
 
 Array.prototype.add = function(b) {
-    function sum(m, s) {
-        if (s[1] < m[0]) return [ s, m ];
-        if (m[1] < s[0]) return [ m, s ];
-        if (s[1] < m[1]) {
-            if (s[0] <= m[0]) return [ [ s[0], m[1] ] ];
-            return [ m ];
-        }
-        if (s[0] <= m[0]) return [ s ];
-        return [ [ m[0], s[1] ] ];
+  function sum(m, s) {
+    if (s[1] < m[0]) return [s, m];
+    if (m[1] < s[0]) return [m, s];
+    if (s[1] < m[1]) {
+      if (s[0] <= m[0]) return [
+        [s[0], m[1]]
+      ];
+      return [m];
     }
-    if (this === undefined || b === undefined) return [];
-    var dummy = this.concat(b).sort(function(a,b) {
-        return a[0] - b[0];
-    });
-    var result = dummy.slice();
-    for (i = 1; i < dummy.length; i++) {
-        var s = sum(dummy[i-1],dummy[i]);
-        if (s.length==1) {
-            result.splice(0,1);
-            result[0] = s[0];
-            dummy[i] = s[0];
-        }
+    if (s[0] <= m[0]) return [s];
+    return [
+      [m[0], s[1]]
+    ];
+  }
+  if (this === undefined || b === undefined) return [];
+  var dummy = this.concat(b).sort(function(a, b) {
+    return a[0] - b[0];
+  });
+  var result = dummy.slice();
+  for (i = 1; i < dummy.length; i++) {
+    var s = sum(dummy[i - 1], dummy[i]);
+    if (s.length == 1) {
+      result.splice(0, 1);
+      result[0] = s[0];
+      dummy[i] = s[0];
     }
-    return result;
+  }
+  return result;
 }
 
 Array.prototype.iLength = function() {
-    var length = 0;
-    this.forEach(function(o) {
-        length = length + Number(o[1]) - Number(o[0]);
-    });
-    return length;
+  var length = 0;
+  this.forEach(function(o) {
+    length = length + Number(o[1]) - Number(o[0]);
+  });
+  return length;
 }
 
 //////////////////////////
@@ -793,7 +809,7 @@ function yAxis() {
 function redLine() {
   c.beginPath();
   c.moveTo(X(now), 0);
-  c.lineTo(X(now), canvas.height-margin.bottom);
+  c.lineTo(X(now), canvas.height - margin.bottom);
   c.strokeStyle = 'rgba(255,0,0,0.5)';
   c.stroke();
   c.textAlign = 'left';
