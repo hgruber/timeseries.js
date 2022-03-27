@@ -417,21 +417,46 @@ window.onresize = function() {
 
 canvas.onmousedown = function(e) {
   var item = mouse_position(e);
+  x = e.clientX - offset.x;
+  y = e.clientY - offset.y;
+  var browse = 'no';
+  if (item.browse) {
+    if (x - margin.left < font_height) browse = 'left';
+    if (x > plotWidth + margin.left - font_height) browse = 'right';
+  }
   if (item.level == 4) {
-    zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), zoom_onclick_time);
+    if (browse == 'no')
+      zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), zoom_onclick_time);
+    else if (browse == 'left')
+      zoom(+(new Date(new Date(+item.tm - 2 * f.h).toDateString())), +item.tm, zoom_onclick_time);
+    else
+      zoom(+(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), +(new Date(new Date(+item.tm + 2 * f.d + 2 * f.h).toDateString())), zoom_onclick_time);
     return;
   }
   if (item.level == 5) {
-    var dm = new Date(+item.tm + f.mon + 2 * f.d);
-    zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
+    if (browse == 'no') {
+      var dm = new Date(+item.tm + f.mon + 2 * f.d);
+      zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
+    } else if (browse == 'left') {
+      var dm = new Date(+item.tm + - 2 * f.d);
+      zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +item.tm, zoom_onclick_time);
+    } else {
+      var dm = new Date(+item.tm + f.mon + 2 * f.d);
+      var dm2 = new Date(+dm + f.mon + 2 * f.d);
+      zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +(new Date(Date.parse(dm2.getFullYear() + '-' + (dm2.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
+    }
     return;
   }
   if (item.level == 6) {
-    zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), zoom_onclick_time);
+    if (browse == 'no') {
+      zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), zoom_onclick_time);
+    } else if (browse == 'left') {
+      zoom(+(new Date(Date.parse((item.tm.getFullYear() - 1) + '-1-1 00:00'))), +item.tm, zoom_onclick_time);
+    } else {
+      zoom(+(new Date(Date.parse((item.tm.getFullYear() +1 ) + '-1-1 00:00'))), +(new Date(Date.parse((item.tm.getFullYear() + 2) + '-1-1 00:00'))), zoom_onclick_time);
+    }
     return;
   }
-  x = e.clientX - offset.x;
-  y = e.clientY - offset.y;
   startDragX = e.clientX;
   startTmin = tmin;
   startTmax = tmax;
@@ -616,7 +641,8 @@ function prepare_grid() {
         x: x,
         len: len,
         fill: fill,
-        cw: ((wd == 1) ? t.getWeek() : '')
+        cw: ((wd == 1) ? t.getWeek() : ''),
+        browse: ( t <= tmin && len + x >= canvas.width - margin.right)
       });
     }
 
@@ -637,7 +663,8 @@ function prepare_grid() {
         label: label(t, 'month', len),
         x: x,
         len: len,
-        fill: ((t.getMonth() % 2) ? 'rgba(85,148,200,0.5)' : 'rgba(240,240,240,0.5)')
+        fill: ((t.getMonth() % 2) ? 'rgba(85,148,200,0.5)' : 'rgba(240,240,240,0.5)'),
+        browse: ( t <= tmin && len +x >= canvas.width - margin.right)
       });
       dm = new Date(t - 1);
       if (dm < tmin) break;
@@ -660,7 +687,8 @@ function prepare_grid() {
         label: label(t, 'year', len),
         x: x,
         len: len,
-        fill: ((t.getFullYear() % 2) ? 'rgba(255,255,255,0.4)' : 'rgba(240,240,240,0.4)')
+        fill: ((t.getFullYear() % 2) ? 'rgba(255,255,255,0.4)' : 'rgba(240,240,240,0.4)'),
+        browse: ( t <= tmin && len +x >= canvas.width - margin.right)
       });
     }
   }
@@ -718,6 +746,12 @@ function horizontal_label(item, position) {
   c.fillRect(item.x, position - font_height, item.len, font_height);
   c.fillStyle = style.color;
   c.fillText(item.label, item.x + item.len / 2, position - 1);
+  if (item.browse) {
+    c.textAlign = 'left';
+    c.fillText('«', margin.left + 4, position -1);
+    c.textAlign = 'right';
+    c.fillText('»', canvas.width - margin.right - 4, position - 1);
+  }
   c.beginPath();
   c.moveTo(item.x, position);
   c.lineTo(item.x, position - font_height);
