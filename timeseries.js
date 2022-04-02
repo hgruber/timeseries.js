@@ -73,6 +73,7 @@ var f = {
 // grid holds all information about the timeaxis
 // 0 - milliseconds, 1 -
 var grid = [];
+var ygrid = [];
 
 var dvtl = 10; // the minimal pixel distance for vertical time lines
 var dtl = 3 * font_height; // the minimal pixel distance for time labels
@@ -135,7 +136,7 @@ labels.year = [{
 
 onClickData = function(plot, n, item) {
   highlight(plot, n, item);
-  console.log(plot,n,item);
+  console.log(plot, n, item);
 }
 
 ////////////////////////////////////
@@ -440,9 +441,9 @@ function plotAll() {
   c.clearRect(0, 0, canvas.width, canvas.height);
   prepare_grid();
   background();
+  yAxis();
   plotData();
   frame();
-  yAxis();
   redLine();
   // console.log('plot finished: ' + follow_timers);
   // console.log(grid);
@@ -563,7 +564,12 @@ function get_element(x, y) {
       var h = 0;
       for (const [k, v] of Object.entries(data[i].data[n])) {
         if (py < h + v) {
-          return { 'plot': i, 'n': n, 'key': k, 'value': v }
+          return {
+            'plot': i,
+            'n': n,
+            'key': k,
+            'value': v
+          }
         }
         h += v;
       }
@@ -576,12 +582,25 @@ function prepare_grid() {
   mspp = 1. / ppms;
   dtm = new Date(tmax);
 
+  activePlot = []
+  ymax = 0;
+  data.forEach((plot, i) => {
+    plot.interval_end = plot.interval_start + plot.interval * plot.count;
+    if (plotpercentage(plot.interval_start * 1000, plot.interval_end * 1000) > 0) {
+      activePlot.push(i);
+      ymin = 0;
+      if (ymax < plot.max) ymax = plot.max;
+    }
+  });
+  ymax = Ymax(ymax);
+  calc_ygrid();
+
   // milliseconds
   var part = time_part(part1000, 1, dvtl);
   var partl = time_part(part1000, 1, dtl);
   grid[0] = [];
   if (part)
-    for (var t = Math.floor(tmin); t < Math.ceil(tmax); t++) {
+    for (var t = Math.floor(tmin); t <= Math.ceil(tmax); t++) {
       if (t % part == 0) {
         var d = new Date(t);
         grid[0].push({
@@ -599,7 +618,7 @@ function prepare_grid() {
   partl = time_part(part60, f.s, dtl);
   grid[1] = [];
   if (part)
-    for (var t = Math.floor(tmin / f.s) * f.s; t < tmax; t += f.s) {
+    for (var t = Math.floor(tmin / f.s) * f.s; t <= tmax; t += f.s) {
       var d = new Date(t);
       s = d / 1000;
       if (s % part == 0) grid[1].push({
@@ -616,7 +635,7 @@ function prepare_grid() {
   partl = time_part(part60, f.m, dtl);
   grid[2] = [];
   if (part)
-    for (var t = Math.floor(tmin / f.m) * f.m; t < tmax; t += f.m) {
+    for (var t = Math.floor(tmin / f.m) * f.m; t <= tmax; t += f.m) {
       var d = new Date(t);
       var m = d.getMinutes();
       if (m % part == 0) grid[2].push({
@@ -860,15 +879,25 @@ function frame() {
     grid[6].forEach((item, i) => {
       horizontal_label(item, margin.top - font_height);
     });
-}
-
-function yAxis() {
   c.fillStyle = style.color;
   c.font = style.font;
   c.textAlign = 'right';
   c.textBaseline = 'middle';
-  c.fillText(String(ymax), margin.left - 10, margin.top);
-  c.fillText(String(ymin), margin.left - 10, canvas.height - margin.bottom);
+  ygrid.forEach((item, i) => {
+    var y = Y(item);
+    c.fillText(String(item), margin.left - 4, y);
+  });
+}
+
+function yAxis() {
+  c.strokeStyle = '#aaa';
+  ygrid.forEach((item, i) => {
+    var y = Y(item);
+    c.beginPath();
+    c.moveTo(margin.left, y);
+    c.lineTo(margin.left + plotWidth, y);
+    c.stroke();
+  });
 }
 
 function redLine() {
@@ -941,27 +970,37 @@ function highlight(plot, n, item) {
   if (plot.type == 'multibar') highlight_multibar(plot, n, item);
 }
 
+function plotpercentage(min, max) {
+  if (min > tmax) min = tmax;
+  if (min < tmin) min = tmin;
+  if (max > tmax) max = tmax;
+  if (max < tmin) max = tmin;
+  return (max - min) / (tmax - tmin);
+}
+
+function Ymax(y) {
+  return y;
+  var m = Math.pow(10, Math.ceil(Math.log10(y)));
+  if (y/m > 0.75) return Math.ceil(y/m*10) * m/10;
+  return Math.ceil(y/m*100) * m / 100;
+}
+
+function calc_ygrid() {
+  ygrid = [];
+  if (ymax == 0) return;
+  ppv = plotHeight / (ymax - ymin);
+  vpp = 1. / ppv;
+  var s = vpp * font_height;
+  step = Math.pow(10, Math.ceil(Math.log10(s)));
+  if (s / step <= 0.2) step = 0.2 * step;
+  else if (s / step <= 0.5) step = 0.5 * step;
+  for (var i = step; i <= ymax; i += step) ygrid.push(i);
+}
+
 function plotData() {
-  activePlot = []
-  ymax = 0;
-  data.forEach((plot, i) => {
-    plot.interval_end = plot.interval_start + plot.interval * plot.count;
-    if ([
-        [tmin, tmax]
-      ].intersect([
-        [plot.interval_start * 1000, plot.interval_end * 1000]
-      ]).length) {
-      activePlot.push(i);
-      // y Axis needs proper handling
-      ymin = 0;
-      if (ymax < plot.max) {
-        ymax = plot.max;
-        ppv = plotHeight / (ymax - ymin);
-        vpp = 1. / ppv;
-      }
-      if (plot.type == 'multibar') multibar(plot);
-    }
-  });
+  for (const i of activePlot) {
+    if (data[i].type == 'multibar') multibar(data[i]);
+  }
 }
 
 follow_view();
