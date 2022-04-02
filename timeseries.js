@@ -133,6 +133,11 @@ labels.year = [{
   year: '2-digit'
 }]
 
+onClickData = function(plot, n, item) {
+  highlight(plot, n, item);
+  console.log(plot,n,item);
+}
+
 ////////////////////////////////////
 // helper functions and variables //
 ////////////////////////////////////
@@ -461,6 +466,9 @@ canvas.onmousedown = function(e) {
       if (e.clientX - offset.x > plotWidth + margin.left - font_height) dir = 'right';
     }
     navigate(item.level, dir);
+  }
+  if (item.key) {
+    onClickData(data[item.plot], item.n, item.key);
   }
   startDragX = e.clientX;
   startTmin = tmin;
@@ -886,6 +894,33 @@ function fog_of_future() {
   c.fillRect(x, margin.top, plotWidth, plotHeight);
 }
 
+function color(i, t) {
+  var r = (((i + 111) % 67) * 798) % 255;
+  var g = (((i + 53) % 23) * 1131) % 255;
+  var b = (((i + 79) % 19) * 979) % 255;;
+  return 'rgb(' + r + ',' + g + ',' + b + ', ' + t + ')';
+}
+
+function onClickDataCallback(f) {
+  onClickData = f;
+}
+
+function highlight_multibar(plot, n, item) {
+  var start = plot.interval_start * 1000;
+  var step = plot.interval * 1000;
+  var barWidth = ppms * step;
+  var height = 0;
+  var x = X(start + n * step);
+  for (const [i, bar] of Object.entries(plot.data[n])) {
+    if (i == item) {
+      c.fillStyle = color(i, 0.8);
+      c.fillRect(x, Y(height), barWidth, -ppv * bar);
+      return;
+    }
+    height += bar;
+  }
+}
+
 function multibar(plot) {
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
@@ -895,18 +930,20 @@ function multibar(plot) {
     var x = X(start + t * step);
     if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
       for (const [i, bar] of Object.entries(bars)) {
-        var farbwert_r = (((i + 111) % 67) * 798) % 255;
-        var farbwert_g = (((i + 53) % 23) * 1131) % 255;
-        var farbwert_b = (((i + 79) % 19) * 979) % 255;;
-        c.fillStyle = 'rgb(' + farbwert_r + ',' + farbwert_g + ',' + farbwert_b + ', 0.8)';
+        c.fillStyle = color(i, 0.8);
         c.fillRect(x, Y(height), barWidth, -ppv * bar);
         height += bar;
       }
   }
 }
 
+function highlight(plot, n, item) {
+  if (plot.type == 'multibar') highlight_multibar(plot, n, item);
+}
+
 function plotData() {
   activePlot = []
+  ymax = 0;
   data.forEach((plot, i) => {
     plot.interval_end = plot.interval_start + plot.interval * plot.count;
     if ([
@@ -917,9 +954,11 @@ function plotData() {
       activePlot.push(i);
       // y Axis needs proper handling
       ymin = 0;
-      ymax = plot.max;
-      ppv = plotHeight / (ymax - ymin);
-      vpp = 1. / ppv;
+      if (ymax < plot.max) {
+        ymax = plot.max;
+        ppv = plotHeight / (ymax - ymin);
+        vpp = 1. / ppv;
+      }
       if (plot.type == 'multibar') multibar(plot);
     }
   });
