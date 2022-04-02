@@ -382,8 +382,8 @@ function animate() {
       (2 - Math.pow(2, -20 * x + 10)) / 2;
   }
   now = Date.now();
-  done = false;
-  if (now > animation.endT) {
+  var done = false;
+  if (now >= animation.endT) {
     now = animation.endT;
     done = true;
   }
@@ -438,7 +438,7 @@ canvas.onmousedown = function(e) {
       var dm = new Date(+item.tm + f.mon + 2 * f.d);
       zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
     } else if (browse == 'left') {
-      var dm = new Date(+item.tm + - 2 * f.d);
+      var dm = new Date(+item.tm + -2 * f.d);
       zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +item.tm, zoom_onclick_time);
     } else {
       var dm = new Date(+item.tm + f.mon + 2 * f.d);
@@ -453,7 +453,7 @@ canvas.onmousedown = function(e) {
     } else if (browse == 'left') {
       zoom(+(new Date(Date.parse((item.tm.getFullYear() - 1) + '-1-1 00:00'))), +item.tm, zoom_onclick_time);
     } else {
-      zoom(+(new Date(Date.parse((item.tm.getFullYear() +1 ) + '-1-1 00:00'))), +(new Date(Date.parse((item.tm.getFullYear() + 2) + '-1-1 00:00'))), zoom_onclick_time);
+      zoom(+(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), +(new Date(Date.parse((item.tm.getFullYear() + 2) + '-1-1 00:00'))), zoom_onclick_time);
     }
     return;
   }
@@ -511,7 +511,7 @@ function mouse_position(e) {
   if (margin.left < x && x < plotWidth + margin.left) {
     if (margin.top < y && y < plotHeight + margin.top) {
       // plot area
-      return 'plotarea';
+      return get_element(x, y);
     } else if (margin.top - 2 * font_height < y && y < margin.top - font_height) {
       // first label row
       item = get_grid(x, grid_level_label[0][label_level]);
@@ -538,6 +538,24 @@ function get_grid(x, grid_level) {
       return item;
     }
   }
+}
+
+function get_element(x, y) {
+  var t = new Date(rT(x));
+  var py = rY(y);
+  // multibar identification
+  for (const i of activePlot)
+    if (data[i].interval_start * 1000 <= t && t <= data[i].interval_end * 1000) {
+      var n = Math.floor((+t - data[i].interval_start * 1000) / (data[i].interval_end - data[i].interval_start) * data[i].count / 1000)
+      var h = 0;
+      for (const [k, v] of Object.entries(data[i].data[n])) {
+        if (py < h + v) {
+          return { 'plot': i, 'n': n, 'key': k, 'value': v }
+        }
+        h += v;
+      }
+    }
+  return {}
 }
 
 function prepare_grid() {
@@ -603,7 +621,7 @@ function prepare_grid() {
   partl = time_part(part24, f.h, dtl);
   var ds = f.h * part;
   if (part)
-    for (var t = Math.floor(tmin / f.h) * f.h; t < tmax; t += f.h) {
+    for (var t = Math.floor(tmin / f.h) * f.h; t <= tmax; t += f.h) {
       var d = new Date(t);
       var h = d.getHours();
       if (h % part == 0) grid[3].push({
@@ -642,7 +660,7 @@ function prepare_grid() {
         len: len,
         fill: fill,
         cw: ((wd == 1) ? t.getWeek() : ''),
-        browse: ( t <= tmin && len + x >= canvas.width - margin.right)
+        browse: (t <= tmin && len + x >= canvas.width - margin.right)
       });
     }
 
@@ -664,7 +682,7 @@ function prepare_grid() {
         x: x,
         len: len,
         fill: ((t.getMonth() % 2) ? 'rgba(85,148,200,0.5)' : 'rgba(240,240,240,0.5)'),
-        browse: ( t <= tmin && len +x >= canvas.width - margin.right)
+        browse: (t <= tmin && len + x >= canvas.width - margin.right)
       });
       dm = new Date(t - 1);
       if (dm < tmin) break;
@@ -688,7 +706,7 @@ function prepare_grid() {
         x: x,
         len: len,
         fill: ((t.getFullYear() % 2) ? 'rgba(255,255,255,0.4)' : 'rgba(240,240,240,0.4)'),
-        browse: ( t <= tmin && len +x >= canvas.width - margin.right)
+        browse: (t <= tmin && len + x >= canvas.width - margin.right)
       });
     }
   }
@@ -748,7 +766,7 @@ function horizontal_label(item, position) {
   c.fillText(item.label, item.x + item.len / 2, position - 1);
   if (item.browse) {
     c.textAlign = 'left';
-    c.fillText('«', margin.left + 4, position -1);
+    c.fillText('«', margin.left + 4, position - 1);
     c.textAlign = 'right';
     c.fillText('»', canvas.width - margin.right - 4, position - 1);
   }
@@ -864,27 +882,34 @@ function fog_of_future() {
 }
 
 function multibar(plot) {
+  var start = plot.interval_start * 1000;
+  var step = plot.interval * 1000;
+  var barWidth = ppms * step;
   for (const [t, bars] of Object.entries(plot.data)) {
     var height = 0;
-    for (const [i, bar] of Object.entries(bars)) {
-      var farbwert_r = (((i + 111) % 67) * 798) % 255;
-      var farbwert_g = (((i + 53) % 23) * 1131) % 255;
-      var farbwert_b = (((i + 79) % 19) * 979) % 255;;
-      c.fillStyle = 'rgb(' + farbwert_r + ',' + farbwert_g + ',' + farbwert_b + ', 0.8)';
-      c.fillRect(X(interval[0] + t * plot.interval * 1000),
-        Y(height),
-        ppms * plot.interval * 1000,
-        -ppv * bar);
-      height += bar;
-    }
+    var x = X(start + t * step);
+    if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
+      for (const [i, bar] of Object.entries(bars)) {
+        var farbwert_r = (((i + 111) % 67) * 798) % 255;
+        var farbwert_g = (((i + 53) % 23) * 1131) % 255;
+        var farbwert_b = (((i + 79) % 19) * 979) % 255;;
+        c.fillStyle = 'rgb(' + farbwert_r + ',' + farbwert_g + ',' + farbwert_b + ', 0.8)';
+        c.fillRect(x, Y(height), barWidth, -ppv * bar);
+        height += bar;
+      }
   }
 }
 
 function plotData() {
+  activePlot = []
   data.forEach((plot, i) => {
     plot.interval_end = plot.interval_start + plot.interval * plot.count;
-    interval = [plot.interval_start * 1000, plot.interval_end * 1000];
-    if ([[tmin,tmax]].intersect([interval]).length) {
+    if ([
+        [tmin, tmax]
+      ].intersect([
+        [plot.interval_start * 1000, plot.interval_end * 1000]
+      ]).length) {
+      activePlot.push(i);
       // y Axis needs proper handling
       ymin = 0;
       ymax = plot.max;
