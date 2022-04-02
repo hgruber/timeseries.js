@@ -359,6 +359,43 @@ function follow_view() {
   plotAll();
 }
 
+// navigate view to specific day, month or year (center current or go to left or right)
+function navigate(level, direction) {
+  if (level == 4) {
+    if (direction == 'center')
+      zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), zoom_onclick_time);
+    else if (direction == 'left')
+      zoom(+(new Date(new Date(+item.tm - 2 * f.h).toDateString())), +item.tm, zoom_onclick_time);
+    else
+      zoom(+(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), +(new Date(new Date(+item.tm + 2 * f.d + 2 * f.h).toDateString())), zoom_onclick_time);
+    return;
+  }
+  if (level == 5) {
+    if (direction == 'center') {
+      var dm = new Date(+item.tm + f.mon + 2 * f.d);
+      zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
+    } else if (direction == 'left') {
+      var dm = new Date(+item.tm + -2 * f.d);
+      zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +item.tm, zoom_onclick_time);
+    } else {
+      var dm = new Date(+item.tm + f.mon + 2 * f.d);
+      var dm2 = new Date(+dm + f.mon + 2 * f.d);
+      zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +(new Date(Date.parse(dm2.getFullYear() + '-' + (dm2.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
+    }
+    return;
+  }
+  if (level == 6) {
+    if (direction == 'center') {
+      zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), zoom_onclick_time);
+    } else if (direction == 'left') {
+      zoom(+(new Date(Date.parse((item.tm.getFullYear() - 1) + '-1-1 00:00'))), +item.tm, zoom_onclick_time);
+    } else {
+      zoom(+(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), +(new Date(Date.parse((item.tm.getFullYear() + 2) + '-1-1 00:00'))), zoom_onclick_time);
+    }
+    return;
+  }
+}
+
 function zoom(target_tmin, target_tmax, time) {
   if (tmin == target_tmin && tmax == target_tmax)
     return;
@@ -417,45 +454,13 @@ window.onresize = function() {
 
 canvas.onmousedown = function(e) {
   var item = mouse_position(e);
-  x = e.clientX - offset.x;
-  y = e.clientY - offset.y;
-  var browse = 'no';
-  if (item.browse) {
-    if (x - margin.left < font_height) browse = 'left';
-    if (x > plotWidth + margin.left - font_height) browse = 'right';
-  }
-  if (item.level == 4) {
-    if (browse == 'no')
-      zoom(+item.tm, +(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), zoom_onclick_time);
-    else if (browse == 'left')
-      zoom(+(new Date(new Date(+item.tm - 2 * f.h).toDateString())), +item.tm, zoom_onclick_time);
-    else
-      zoom(+(new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString())), +(new Date(new Date(+item.tm + 2 * f.d + 2 * f.h).toDateString())), zoom_onclick_time);
-    return;
-  }
-  if (item.level == 5) {
-    if (browse == 'no') {
-      var dm = new Date(+item.tm + f.mon + 2 * f.d);
-      zoom(+item.tm, +(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
-    } else if (browse == 'left') {
-      var dm = new Date(+item.tm + -2 * f.d);
-      zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +item.tm, zoom_onclick_time);
-    } else {
-      var dm = new Date(+item.tm + f.mon + 2 * f.d);
-      var dm2 = new Date(+dm + f.mon + 2 * f.d);
-      zoom(+(new Date(Date.parse(dm.getFullYear() + '-' + (dm.getMonth() + 1) + '-1 00:00'))), +(new Date(Date.parse(dm2.getFullYear() + '-' + (dm2.getMonth() + 1) + '-1 00:00'))), zoom_onclick_time);
+  if (item.level) {
+    var dir = 'center';
+    if (item.browse) {
+      if (e.clientX - offset.x - margin.left < font_height) dir = 'left';
+      if (e.clientX - offset.x > plotWidth + margin.left - font_height) dir = 'right';
     }
-    return;
-  }
-  if (item.level == 6) {
-    if (browse == 'no') {
-      zoom(+item.tm, +(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), zoom_onclick_time);
-    } else if (browse == 'left') {
-      zoom(+(new Date(Date.parse((item.tm.getFullYear() - 1) + '-1-1 00:00'))), +item.tm, zoom_onclick_time);
-    } else {
-      zoom(+(new Date(Date.parse((item.tm.getFullYear() + 1) + '-1-1 00:00'))), +(new Date(Date.parse((item.tm.getFullYear() + 2) + '-1-1 00:00'))), zoom_onclick_time);
-    }
-    return;
+    navigate(item.level, dir);
   }
   startDragX = e.clientX;
   startTmin = tmin;
