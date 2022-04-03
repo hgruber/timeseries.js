@@ -418,12 +418,13 @@ function zoom(target_tmin, target_tmax, time) {
   animate();
 }
 
+function easeInOutExpo(x) {
+  return x === 0 ? 0 :
+    x === 1 ? 1 : x < 0.5 ? Math.pow(2, 20 * x - 10) / 2 :
+    (2 - Math.pow(2, -20 * x + 10)) / 2;
+}
+
 function animate() {
-  function easeInOutExpo(x) {
-    return x === 0 ? 0 :
-      x === 1 ? 1 : x < 0.5 ? Math.pow(2, 20 * x - 10) / 2 :
-      (2 - Math.pow(2, -20 * x + 10)) / 2;
-  }
   now = Date.now();
   var done = false;
   if (now >= animation.endT) {
@@ -582,16 +583,26 @@ function prepare_grid() {
   mspp = 1. / ppms;
   dtm = new Date(tmax);
 
-  activePlot = []
-  ymax = 0;
+  activePlot = [];
+  ymax_array = [];
   data.forEach((plot, i) => {
     plot.interval_end = plot.interval_start + plot.interval * plot.count;
-    if (plotpercentage(plot.interval_start * 1000, plot.interval_end * 1000) > 0) {
+    var pp = plotpercentage(plot.interval_start * 1000, plot.interval_end * 1000);
+    if (pp > 0) {
       activePlot.push(i);
+      ymax_array.push([i, plot.max, pp]);
       ymin = 0;
-      if (ymax < plot.max) ymax = plot.max;
     }
   });
+  ymax_array.sort(function(first, second) {
+    return second[1] - first[1];
+  });
+  if (ymax_array.length > 1) {
+    var s = easeInOutExpo(ymax_array[0][2] / ymax_array[1][2] * 4);
+    ymax = s * ymax_array[0][1] + (1-s) * ymax_array[1][1];
+  } else if (ymax_array.length == 1)
+    ymax = ymax_array[0][1];
+  else ymax = 0;
 
   ygrid = [];
   if (ymax != 0) {
