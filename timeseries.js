@@ -592,8 +592,22 @@ function prepare_grid() {
       if (ymax < plot.max) ymax = plot.max;
     }
   });
-  ymax = Ymax(ymax);
-  calc_ygrid();
+
+  ygrid = [];
+  if (ymax != 0) {
+    ppv = plotHeight / (ymax - ymin);
+    vpp = 1. / ppv;
+    var s = vpp * font_height;
+    step = Math.pow(10, Math.ceil(Math.log10(s)));
+    //if (s / step <= 0.2) step = 0.2 * step;
+    if (s / step <= 0.5) step = 0.5 * step;
+    for (var i = 0; i <= ymax; i += step) {
+      ygrid.push({
+        'label': (step > vpp * 2 * font_height || (i / step) % 2 == 0) ? i : '',
+        'y': i
+      });
+    }
+  }
 
   // milliseconds
   var part = time_part(part1000, 1, dvtl);
@@ -884,15 +898,15 @@ function frame() {
   c.textAlign = 'right';
   c.textBaseline = 'middle';
   ygrid.forEach((item, i) => {
-    var y = Y(item);
-    c.fillText(String(item), margin.left - 4, y);
+    var y = Y(item.y);
+    c.fillText(String(item.label), margin.left - 4, y);
   });
 }
 
 function yAxis() {
   c.strokeStyle = '#aaa';
   ygrid.forEach((item, i) => {
-    var y = Y(item);
+    var y = Y(item.y);
     c.beginPath();
     c.moveTo(margin.left, y);
     c.lineTo(margin.left + plotWidth, y);
@@ -976,25 +990,6 @@ function plotpercentage(min, max) {
   if (max > tmax) max = tmax;
   if (max < tmin) max = tmin;
   return (max - min) / (tmax - tmin);
-}
-
-function Ymax(y) {
-  return y;
-  var m = Math.pow(10, Math.ceil(Math.log10(y)));
-  if (y/m > 0.75) return Math.ceil(y/m*10) * m/10;
-  return Math.ceil(y/m*100) * m / 100;
-}
-
-function calc_ygrid() {
-  ygrid = [];
-  if (ymax == 0) return;
-  ppv = plotHeight / (ymax - ymin);
-  vpp = 1. / ppv;
-  var s = vpp * font_height;
-  step = Math.pow(10, Math.ceil(Math.log10(s)));
-  if (s / step <= 0.2) step = 0.2 * step;
-  else if (s / step <= 0.5) step = 0.5 * step;
-  for (var i = step; i <= ymax; i += step) ygrid.push(i);
 }
 
 function plotData() {
