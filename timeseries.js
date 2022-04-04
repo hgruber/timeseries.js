@@ -586,7 +586,8 @@ function prepare_grid() {
   activePlot = [];
   ymax_array = [];
   data.forEach((plot, i) => {
-    plot.interval_end = plot.interval_start + plot.interval * plot.count;
+    plot.intervals = Object.keys(plot.data).length;
+    plot.interval_end = plot.interval_start + plot.interval * plot.intervals;
     var pp = plotpercentage(plot.interval_start * 1000, plot.interval_end * 1000);
     if (pp > 0) {
       activePlot.push(i);
