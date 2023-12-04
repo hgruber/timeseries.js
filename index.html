@@ -26,7 +26,7 @@
 			height: 500px;
 		}
 	</style>
-	<script src="timeseries.js" defer></script>
+	<script src="timeseries.js"></script>
 	<script src="artificial.js"></script>
 </head>
 
@@ -35,6 +35,9 @@
 	<div id="graph">
 		<canvas id="timeseries"></canvas>
 	</div>
+    <script defer>
+        var ts = new TimeSeries({'data': data});
+    </script>
 </body>
 
 </html>
