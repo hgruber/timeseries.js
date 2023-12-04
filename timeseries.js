@@ -441,6 +441,14 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
         );
       return;
     }
+    if (level == 4.5) {
+        zoom(
+            +item.tm,
+            +new Date(new Date(+item.tm + f.d * 7 + 2 * f.h).toDateString()),
+            zoom_onclick_time,
+            );
+        return;
+    }
     if (level == 5) {
       if (direction == "center") {
         var dm = new Date(+item.tm + f.mon + 2 * f.d);
@@ -572,7 +580,6 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
 
   canvas.onmousedown = function (e) {
     var item = mouse_position(e);
-    console.log(item);
     if (item.level) {
       var dir = "center";
       if (item.browse) {
@@ -637,6 +644,13 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     var y = e.clientY - offset.y;
     if (margin.left < x && x < plotWidth + margin.left) {
       if (margin.top < y && y < plotHeight + margin.top) {
+        weekitems = grid[4].filter((item) => item.tm.getDay() == 1);
+        for (var wi of weekitems) {
+            if (x > wi.x && x < wi.x + c.measureText(wi.cw).width && y > plotHeight + margin.top - font_height && y < plotHeight + margin.top) {
+                item = wi;
+                return {'cw': item.cw, 'level': 4.5};
+            }
+        }
         // plot area
         return get_element(x, y);
       } else if (
@@ -698,7 +712,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           h += v;
         }
       }
-    return {};
+    return {'t': t, 'y': py};
   }
 
   function prepare_grid() {
