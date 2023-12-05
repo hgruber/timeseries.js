@@ -425,19 +425,16 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
         zoom(
           +item.tm,
           +new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString()),
-          zoom_onclick_time,
         );
       else if (direction == "left")
         zoom(
           +new Date(new Date(+item.tm - 2 * f.h).toDateString()),
-          +item.tm,
-          zoom_onclick_time,
+          +item.tm
         );
       else
         zoom(
           +new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString()),
           +new Date(new Date(+item.tm + 2 * f.d + 2 * f.h).toDateString()),
-          zoom_onclick_time,
         );
       return;
     }
@@ -445,7 +442,6 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
         zoom(
             +item.tm,
             +new Date(new Date(+item.tm + f.d * 7 + 2 * f.h).toDateString()),
-            zoom_onclick_time,
             );
         return;
     }
@@ -457,9 +453,8 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           +new Date(
             Date.parse(
               dm.getFullYear() + "-" + (dm.getMonth() + 1) + "-1 00:00",
-            ),
+            )
           ),
-          zoom_onclick_time,
         );
       } else if (direction == "left") {
         var dm = new Date(+item.tm + -2 * f.d);
@@ -469,8 +464,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
               dm.getFullYear() + "-" + (dm.getMonth() + 1) + "-1 00:00",
             ),
           ),
-          +item.tm,
-          zoom_onclick_time,
+          +item.tm
         );
       } else {
         var dm = new Date(+item.tm + f.mon + 2 * f.d);
@@ -485,8 +479,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
             Date.parse(
               dm2.getFullYear() + "-" + (dm2.getMonth() + 1) + "-1 00:00",
             ),
-          ),
-          zoom_onclick_time,
+          )
         );
       }
       return;
@@ -495,20 +488,17 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       if (direction == "center") {
         zoom(
           +item.tm,
-          +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00")),
-          zoom_onclick_time,
+          +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00"))
         );
       } else if (direction == "left") {
         zoom(
           +new Date(Date.parse(item.tm.getFullYear() - 1 + "-1-1 00:00")),
-          +item.tm,
-          zoom_onclick_time,
+          +item.tm
         );
       } else {
         zoom(
           +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00")),
-          +new Date(Date.parse(item.tm.getFullYear() + 2 + "-1-1 00:00")),
-          zoom_onclick_time,
+          +new Date(Date.parse(item.tm.getFullYear() + 2 + "-1-1 00:00"))
         );
       }
       return;
@@ -518,7 +508,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   function zoom(target_tmin, target_tmax, time) {
     if (tmin == target_tmin && tmax == target_tmax) return;
     animation.startT = +Date.now() - 20;
-    animation.endT = animation.startT + time;
+    animation.endT = animation.startT + zoom_onclick_time;
     animation.start = {
       tmin: tmin,
       tmax: tmax,
@@ -528,6 +518,23 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       tmax: target_tmax,
     };
     animate();
+  }
+
+  this.zoom = zoom;
+  this.today = function () { zoom(new Date(new Date(Date.now()).toDateString()), new Date(new Date(Date.now() + 120000000).toDateString())); }
+  this.yesterday = function () { zoom(new Date(new Date(Date.now() - 86400000).toDateString()), new Date(new Date(Date.now() - 86400000 + 120000000).toDateString())); }
+  this.tomorrow = function () { zoom(new Date(new Date(Date.now() + 86400000).toDateString()), new Date(new Date(Date.now() + 86400000 + 120000000).toDateString())); }
+  this.last24 = function () { zoom(+Date.now() - 86400000, +Date.now()); }
+  this.next24 = function () { zoom(+Date.now(), +Date.now() + 86400000); }
+  this.lastWeek = function () {
+    var t = Date.now();
+    var week = new Date(t).getDay() - 1;
+    zoom(new Date(new Date(t - 86400000 * (week + 7)).toDateString()), new Date(new Date(t - 86400000 * week).toDateString()));
+  }
+  this.thisWeek = function () {
+    var t = Date.now();
+    var week = new Date(t).getDay() - 1;
+    zoom(new Date(new Date(t - 86400000 * week).toDateString()), new Date(new Date(t + 86400000 * (7 - week)).toDateString()));
   }
 
   function easeInOutExpo(x) {
