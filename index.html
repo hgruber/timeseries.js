@@ -27,21 +27,37 @@
 		}
 	</style>
 	<script src="timeseries.js"></script>
+	<script src="jpZabbix.js"></script>
 	<script src="artificial.js"></script>
 </head>
 
 <body>
 	<h1>timeseries.js</h1>
-	<div id="graph">
+	<div id="graph" align="center">
 		<canvas id="timeseries"></canvas>
-        <button onclick="ts.lastWeek()">letzte Woche</button>
-        <button onclick="ts.thisWeek()">diese Woche</button>
-        <button onclick="ts.yesterday()">gestern</button>
+        <button onclick="ts.yesterday()" title="gestern">&lt;</button>
         <button onclick="ts.today()">heute</button>
-        <button onclick="ts.tomorrow()">morgen</button>
+        <button onclick="ts.tomorrow()" title="morgen">&gt;</button>
+    <br />
+        <button onclick="ts.lastWeek()" title="letzte Woche">&lt;&lt;</button>
+        <button onclick="ts.thisWeek()">diese Woche</button>
+        <button onclick="ts.nextWeek()" title="nächste Woche">&gt;&gt;</button>
 	</div>
     <script defer>
-        var ts = new TimeSeries({'data': data});
+        function success(e) {
+            console.log(e);
+        }
+        function failure(e) {
+            console.log(e);
+        }
+        var server = new jpZabbix({'url':'http://server/api_jsonrpc.php'});
+        server.setAuth('e8e814f533e3fe13172e848537525dc859c59d4db25ed804e57d65a66a148cd0');
+        server.api('history.get',{
+            'itemids': [ '23298' ],
+            'time_from': 1701674946,
+            'time_till': 1701761346,
+        }).then(success,failure);
+        var ts = new TimeSeries({'sources': [server], 'data': data});
     </script>
 </body>
 

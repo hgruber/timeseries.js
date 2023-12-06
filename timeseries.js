@@ -11,6 +11,8 @@ TimeSeries = function (options) {
     canvas: "timeseries",
     timezone: "Europe/Berlin",
     follow: true,
+    sources: [], // array of data sources
+    data: [], // array of data
     holidays: {
       1.1: "Neujahr",
       1.5: "Maifeiertag",
@@ -427,10 +429,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           +new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString()),
         );
       else if (direction == "left")
-        zoom(
-          +new Date(new Date(+item.tm - 2 * f.h).toDateString()),
-          +item.tm
-        );
+        zoom(+new Date(new Date(+item.tm - 2 * f.h).toDateString()), +item.tm);
       else
         zoom(
           +new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString()),
@@ -439,11 +438,11 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       return;
     }
     if (level == 4.5) {
-        zoom(
-            +item.tm,
-            +new Date(new Date(+item.tm + f.d * 7 + 2 * f.h).toDateString()),
-            );
-        return;
+      zoom(
+        +item.tm,
+        +new Date(new Date(+item.tm + f.d * 7 + 2 * f.h).toDateString()),
+      );
+      return;
     }
     if (level == 5) {
       if (direction == "center") {
@@ -453,7 +452,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           +new Date(
             Date.parse(
               dm.getFullYear() + "-" + (dm.getMonth() + 1) + "-1 00:00",
-            )
+            ),
           ),
         );
       } else if (direction == "left") {
@@ -464,7 +463,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
               dm.getFullYear() + "-" + (dm.getMonth() + 1) + "-1 00:00",
             ),
           ),
-          +item.tm
+          +item.tm,
         );
       } else {
         var dm = new Date(+item.tm + f.mon + 2 * f.d);
@@ -479,7 +478,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
             Date.parse(
               dm2.getFullYear() + "-" + (dm2.getMonth() + 1) + "-1 00:00",
             ),
-          )
+          ),
         );
       }
       return;
@@ -488,17 +487,17 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       if (direction == "center") {
         zoom(
           +item.tm,
-          +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00"))
+          +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00")),
         );
       } else if (direction == "left") {
         zoom(
           +new Date(Date.parse(item.tm.getFullYear() - 1 + "-1-1 00:00")),
-          +item.tm
+          +item.tm,
         );
       } else {
         zoom(
           +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00")),
-          +new Date(Date.parse(item.tm.getFullYear() + 2 + "-1-1 00:00"))
+          +new Date(Date.parse(item.tm.getFullYear() + 2 + "-1-1 00:00")),
         );
       }
       return;
@@ -520,22 +519,62 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     animate();
   }
 
+  // today midnight
+  function last_midnight() {
+    var today = new Date(Date.now());
+    return new Date(today.toDateString());
+  }
   this.zoom = zoom;
-  this.today = function () { zoom(new Date(new Date(Date.now()).toDateString()), new Date(new Date(Date.now() + 120000000).toDateString())); }
-  this.yesterday = function () { zoom(new Date(new Date(Date.now() - 86400000).toDateString()), new Date(new Date(Date.now() - 86400000 + 120000000).toDateString())); }
-  this.tomorrow = function () { zoom(new Date(new Date(Date.now() + 86400000).toDateString()), new Date(new Date(Date.now() + 86400000 + 120000000).toDateString())); }
-  this.last24 = function () { zoom(+Date.now() - 86400000, +Date.now()); }
-  this.next24 = function () { zoom(+Date.now(), +Date.now() + 86400000); }
+  this.today = function () {
+    var today = last_midnight();
+    var tomorrow = new Date(today);
+    tomorrow = new Date(tomorrow.setDate(tomorrow.getDate() + 1));
+    zoom(today, tomorrow);
+  };
+  this.yesterday = function () {
+    var today = last_midnight();
+    var yesterday = new Date(today);
+    yesterday = new Date(yesterday.setDate(yesterday.getDate() - 1));
+    zoom(yesterday, today);
+  };
+  this.tomorrow = function () {
+    var tomorrow = new Date(last_midnight());
+    tomorrow = new Date(tomorrow.setDate(tomorrow.getDate() + 1));
+    var dayafter = new Date(tomorrow);
+    dayafter = new Date(dayafter.setDate(dayafter.getDate() + 1));
+    zoom(tomorrow, dayafter);
+  };
+  this.last24 = function () {
+    zoom(+Date.now() - 86400000, +Date.now());
+  };
+  this.next24 = function () {
+    zoom(+Date.now(), +Date.now() + 86400000);
+  };
   this.lastWeek = function () {
-    var t = Date.now();
-    var week = new Date(t).getDay() - 1;
-    zoom(new Date(new Date(t - 86400000 * (week + 7)).toDateString()), new Date(new Date(t - 86400000 * week).toDateString()));
-  }
+    var lastweek = new Date(last_midnight());
+    lastweek = new Date(
+      lastweek.setDate(lastweek.getDate() - 6 - lastweek.getDay()),
+    );
+    var thisweek = new Date(lastweek);
+    thisweek = new Date(thisweek.setDate(thisweek.getDate() + 7));
+    zoom(lastweek, thisweek);
+  };
   this.thisWeek = function () {
-    var t = Date.now();
-    var week = new Date(t).getDay() - 1;
-    zoom(new Date(new Date(t - 86400000 * week).toDateString()), new Date(new Date(t + 86400000 * (7 - week)).toDateString()));
-  }
+    var thisweek = new Date(last_midnight());
+    thisweek = new Date(
+      thisweek.setDate(thisweek.getDate() + 1 - thisweek.getDay()),
+    );
+    var nextweek = new Date(thisweek);
+    nextweek = new Date(nextweek.setDate(nextweek.getDate() + 7));
+    zoom(thisweek, nextweek);
+  };
+  this.nextWeek = function () {
+    var nextweek = new Date(last_midnight());
+    nextweek = new Date(nextweek.setDate(nextweek.getDate() + 8 - nextweek.getDay()));
+    var weekafter = new Date(nextweek);
+    weekafter = new Date(weekafter.setDate(weekafter.getDate() + 7));
+    zoom(nextweek, weekafter);
+  };
 
   function easeInOutExpo(x) {
     return x === 0
@@ -653,10 +692,15 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       if (margin.top < y && y < plotHeight + margin.top) {
         weekitems = grid[4].filter((item) => item.tm.getDay() == 1);
         for (var wi of weekitems) {
-            if (x > wi.x && x < wi.x + c.measureText(wi.cw).width && y > plotHeight + margin.top - font_height && y < plotHeight + margin.top) {
-                item = wi;
-                return {'cw': item.cw, 'level': 4.5};
-            }
+          if (
+            x > wi.x &&
+            x < wi.x + c.measureText(wi.cw).width &&
+            y > plotHeight + margin.top - font_height &&
+            y < plotHeight + margin.top
+          ) {
+            item = wi;
+            return { cw: item.cw, level: 4.5 };
+          }
         }
         // plot area
         return get_element(x, y);
@@ -719,7 +763,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           h += v;
         }
       }
-    return {'t': t, 'y': py};
+    return { t: t, y: py };
   }
 
   function prepare_grid() {
