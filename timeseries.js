@@ -12,7 +12,6 @@ TimeSeries = function (options) {
     timezone: "Europe/Berlin",
     follow: true,
     sources: [], // array of data sources
-    data: [], // array of data
     holidays: {
       1.1: "Neujahr",
       1.5: "Maifeiertag",
@@ -35,7 +34,6 @@ TimeSeries = function (options) {
       settings[key] = value;
     }
   }
-  var data = settings.data;
   var canvas = document.getElementById(settings.canvas);
   var c = canvas.getContext("2d");
   var timezone = settings.timezone;
@@ -79,6 +77,7 @@ TimeSeries = function (options) {
   var mspp = 1 / ppms; // milliseconds per pixels
   var ppv = plotHeight / (ymax - ymin); // pixels per value
   var vpp = 1 / ppv; // values per pixel
+  var data = [];
 
   var f = {
     s: 1000,
@@ -391,6 +390,62 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     });
     return length;
   };
+  //////////////////////////
+  // data retrieval stuff //
+  //////////////////////////
+
+  settings.sources.forEach(source => {
+    console.log(source);
+  });
+
+  this.onData = function (d) {
+    console.log('onData');
+    console.log(d);
+    data.push(d);
+    plotAll();
+  };
+
+  this.onZabbixData = function (d) {
+    console.log('onZabbixData');
+    nd = {
+        name: d[0].itemid,
+        type: 'multibar',
+        interval: d[1].clock - d[0].clock,
+        interval_start: +d[0].clock,
+        count: 0,
+        min: 0,
+        max: d[0].value,
+    };
+    var result = [];
+    var resultObj = {};
+    var itemids = [];
+    var clock = [];
+    d.forEach(item => {
+        nd.min = Math.min(nd.min, item.value);
+        nd.max = Math.max(nd.max, item.value);
+        if (!itemids.includes(item.itemid)) itemids.push(item.itemid);
+        if (!clock.includes(item.clock)) {
+             clock.push(item.clock);
+             result.push({[item.itemid]: parseFloat(item.value)});
+             //resultObj[clock.indexOf(item.clock)] = {[item.itemid]: item.value};
+        } else {
+            result[clock.indexOf(item.clock)][item.itemid] = parseFloat(item.value);
+            //resultObj[clock.indexOf(item.clock)][item.itemid] = item.value;
+        }
+    });
+    nd.max = 1400;
+    nd.interval_end = Math.max(...clock);
+    nd.intervals = clock.length;
+    nd.count = clock.length;
+    nd.data = result;
+    data.push(nd);
+    console.log(nd);
+    plotAll();
+  }
+
+  this.onFailure = function (d) {
+    console.log(d);
+  }
 
   //////////////////////////
   // timeseries functions //
@@ -735,6 +790,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     }
   }
 
+  // return data element of given canvas coordinates
   function get_element(x, y) {
     var t = new Date(rT(x));
     var py = rY(y);
@@ -766,14 +822,16 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     return { t: t, y: py };
   }
 
+  // create grid array containing all time labels
   function prepare_grid() {
     ppms = plotWidth / (tmax - tmin);
     mspp = 1 / ppms;
     dtm = new Date(tmax);
 
+    // find data that can be displayed and assign it to activePlot
     activePlot = [];
     ymax_array = [];
-    data.forEach((plot, i) => {
+    if (data.length) data.forEach((plot, i) => {
       plot.intervals = Object.keys(plot.data).length;
       plot.interval_end = plot.interval_start + plot.interval * plot.intervals;
       var pp = plotpercentage(
