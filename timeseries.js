@@ -409,7 +409,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     console.log('onZabbixData');
     nd = {
         name: d[0].itemid,
-        type: 'multibar',
+        type: 'multiline',
         interval: d[1].clock - d[0].clock,
         interval_start: +d[0].clock,
         count: 0,
@@ -1304,6 +1304,42 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     }
   }
 
+  function multipoint(plot) {
+    var start = plot.interval_start * 1000;
+    var step = plot.interval * 1000;
+    for (const [t, value] of Object.entries(plot.data)) {
+      var x = X(start + t * step);
+      if (x >= margin.left && x <= margin.left + plotWidth) {
+        for (const [i, v] of Object.entries(value)) {
+          c.fillStyle = color(i, 0.8);
+          c.fillRect(x-2, Y(v)-2, 4, 4);
+          c.fill();
+        }
+      }
+    }
+  }
+
+  function multiline(plot) {
+    var start = plot.interval_start * 1000;
+    var step = plot.interval * 1000;
+    for (const v of Object.entries(plot.data[0])) {
+        var i = v[0];
+        var x = X(start);
+        var y = Y(plot.data[0][i]);
+        c.beginPath();
+        c.moveTo(x, y);
+        for (const [t, value] of Object.entries(plot.data)) {
+          x = X(start + t * step);
+          y = Y(value[i]);
+          if (x >= margin.left && x <= margin.left + plotWidth) {
+            c.lineTo(x, y);
+          }
+        }
+        c.strokeStyle = color(i, 0.8);
+        c.stroke();
+    }
+  }
+
   function highlight(plot, n, item) {
     if (plot.type == "multibar") highlight_multibar(plot, n, item);
   }
@@ -1318,6 +1354,8 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
 
   function plotData() {
     for (const i of activePlot) {
+      if (data[i].type == "multipoint") multiipoint(data[i]);
+      if (data[i].type == "multiline") multiline(data[i]);
       if (data[i].type == "multibar") multibar(data[i]);
     }
   }

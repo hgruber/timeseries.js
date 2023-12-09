@@ -46,7 +46,8 @@
     <script defer>
         function auth(e) {
             server.api('history.get',{
-                'itemids': [ 32226, 32228, 32230,],
+                //'itemids': [ 32226, 32228, 32230,],
+                'itemids': [ 31336, 31328, 31334, 31324, 31332, 31326,],
                 'time_from': Math.floor(+Date.now()/1000-3600),
                 'time_till': Math.floor(+Date.now()/1000),
             }).then(ts.onZabbixData, ts.onFailure);
