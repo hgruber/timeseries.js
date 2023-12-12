@@ -17,6 +17,7 @@ for (j = 0; j < 1440; j++) {
 var artificial = {
   "name": "example stacked bars",
   "type": "multibar",
+  "source-type": "artificial",
   "max": 1400,
   "min": 0,
   "sum": 1624392,

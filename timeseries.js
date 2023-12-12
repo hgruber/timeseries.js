@@ -390,62 +390,84 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     });
     return length;
   };
+
   //////////////////////////
   // data retrieval stuff //
   //////////////////////////
 
-  settings.sources.forEach(source => {
-    console.log(source);
+  settings.sources.forEach(function callback(source, i) {
+    if (source['source-type'] == 'zabbix') { zabbix_auth(i); }
+    if (source['source-type'] == 'artificial') { data.push(source); }
   });
 
-  this.onData = function (d) {
-    console.log('onData');
-    console.log(d);
-    data.push(d);
-    plotAll();
-  };
+  function sumValues(obj) { return Object.keys(obj).reduce((sum,key)=>sum+parseFloat(obj[key]||0),0); }
 
-  this.onZabbixData = function (d) {
+  function onZabbixData(source, opt, d) {
     console.log('onZabbixData');
-    nd = {
+    tmp = {
         name: d[0].itemid,
-        type: 'multiline',
-        interval: d[1].clock - d[0].clock,
-        interval_start: +d[0].clock,
-        count: 0,
+        type: source['plot-type'],
+        itemids: opt['itemids'],
+        interval_start: opt.time_from,
+        interval_end: opt.time_till,
+        interval: (opt.time_till - opt.time_from) / d.length * opt['itemids'].length,
+        count: Math.round(d.length / opt['itemids'].length),
         min: 0,
         max: d[0].value,
     };
     var result = [];
-    var resultObj = {};
-    var itemids = [];
-    var clock = [];
     d.forEach(item => {
-        nd.min = Math.min(nd.min, item.value);
-        nd.max = Math.max(nd.max, item.value);
-        if (!itemids.includes(item.itemid)) itemids.push(item.itemid);
-        if (!clock.includes(item.clock)) {
-             clock.push(item.clock);
-             result.push({[item.itemid]: parseFloat(item.value)});
-             //resultObj[clock.indexOf(item.clock)] = {[item.itemid]: item.value};
+        i = Math.floor((item.clock - tmp.interval_start) / tmp.interval);
+        tmp.min = Math.min(tmp.min, item.value);
+        tmp.max = Math.max(tmp.max, item.value);
+        if (result[i] == undefined) {
+            result[i] = {[item.itemid]: parseFloat(item.value)}
         } else {
-            result[clock.indexOf(item.clock)][item.itemid] = parseFloat(item.value);
-            //resultObj[clock.indexOf(item.clock)][item.itemid] = item.value;
+            result[i][item.itemid] = parseFloat(item.value);
         }
     });
-    nd.max = 1400;
-    nd.interval_end = Math.max(...clock);
-    nd.intervals = clock.length;
-    nd.count = clock.length;
-    nd.data = result;
-    data.push(nd);
-    console.log(nd);
+    if (source['plot-type'] == 'multibar')
+      for (i in result) {
+        sv = sumValues(result[i]);
+        if (tmp.max < sv) tmp.max = sv;
+      }
+    tmp.data = result;
+    data.push(tmp);
+    console.log(tmp);
     plotAll();
   }
 
-  this.onFailure = function (d) {
-    console.log(d);
+  function zabbix_auth_success(e) {
+    console.log('zabbix_auth_success');
+    settings.sources.forEach(function callback(source, i) {
+      if (source['source-type'] == 'zabbix') {
+        options = { 'itemids': source['itemids'], 'time_from': Math.floor(tmin/1000), 'time_till': Math.ceil(tmax/1000) };
+        console.log(options);
+        source.server.api('history.get', options).then(
+          data => onZabbixData(source, options, data),
+          data => zabbix_failure(source, options, data)
+        );
+      }
+    });
+    console.log(settings.sources);
   }
+
+  function zabbix_failure(e) {
+    console.log('zabbix_failure');
+    console.log(e);
+  }
+
+  function zabbix_auth(i) {
+    var source = settings.sources[i];
+    if (source['auth-token'] != undefined) {
+      server = new jpZabbix({ 'url': source['url'], 'auth': source['auth-token'] });
+    } else {
+      server = new jpZabbix({ 'url': source['url'], 'username': source['username'], 'password': source['password']  });
+    }
+    server.setAuth(source['auth-token']).then(zabbix_auth_success, zabbix_failure);
+    settings.sources[i]['server'] = server;
+  }
+
 
   //////////////////////////
   // timeseries functions //
@@ -1322,6 +1344,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   function multiline(plot) {
     var start = plot.interval_start * 1000;
     var step = plot.interval * 1000;
+    c.lineWidth = 1.5;
     for (const v of Object.entries(plot.data[0])) {
         var i = v[0];
         var x = X(start);
@@ -1330,14 +1353,14 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
         c.moveTo(x, y);
         for (const [t, value] of Object.entries(plot.data)) {
           x = X(start + t * step);
-          y = Y(value[i]);
-          if (x >= margin.left && x <= margin.left + plotWidth) {
-            c.lineTo(x, y);
+          if (x >= margin.left && x <= margin.left + plotWidth && value[i] != undefined) {
+            c.lineTo(x, Y(value[i]));
           }
         }
         c.strokeStyle = color(i, 0.8);
         c.stroke();
     }
+    c.lineWidth = 1;
   }
 
   function highlight(plot, n, item) {
