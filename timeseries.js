@@ -396,37 +396,47 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   //////////////////////////
 
   settings.sources.forEach(function callback(source, i) {
-    if (source['source-type'] == 'zabbix') { zabbix_auth(i); }
-    if (source['source-type'] == 'artificial') { data.push(source); }
+    if (source["source-type"] == "zabbix") {
+      zabbix_auth(i);
+    }
+    if (source["source-type"] == "artificial") {
+      data.push(source);
+    }
   });
 
-  function sumValues(obj) { return Object.keys(obj).reduce((sum,key)=>sum+parseFloat(obj[key]||0),0); }
+  function sumValues(obj) {
+    return Object.keys(obj).reduce(
+      (sum, key) => sum + parseFloat(obj[key] || 0),
+      0,
+    );
+  }
 
   function onZabbixData(source, opt, d) {
-    console.log('onZabbixData');
+    console.log("onZabbixData");
     tmp = {
-        name: d[0].itemid,
-        type: source['plot-type'],
-        itemids: opt['itemids'],
-        interval_start: opt.time_from,
-        interval_end: opt.time_till,
-        interval: (opt.time_till - opt.time_from) / d.length * opt['itemids'].length,
-        count: Math.round(d.length / opt['itemids'].length),
-        min: 0,
-        max: d[0].value,
+      name: d[0].itemid,
+      type: source["plot-type"],
+      itemids: opt["itemids"],
+      interval_start: opt.time_from,
+      interval_end: opt.time_till,
+      interval:
+        ((opt.time_till - opt.time_from) / d.length) * opt["itemids"].length,
+      count: Math.round(d.length / opt["itemids"].length),
+      min: 0,
+      max: d[0].value,
     };
     var result = [];
-    d.forEach(item => {
-        i = Math.floor((item.clock - tmp.interval_start) / tmp.interval);
-        tmp.min = Math.min(tmp.min, item.value);
-        tmp.max = Math.max(tmp.max, item.value);
-        if (result[i] == undefined) {
-            result[i] = {[item.itemid]: parseFloat(item.value)}
-        } else {
-            result[i][item.itemid] = parseFloat(item.value);
-        }
+    d.forEach((item) => {
+      i = Math.floor((item.clock - tmp.interval_start) / tmp.interval);
+      tmp.min = Math.min(tmp.min, item.value);
+      tmp.max = Math.max(tmp.max, item.value);
+      if (result[i] == undefined) {
+        result[i] = { [item.itemid]: parseFloat(item.value) };
+      } else {
+        result[i][item.itemid] = parseFloat(item.value);
+      }
     });
-    if (source['plot-type'] == 'multibar')
+    if (source["plot-type"] == "multibar")
       for (i in result) {
         sv = sumValues(result[i]);
         if (tmp.max < sv) tmp.max = sv;
@@ -438,14 +448,18 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   }
 
   function zabbix_auth_success(e) {
-    console.log('zabbix_auth_success');
+    console.log("zabbix_auth_success");
     settings.sources.forEach(function callback(source, i) {
-      if (source['source-type'] == 'zabbix') {
-        options = { 'itemids': source['itemids'], 'time_from': Math.floor(tmin/1000), 'time_till': Math.ceil(tmax/1000) };
+      if (source["source-type"] == "zabbix") {
+        options = {
+          itemids: source["itemids"],
+          time_from: Math.floor(tmin / 1000),
+          time_till: Math.ceil(tmax / 1000),
+        };
         console.log(options);
-        source.server.api('history.get', options).then(
-          data => onZabbixData(source, options, data),
-          data => zabbix_failure(source, options, data)
+        source.server.api("history.get", options).then(
+          (data) => onZabbixData(source, options, data),
+          (data) => zabbix_failure(source, options, data),
         );
       }
     });
@@ -453,21 +467,26 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   }
 
   function zabbix_failure(e) {
-    console.log('zabbix_failure');
+    console.log("zabbix_failure");
     console.log(e);
   }
 
   function zabbix_auth(i) {
     var source = settings.sources[i];
-    if (source['auth-token'] != undefined) {
-      server = new jpZabbix({ 'url': source['url'], 'auth': source['auth-token'] });
+    if (source["auth-token"] != undefined) {
+      server = new jpZabbix({ url: source["url"], auth: source["auth-token"] });
     } else {
-      server = new jpZabbix({ 'url': source['url'], 'username': source['username'], 'password': source['password']  });
+      server = new jpZabbix({
+        url: source["url"],
+        username: source["username"],
+        password: source["password"],
+      });
     }
-    server.setAuth(source['auth-token']).then(zabbix_auth_success, zabbix_failure);
-    settings.sources[i]['server'] = server;
+    server
+      .setAuth(source["auth-token"])
+      .then(zabbix_auth_success, zabbix_failure);
+    settings.sources[i]["server"] = server;
   }
-
 
   //////////////////////////
   // timeseries functions //
@@ -647,7 +666,9 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   };
   this.nextWeek = function () {
     var nextweek = new Date(last_midnight());
-    nextweek = new Date(nextweek.setDate(nextweek.getDate() + 8 - nextweek.getDay()));
+    nextweek = new Date(
+      nextweek.setDate(nextweek.getDate() + 8 - nextweek.getDay()),
+    );
     var weekafter = new Date(nextweek);
     weekafter = new Date(weekafter.setDate(weekafter.getDate() + 7));
     zoom(nextweek, weekafter);
@@ -853,19 +874,21 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     // find data that can be displayed and assign it to activePlot
     activePlot = [];
     ymax_array = [];
-    if (data.length) data.forEach((plot, i) => {
-      plot.intervals = Object.keys(plot.data).length;
-      plot.interval_end = plot.interval_start + plot.interval * plot.intervals;
-      var pp = plotpercentage(
-        plot.interval_start * 1000,
-        plot.interval_end * 1000,
-      );
-      if (pp > 0) {
-        activePlot.push(i);
-        ymax_array.push([i, plot.max, pp]);
-        ymin = 0;
-      }
-    });
+    if (data.length)
+      data.forEach((plot, i) => {
+        plot.intervals = Object.keys(plot.data).length;
+        plot.interval_end =
+          plot.interval_start + plot.interval * plot.intervals;
+        var pp = plotpercentage(
+          plot.interval_start * 1000,
+          plot.interval_end * 1000,
+        );
+        if (pp > 0) {
+          activePlot.push(i);
+          ymax_array.push([i, plot.max, pp]);
+          ymin = 0;
+        }
+      });
     ymax_array.sort(function (first, second) {
       return second[1] - first[1];
     });
@@ -1334,7 +1357,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(value)) {
           c.fillStyle = color(i, 0.8);
-          c.fillRect(x-2, Y(v)-2, 4, 4);
+          c.fillRect(x - 2, Y(v) - 2, 4, 4);
           c.fill();
         }
       }
@@ -1346,19 +1369,23 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     var step = plot.interval * 1000;
     c.lineWidth = 1.5;
     for (const v of Object.entries(plot.data[0])) {
-        var i = v[0];
-        var x = X(start);
-        var y = Y(plot.data[0][i]);
-        c.beginPath();
-        c.moveTo(x, y);
-        for (const [t, value] of Object.entries(plot.data)) {
-          x = X(start + t * step);
-          if (x >= margin.left && x <= margin.left + plotWidth && value[i] != undefined) {
-            c.lineTo(x, Y(value[i]));
-          }
+      var i = v[0];
+      var x = X(start);
+      var y = Y(plot.data[0][i]);
+      c.beginPath();
+      c.moveTo(x, y);
+      for (const [t, value] of Object.entries(plot.data)) {
+        x = X(start + t * step);
+        if (
+          x >= margin.left &&
+          x <= margin.left + plotWidth &&
+          value[i] != undefined
+        ) {
+          c.lineTo(x, Y(value[i]));
         }
-        c.strokeStyle = color(i, 0.8);
-        c.stroke();
+      }
+      c.strokeStyle = color(i, 0.8);
+      c.stroke();
     }
     c.lineWidth = 1;
   }
