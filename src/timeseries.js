@@ -5,8 +5,11 @@
 //////////////////////////////////////////////////////
 // settings                                         //
 //////////////////////////////////////////////////////
+import { intervalSubtract, intervalInvert, intervalIntersect, intervalAdd, intervalLength, getWeek } from './intervals.js';
+import { plotData as _plotData, highlight as _highlight, registerRenderer } from './renderers.js';
+import { initSources, registerSource } from './sources.js';
 
-TimeSeries = function (options) {
+export default function TimeSeries(options) {
   var settings = {
     canvas: "timeseries",
     timezone: "Europe/Berlin",
@@ -78,6 +81,7 @@ TimeSeries = function (options) {
   var ppv = plotHeight / (ymax - ymin); // pixels per value
   var vpp = 1 / ppv; // values per pixel
   var data = [];
+  var rctx = null; // render context, updated on each plotAll() call
 
   var f = {
     s: 1000,
@@ -164,8 +168,8 @@ TimeSeries = function (options) {
     },
   ];
 
-  onClickData = function (plot, n, item) {
-    highlight(plot, n, item);
+  var onClickData = function (plot, n, item) {
+    _highlight(plot, n, item, rctx);
     console.log(plot, n, item);
   };
 
@@ -174,7 +178,7 @@ TimeSeries = function (options) {
   ////////////////////////////////////
 
   // calculate the width of labels
-  holiday_pixels = {};
+  var holiday_pixels = {};
   for (const [key, holiday] of Object.entries(holidays)) {
     holiday_pixels[holiday] = c.measureText(holiday).width;
   }
@@ -182,7 +186,7 @@ TimeSeries = function (options) {
   labels.day_pixels = new Array(labels.day.length).fill(0);
   for (var i = 0; i < 7; i++) {
     labels.day.forEach((format, j) => {
-      l = c.measureText(
+      var l = c.measureText(
         new Date((i + 355) * f.d).toLocaleString(nls, format),
       ).width;
       if (l > labels.day_pixels[j]) labels.day_pixels[j] = l;
@@ -192,7 +196,7 @@ TimeSeries = function (options) {
   labels.month_pixels = new Array(labels.month.length).fill(0);
   for (var i = 0; i < 12; i++) {
     labels.month.forEach((format, j) => {
-      l = c.measureText(
+      var l = c.measureText(
         new Date((i * 30 + 5) * f.d).toLocaleString(nls, format),
       ).width;
       if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
@@ -221,17 +225,6 @@ TimeSeries = function (options) {
     var D = L + 28 - 31 * Math.floor(M / 4);
     return D + "." + M;
   }
-
-  Date.prototype.getWeek = function () {
-    //https://stackoverflow.com/questions/6117814/get-week-of-year-in-javascript-like-in-php
-    var d = new Date(
-      Date.UTC(this.getFullYear(), this.getMonth(), this.getDate()),
-    );
-    var dayNum = d.getUTCDay() || 7;
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-    var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-    return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
-  };
 
   var easterYears = {}; // store dates for every year
   var hL = {}; // store all holidays here
@@ -284,209 +277,15 @@ TimeSeries = function (options) {
     return us.toString() + "µs";
   }
 
-  // needed for timeSeries
-  // a and b are arrays of intervals: [ [min_1,max_1], [min_2,max_2], .., [min_n,max_n] ]
-  // the difference function returns the difference a-b which again is an array of intervals
-  //     if a is your viewport (the data you want to display) and b your cache map
-  //     then you have to iterate through the result array and fetch data for every interval
-  // the add method returns the sum a + b which again is an array of intervals
-  // the intersect function returns the intersection of a and b which is an array of intervals
-  // the iLength function returns the sum (scalar) of a's interval length
-  // the invert function returns the inverse interval
-  //
-  // unit tests for a.substract(b), a.intersect(b) and a.add(b)
-  /*
-console.log('Result: ' + [[1,3],[8,10],[17,20]].add( [[2,11], [14,15]] ) );
-console.log('Result: ' + [[1,3],[8,10],[17,20]].substract( [[2,11], [14,15]] ) );
-console.log('Result: ' + [[1,3],[8,10],[17,20]].intersect( [[2,11], [14,15]] ) );
-console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].substract([[2,11], [14,15]] ));
-console.log('Result: ' + [].add( [[2,11], [14,15]] ) );
-console.log('Result: ' + [].substract( [[2,11], [14,15]] ) );
-console.log('Result: ' + [[1,3],[8,10],[17,20]].iLength());
-console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].iLength();
-*/
-  // "Result: 1,11,14,15,17,20"
-  // "Result: 1,2,17,20"
-  // "Result: 2,3,8,10"
-  // "Result: -Infinity,2,11,14,15,Infinity"
-  // "Result: 2,11,14,15"
-  // "Result: "
-  // "Result: 7"
-  // "Result: Infinity"
-
-  Array.prototype.substract = function (b) {
-    function difference(m, s) {
-      if (s[1] <= m[0] || m[1] <= s[0]) return [m];
-      if (s[1] < m[1]) {
-        if (s[0] <= m[0]) return [[s[1], m[1]]];
-        return [
-          [m[0], s[0]],
-          [s[1], m[1]],
-        ];
-      }
-      if (s[0] <= m[0]) return [];
-      return [[m[0], s[0]]];
-    }
-
-    function single(m, s) {
-      diff = [];
-      m.forEach(function (md) {
-        difference(md, s).forEach(function (ret) {
-          diff.push(ret);
-        });
-      });
-      return diff;
-    }
-    if (this === undefined || b === undefined) return [];
-    var diff = this;
-    b.forEach(function (m) {
-      diff = single(diff, m);
-    });
-    return diff;
-  };
-
-  Array.prototype.invert = function () {
-    return [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].substract(
-      this,
-    );
-  };
-
-  Array.prototype.intersect = function (b) {
-    if (this === undefined || b === undefined) return [];
-    return this.substract(b.invert());
-  };
-
-  Array.prototype.add = function (b) {
-    function sum(m, s) {
-      if (s[1] < m[0]) return [s, m];
-      if (m[1] < s[0]) return [m, s];
-      if (s[1] < m[1]) {
-        if (s[0] <= m[0]) return [[s[0], m[1]]];
-        return [m];
-      }
-      if (s[0] <= m[0]) return [s];
-      return [[m[0], s[1]]];
-    }
-    if (this === undefined || b === undefined) return [];
-    var dummy = this.concat(b).sort(function (a, b) {
-      return a[0] - b[0];
-    });
-    var result = dummy.slice();
-    for (i = 1; i < dummy.length; i++) {
-      var s = sum(dummy[i - 1], dummy[i]);
-      if (s.length == 1) {
-        result.splice(0, 1);
-        result[0] = s[0];
-        dummy[i] = s[0];
-      }
-    }
-    return result;
-  };
-
-  Array.prototype.iLength = function () {
-    var length = 0;
-    this.forEach(function (o) {
-      length = length + Number(o[1]) - Number(o[0]);
-    });
-    return length;
-  };
-
   //////////////////////////
   // data retrieval stuff //
   //////////////////////////
 
-  settings.sources.forEach(function callback(source, i) {
-    if (source["source-type"] == "zabbix") {
-      zabbix_auth(i);
-    }
-    if (source["source-type"] == "artificial") {
-      data.push(source);
-    }
+  initSources(settings.sources, {
+    pushData(plot) { data.push(plot); },
+    requestRedraw() { plotAll(); },
+    getViewport() { return { tmin, tmax }; },
   });
-
-  function sumValues(obj) {
-    return Object.keys(obj).reduce(
-      (sum, key) => sum + parseFloat(obj[key] || 0),
-      0,
-    );
-  }
-
-  function onZabbixData(source, opt, d) {
-    console.log("onZabbixData");
-    tmp = {
-      name: d[0].itemid,
-      type: source["plot-type"],
-      itemids: opt["itemids"],
-      interval_start: opt.time_from,
-      interval_end: opt.time_till,
-      interval:
-        ((opt.time_till - opt.time_from) / d.length) * opt["itemids"].length,
-      count: Math.round(d.length / opt["itemids"].length),
-      min: 0,
-      max: d[0].value,
-    };
-    var result = [];
-    d.forEach((item) => {
-      i = Math.floor((item.clock - tmp.interval_start) / tmp.interval);
-      tmp.min = Math.min(tmp.min, item.value);
-      tmp.max = Math.max(tmp.max, item.value);
-      if (result[i] == undefined) {
-        result[i] = { [item.itemid]: parseFloat(item.value) };
-      } else {
-        result[i][item.itemid] = parseFloat(item.value);
-      }
-    });
-    if (source["plot-type"] == "multibar")
-      for (i in result) {
-        sv = sumValues(result[i]);
-        if (tmp.max < sv) tmp.max = sv;
-      }
-    tmp.data = result;
-    data.push(tmp);
-    console.log(tmp);
-    plotAll();
-  }
-
-  function zabbix_auth_success(e) {
-    console.log("zabbix_auth_success");
-    settings.sources.forEach(function callback(source, i) {
-      if (source["source-type"] == "zabbix") {
-        options = {
-          itemids: source["itemids"],
-          time_from: Math.floor(tmin / 1000),
-          time_till: Math.ceil(tmax / 1000),
-        };
-        console.log(options);
-        source.server.api("history.get", options).then(
-          (data) => onZabbixData(source, options, data),
-          (data) => zabbix_failure(source, options, data),
-        );
-      }
-    });
-    console.log(settings.sources);
-  }
-
-  function zabbix_failure(e) {
-    console.log("zabbix_failure");
-    console.log(e);
-  }
-
-  function zabbix_auth(i) {
-    var source = settings.sources[i];
-    if (source["auth-token"] != undefined) {
-      server = new jpZabbix({ url: source["url"], auth: source["auth-token"] });
-    } else {
-      server = new jpZabbix({
-        url: source["url"],
-        username: source["username"],
-        password: source["password"],
-      });
-    }
-    server
-      .setAuth(source["auth-token"])
-      .then(zabbix_auth_success, zabbix_failure);
-    settings.sources[i]["server"] = server;
-  }
 
   //////////////////////////
   // timeseries functions //
@@ -509,7 +308,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       timer(follow_view, now - rT(0));
       return;
     } else {
-      t = mspp;
+      var t = mspp;
       if (mspp > 5000) t = 5000;
       timer(follow_view, t);
     }
@@ -703,9 +502,10 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   function plotAll() {
     c.clearRect(0, 0, canvas.width, canvas.height);
     prepare_grid();
+    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight };
     background();
     yAxis();
-    plotData();
+    _plotData(activePlot, data, rctx);
     frame();
     redLine();
     // console.log('plot finished: ' + follow_timers);
@@ -788,7 +588,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     var y = e.clientY - offset.y;
     if (margin.left < x && x < plotWidth + margin.left) {
       if (margin.top < y && y < plotHeight + margin.top) {
-        weekitems = grid[4].filter((item) => item.tm.getDay() == 1);
+        var weekitems = grid[4].filter((item) => item.tm.getDay() == 1);
         for (var wi of weekitems) {
           if (
             x > wi.x &&
@@ -796,7 +596,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
             y > plotHeight + margin.top - font_height &&
             y < plotHeight + margin.top
           ) {
-            item = wi;
+            var item = wi;
             return { cw: item.cw, level: 4.5 };
           }
         }
@@ -807,13 +607,13 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
         y < margin.top - font_height
       ) {
         // first label row
-        item = get_grid(x, grid_level_label[0][label_level]);
+        var item = get_grid(x, grid_level_label[0][label_level]);
         item.y = margin.top - font_height;
         return item;
       }
       if (margin.top - font_height < y && y < margin.top) {
         // second label row
-        item = get_grid(x, grid_level_label[1][label_level]);
+        var item = get_grid(x, grid_level_label[1][label_level]);
         item.y = margin.top;
         return item;
       }
@@ -825,7 +625,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   // return grid element of given canvas coordinates
   function get_grid(x, grid_level) {
     for (var j = 0; j < grid[grid_level].length; j++) {
-      item = grid[grid_level][j];
+      var item = grid[grid_level][j];
       if (item.x < x && x < item.x + item.len) {
         item.level = grid_level;
         return item;
@@ -865,15 +665,23 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     return { t: t, y: py };
   }
 
+  function plotpercentage(min, max) {
+    if (min > tmax) min = tmax;
+    if (min < tmin) min = tmin;
+    if (max > tmax) max = tmax;
+    if (max < tmin) max = tmin;
+    return (max - min) / (tmax - tmin);
+  }
+
   // create grid array containing all time labels
   function prepare_grid() {
     ppms = plotWidth / (tmax - tmin);
     mspp = 1 / ppms;
-    dtm = new Date(tmax);
+    var dtm = new Date(tmax);
 
     // find data that can be displayed and assign it to activePlot
     activePlot = [];
-    ymax_array = [];
+    var ymax_array = [];
     if (data.length)
       data.forEach((plot, i) => {
         plot.intervals = Object.keys(plot.data).length;
@@ -903,7 +711,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
       ppv = plotHeight / (ymax - ymin);
       vpp = 1 / ppv;
       var s = vpp * font_height;
-      step = Math.pow(10, Math.ceil(Math.log10(s)));
+      var step = Math.pow(10, Math.ceil(Math.log10(s)));
       //if (s / step <= 0.2) step = 0.2 * step;
       if (s / step <= 0.5) step = 0.5 * step;
       for (var i = 0; i <= ymax; i += step) {
@@ -950,7 +758,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     if (part)
       for (var t = Math.floor(tmin / f.s) * f.s; t <= tmax; t += f.s) {
         var d = new Date(t);
-        s = d / 1000;
+        var s = d / 1000;
         if (s % part == 0)
           grid[1].push({
             tm: d,
@@ -1015,16 +823,18 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
 
     // days
     grid[4] = [];
-    space = ppms * f.d;
+    var space = ppms * f.d;
     if (space > dvtl)
       for (
         var t = new Date(new Date(tmax).toDateString());
         t >= tmin - f.d;
         t = new Date(new Date(t - 12 * f.h).toDateString())
       ) {
+        var x;
         if (t < tmin) x = margin.left;
         else x = X(t);
-        l = grid[4].length;
+        var l = grid[4].length;
+        var len;
         if (l) len = grid[4][l - 1].x - x;
         else len = canvas.width - margin.right - x;
         var h = isHoliday(t);
@@ -1034,7 +844,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           else
             h = (label(t, "day", len - holiday_pixels[h] - 5) + " " + h).trim();
         }
-        wd = t.getDay();
+        var wd = t.getDay();
         var fill = "rgba(196,196,196,0.5)";
         if (wd == 0 || wd == 6 || bh) fill = "rgba(255,166,166,0.5)";
         else if (wd % 2) fill = "rgba(224,224,224,0.5)";
@@ -1044,14 +854,14 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           x: x,
           len: len,
           fill: fill,
-          cw: wd == 1 ? t.getWeek() : "",
+          cw: wd == 1 ? getWeek(t) : "",
           browse: t <= tmin && len + x >= canvas.width - margin.right,
         });
       }
 
     // months
     grid[5] = [];
-    space = ppms * f.d * 31;
+    var space = ppms * f.d * 31;
     var dm = dtm;
     if (space > dvtl) {
       while (true) {
@@ -1080,7 +890,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
     // years
     dm = dtm;
     grid[6] = [];
-    space = ppms * f.d * 365;
+    var space = ppms * f.d * 365;
     if (space > dvtl) {
       for (
         t = new Date(Date.parse(dm.getFullYear() + "-1-1 00:00"));
@@ -1149,7 +959,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
   }
 
   function vertical_label(t, x, y) {
-    text = String(t.getHours()) + ":" + String(t.getMinutes()).padStart(2, "0");
+    var text = String(t.getHours()) + ":" + String(t.getMinutes()).padStart(2, "0");
     if (t % f.m > 0) text = ":" + String(t.getSeconds()).padStart(2, "0");
     if (t % 1000 > 0)
       text += "." + String(t.getMilliseconds()).padStart(3, "0");
@@ -1199,7 +1009,7 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
           vertical_line(item.tm, "grey");
           if (item.cw) {
             c.textAlign = "left";
-            x = X(item.tm);
+            var x = X(item.tm);
             if (x < margin.left) x = margin.left;
             c.fillStyle = "#888";
             c.textAlign = "left";
@@ -1300,115 +1110,20 @@ console.log('Result: ' + [[Number.NEGATIVE_INFINITY, Number.POSITIVE_INFINITY]].
 
   function fog_of_future() {
     if (now >= tmax) return;
+    var x;
     if (now < tmin) x = margin.left;
     else x = X(now);
     c.fillStyle = "rgba(160,160,160, 0.4)";
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
-  function color(i, t) {
-    var r = (((i + 111) % 67) * 798) % 255;
-    var g = (((i + 53) % 23) * 1131) % 255;
-    var b = (((i + 79) % 19) * 979) % 255;
-    return "rgb(" + r + "," + g + "," + b + ", " + t + ")";
-  }
-
   function onClickDataCallback(f) {
     onClickData = f;
   }
 
-  function highlight_multibar(plot, n, item) {
-    var start = plot.interval_start * 1000;
-    var step = plot.interval * 1000;
-    var barWidth = ppms * step;
-    var height = 0;
-    var x = X(start + n * step);
-    for (const [i, bar] of Object.entries(plot.data[n])) {
-      if (i == item) {
-        c.fillStyle = color(i, 0.8);
-        c.fillRect(x, Y(height), barWidth, -ppv * bar);
-        return;
-      }
-      height += bar;
-    }
-  }
-
-  function multibar(plot) {
-    var start = plot.interval_start * 1000;
-    var step = plot.interval * 1000;
-    var barWidth = ppms * step;
-    for (const [t, bars] of Object.entries(plot.data)) {
-      var height = 0;
-      var x = X(start + t * step);
-      if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
-        for (const [i, bar] of Object.entries(bars)) {
-          c.fillStyle = color(i, 0.8);
-          c.fillRect(x, Y(height), barWidth, -ppv * bar);
-          height += bar;
-        }
-    }
-  }
-
-  function multipoint(plot) {
-    var start = plot.interval_start * 1000;
-    var step = plot.interval * 1000;
-    for (const [t, value] of Object.entries(plot.data)) {
-      var x = X(start + t * step);
-      if (x >= margin.left && x <= margin.left + plotWidth) {
-        for (const [i, v] of Object.entries(value)) {
-          c.fillStyle = color(i, 0.8);
-          c.fillRect(x - 2, Y(v) - 2, 4, 4);
-          c.fill();
-        }
-      }
-    }
-  }
-
-  function multiline(plot) {
-    var start = plot.interval_start * 1000;
-    var step = plot.interval * 1000;
-    c.lineWidth = 1.5;
-    for (const v of Object.entries(plot.data[0])) {
-      var i = v[0];
-      var x = X(start);
-      var y = Y(plot.data[0][i]);
-      c.beginPath();
-      c.moveTo(x, y);
-      for (const [t, value] of Object.entries(plot.data)) {
-        x = X(start + t * step);
-        if (
-          x >= margin.left &&
-          x <= margin.left + plotWidth &&
-          value[i] != undefined
-        ) {
-          c.lineTo(x, Y(value[i]));
-        }
-      }
-      c.strokeStyle = color(i, 0.8);
-      c.stroke();
-    }
-    c.lineWidth = 1;
-  }
-
-  function highlight(plot, n, item) {
-    if (plot.type == "multibar") highlight_multibar(plot, n, item);
-  }
-
-  function plotpercentage(min, max) {
-    if (min > tmax) min = tmax;
-    if (min < tmin) min = tmin;
-    if (max > tmax) max = tmax;
-    if (max < tmin) max = tmin;
-    return (max - min) / (tmax - tmin);
-  }
-
-  function plotData() {
-    for (const i of activePlot) {
-      if (data[i].type == "multipoint") multiipoint(data[i]);
-      if (data[i].type == "multiline") multiline(data[i]);
-      if (data[i].type == "multibar") multibar(data[i]);
-    }
-  }
+  this.onClickDataCallback = onClickDataCallback;
+  TimeSeries.registerRenderer = registerRenderer;
+  TimeSeries.registerSource = registerSource;
 
   follow_view();
-};
+}

@@ -1,0 +1,30 @@
+{
+  "name": "timeseries.js",
+  "version": "0.1.0",
+  "description": "Canvas-based interactive time series visualization",
+  "type": "module",
+  "main": "dist/timeseries.js",
+  "module": "src/timeseries.js",
+  "exports": {
+    ".": {
+      "import": "./src/timeseries.js",
+      "default": "./dist/timeseries.js"
+    }
+  },
+  "files": ["dist/", "src/"],
+  "scripts": {
+    "build":     "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js",
+    "build:min": "esbuild src/timeseries.js --bundle --minify --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.min.js",
+    "watch":     "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js --watch",
+    "serve":     "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hgruber/timeseries.js.git"
+  },
+  "keywords": ["timeseries", "canvas", "visualization", "chart"]
+}

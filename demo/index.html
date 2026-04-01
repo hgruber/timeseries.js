@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="de">
+    <head>
+        <meta charset="UTF-8">
+        <title>ts.js</title>
+        <meta name="description" content="Kurzbeschreibung">
+        <style>
+            body {
+                background: radial-gradient(circle at 50% 30%,
+                #ffffff 0%,
+                #f4f8ff 30%,
+                #e6f0ff 70%,
+                #d9eaff 100%
+                );
+                background-size: cover; /* or 100% 100% */
+            }
+            #timeseries {
+                display: block;
+                width: 100%;
+                background: #aaa;
+                font: 1em Arial;
+                color: black;
+                border: solid #000 1px;
+                left: 0;
+                right: 0;
+		        height: 500px;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>timeseries.js</h1>
+        <div id="graph" align="center" style="background: rgba(1,1,1,0);">
+            <canvas id="timeseries"></canvas>
+            <button onclick="ts.yesterday()" title="gestern">&lt;</button>
+            <button onclick="ts.today()">heute</button>
+            <button onclick="ts.tomorrow()" title="morgen">&gt;</button>
+            <br />
+            <button onclick="ts.lastWeek()" title="letzte Woche">&lt;&lt;</button>
+            <button onclick="ts.thisWeek()">diese Woche</button>
+            <button onclick="ts.nextWeek()" title="nächste Woche">&gt;&gt;</button>
+        </div>
+        <script src="../dist/timeseries.js"></script>
+        <script src="./artificial.js"></script>
+        <script>
+        window.ts = new TimeSeries({'canvas': 'timeseries', 'sources': [artificial] });
+        </script>
+    </body>
+</html>

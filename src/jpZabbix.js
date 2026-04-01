@@ -1,6 +1,6 @@
-jpZabbix = function(options) {
+function jpZabbix(options) {
 
-	config = {};
+	var config = {};
 	// initialize options
 	Object.assign(config, {
 		// default settings
@@ -172,4 +172,6 @@ jpZabbix = function(options) {
 			return Promise.reject(false);
 		};
 	}
-};
+}
+
+export default jpZabbix;
