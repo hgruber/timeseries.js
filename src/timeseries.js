@@ -12,9 +12,11 @@ import { initSources, registerSource } from './sources.js';
 export default function TimeSeries(options) {
   var settings = {
     canvas: "timeseries",
-    timezone: "Europe/Berlin",
-    follow: true,
     sources: [], // array of data sources
+    initialView: 'last24', // method to call on startup, or null
+    zoomDuration: 500,     // animation duration in ms for zoom transitions
+    zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
+    autoFollow: false,     // automatically enter follow mode when now reaches right edge
     holidays: {
       1.1: "Neujahr",
       1.5: "Maifeiertag",
@@ -39,8 +41,6 @@ export default function TimeSeries(options) {
   }
   var canvas = document.getElementById(settings.canvas);
   var c = canvas.getContext("2d");
-  var timezone = settings.timezone;
-  var follow = settings.follow;
   var holidays = settings.holidays;
 
   canvas.width = canvas.clientWidth;
@@ -80,7 +80,7 @@ export default function TimeSeries(options) {
   var tmin = tmax - 86400000;
   var ymin = 0;
   var ymax = 1;
-  var zf = 0.1; // the smaller the smoother the wheel zoom
+  var zf = settings.zoomFactor;
   var ppms = plotWidth / (tmax - tmin); // pixels per millisecond
   var mspp = 1 / ppms; // milliseconds per pixels
   var ppv = plotHeight / (ymax - ymin); // pixels per value
@@ -128,7 +128,7 @@ export default function TimeSeries(options) {
     [5, 6, 7],
     [4, 5, 6],
   ];
-  var zoom_onclick_time = 500;
+  var zoom_onclick_time = settings.zoomDuration;
 
   labels.day = [
     {
@@ -346,7 +346,12 @@ export default function TimeSeries(options) {
     var t = mspp > 5000 ? 5000 : mspp;
     nowline_timer = setTimeout(function () {
       nowline_timer = null;
-      plotAll();
+      if (settings.autoFollow && Date.now() >= tmax) {
+        doFollow(100);
+        start_follower();
+      } else {
+        plotAll();
+      }
     }, t);
   }
 
@@ -1292,4 +1297,6 @@ export default function TimeSeries(options) {
   TimeSeries.registerSource = registerSource;
 
   plotAll();
+  var self = this;
+  if (settings.initialView) setTimeout(function () { self[settings.initialView](); }, 0);
 }
