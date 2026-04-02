@@ -340,10 +340,10 @@ export default function TimeSeries(options) {
   }
 
   // Keeps the now-line moving when not in follow mode.
-  // Fires at most once per second (faster at fine zoom levels).
+  // Same interval as follower_tick: one redraw per pixel of now-line travel.
   function scheduleNowLine() {
     if (nowline_timer !== null) return;
-    var t = Math.max(250, Math.min(mspp, 1000));
+    var t = mspp > 5000 ? 5000 : mspp;
     nowline_timer = setTimeout(function () {
       nowline_timer = null;
       plotAll();
