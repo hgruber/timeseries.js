@@ -326,11 +326,11 @@
         <!-- Rolling 24 h -->
         <div class="control-group">
           <span class="group-label">24 h</span>
-          <button class="btn-ghost" onclick="ts.last24(); setLive(100)" title="Previous 24 hours">
+          <button class="btn-ghost" onclick="ts.last24()" title="Previous 24 hours">
             <i class="arrow">&#8249;</i> Last 24 h
           </button>
-          <button class="btn-secondary" onclick="ts.last24(); setLive(100)">Rolling 24 h</button>
-          <button class="btn-ghost" onclick="ts.next24(); setLive(0)" title="Next 24 hours">
+          <button class="btn-secondary" onclick="ts.last24()">Rolling 24 h</button>
+          <button class="btn-ghost" onclick="ts.next24()" title="Next 24 hours">
             Next 24 h <i class="arrow">&#8250;</i>
           </button>
         </div>
@@ -394,6 +394,7 @@
   <script>
     window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
     ts.onStop(function () { setLive(null); });
+    ts.onFollow(setLive);
 
     // Update Live group visual state. pos = 0..100 when following, null when stopped.
     function setLive(pos) {

@@ -74,6 +74,7 @@ export default function TimeSeries(options) {
   var follow_stopped = false;
   var follow_fraction = 1.0;   // 0 = now at left edge, 1 = now at right edge
   var follow_stop_cb = null;
+  var follow_start_cb = null;
   var tmax = now;
   var tmin = tmax - 86400000;
   var ymin = 0;
@@ -465,14 +466,12 @@ export default function TimeSeries(options) {
     zoom(tomorrow, dayafter);
   };
   this.last24 = function () {
-    follow_stopped = false;
-    follow_fraction = 1.0;
+    doFollow(100);
     zoom(Date.now() - 86400000, Date.now());
     setTimeout(start_follower, zoom_onclick_time);
   };
   this.next24 = function () {
-    follow_stopped = false;
-    follow_fraction = 0.0;
+    doFollow(0);
     zoom(Date.now(), Date.now() + 86400000);
     setTimeout(start_follower, zoom_onclick_time);
   };
@@ -1239,10 +1238,15 @@ export default function TimeSeries(options) {
     if (follow_stop_cb) follow_stop_cb();
   }
 
-  // Animated entry: zoom to position then start/continue rolling.
-  function follow_animated(p) {
+  function doFollow(p) {
     follow_stopped = false;
     follow_fraction = Math.max(0, Math.min(100, p)) / 100;
+    if (follow_start_cb) follow_start_cb(Math.round(follow_fraction * 100));
+  }
+
+  // Animated entry: zoom to position then start/continue rolling.
+  function follow_animated(p) {
+    doFollow(p);
     var range = tmax - tmin;
     zoom(Date.now() - follow_fraction * range, Date.now() + (1 - follow_fraction) * range);
     setTimeout(start_follower, zoom_onclick_time);
@@ -1250,8 +1254,7 @@ export default function TimeSeries(options) {
 
   // Immediate snap: update fraction, reposition view at once, start/continue rolling.
   this.follow = function (p) {
-    follow_stopped = false;
-    follow_fraction = Math.max(0, Math.min(100, p)) / 100;
+    doFollow(p);
     now = Date.now();
     var range = tmax - tmin;
     tmin = now - follow_fraction * range;
@@ -1261,8 +1264,9 @@ export default function TimeSeries(options) {
   };
   this.followNow  = function () { follow_animated(100); };
   this.previewNow = function () { follow_animated(0); };
-  this.stop   = function () { doStop(); };
-  this.onStop = function (f) { follow_stop_cb = f; };
+  this.stop     = function () { doStop(); };
+  this.onStop   = function (f) { follow_stop_cb = f; };
+  this.onFollow = function (f) { follow_start_cb = f; };
 
   function onClickDataCallback(f) {
     onClickData = f;
