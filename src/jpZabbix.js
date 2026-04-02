@@ -137,7 +137,7 @@ function jpZabbix(options) {
 	this.logout = function() {
 		if (!authid) {return false};
 		
-		return server.api(method, []).then(clearAuth)
+		return server.api('user.logout', []).then(clearAuth)
 	};
 	
 	this.login = function() {
