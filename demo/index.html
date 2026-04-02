@@ -1,48 +1,291 @@
 <!DOCTYPE html>
-<html lang="de">
-    <head>
-        <meta charset="UTF-8">
-        <title>ts.js</title>
-        <meta name="description" content="Kurzbeschreibung">
-        <style>
-            body {
-                background: radial-gradient(circle at 50% 30%,
-                #ffffff 0%,
-                #f4f8ff 30%,
-                #e6f0ff 70%,
-                #d9eaff 100%
-                );
-                background-size: cover; /* or 100% 100% */
-            }
-            #timeseries {
-                display: block;
-                width: 100%;
-                background: #aaa;
-                font: 1em Arial;
-                color: black;
-                border: solid #000 1px;
-                left: 0;
-                right: 0;
-		        height: 500px;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>timeseries.js</h1>
-        <div id="graph" align="center" style="background: rgba(1,1,1,0);">
-            <canvas id="timeseries"></canvas>
-            <button onclick="ts.yesterday()" title="gestern">&lt;</button>
-            <button onclick="ts.today()">heute</button>
-            <button onclick="ts.tomorrow()" title="morgen">&gt;</button>
-            <br />
-            <button onclick="ts.lastWeek()" title="letzte Woche">&lt;&lt;</button>
-            <button onclick="ts.thisWeek()">diese Woche</button>
-            <button onclick="ts.nextWeek()" title="nächste Woche">&gt;&gt;</button>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>timeseries.js — Interactive Time Series Visualization</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(160deg, #f0f6ff 0%, #deeafc 40%, #c8daf5 100%);
+      min-height: 100vh;
+      color: #1a2e45;
+    }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      padding: 2rem 2.5rem 1.2rem;
+      display: flex;
+      align-items: baseline;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1a2e45;
+      letter-spacing: -0.02em;
+    }
+
+    header h1 span {
+      color: #2d6a9f;
+    }
+
+    header p {
+      font-size: 0.85rem;
+      color: #5a7a9a;
+    }
+
+    /* ── Main card ───────────────────────────────────────────── */
+    main {
+      max-width: 1300px;
+      margin: 0 auto;
+      padding: 0 1.5rem 3rem;
+    }
+
+    .chart-card {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow:
+        0 1px 3px rgba(30, 60, 100, 0.08),
+        0 8px 32px rgba(30, 60, 100, 0.10),
+        0 0 0 1px rgba(45, 106, 159, 0.10);
+      overflow: hidden;
+    }
+
+    /* ── Canvas wrapper ──────────────────────────────────────── */
+    .canvas-wrap {
+      padding: 0;
+      border-bottom: 1px solid #e4edf8;
+    }
+
+    #timeseries {
+      display: block;
+      width: 100%;
+      height: 480px;
+      background: #f8faff;
+    }
+
+    /* ── Controls bar ────────────────────────────────────────── */
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem 1.4rem;
+      background: linear-gradient(180deg, #f4f9ff 0%, #edf4ff 100%);
+    }
+
+    .control-group {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      background: rgba(255,255,255,0.7);
+      border: 1px solid #d0e2f7;
+      border-radius: 10px;
+      padding: 0.25rem;
+      box-shadow: 0 1px 4px rgba(30,60,100,0.06);
+    }
+
+    .group-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #7a9dc0;
+      padding: 0 0.5rem 0 0.4rem;
+      user-select: none;
+    }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    button {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3em;
+      font-family: inherit;
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      border-radius: 7px;
+      padding: 0.42rem 0.85rem;
+      transition: background 0.15s, color 0.15s, box-shadow 0.15s, transform 0.1s;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    /* Ghost (prev/next arrow) buttons */
+    .btn-ghost {
+      background: transparent;
+      color: #2d6a9f;
+    }
+    .btn-ghost:hover {
+      background: rgba(45,106,159,0.10);
+      color: #1a3a5c;
+    }
+    .btn-ghost:active {
+      transform: scale(0.94);
+    }
+
+    /* Primary (current period) button */
+    .btn-primary {
+      background: linear-gradient(135deg, #2d6a9f 0%, #1a4f80 100%);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(29, 78, 128, 0.30);
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #3578b0 0%, #225a90 100%);
+      box-shadow: 0 3px 10px rgba(29, 78, 128, 0.38);
+    }
+    .btn-primary:active {
+      transform: scale(0.95);
+      box-shadow: 0 1px 4px rgba(29, 78, 128, 0.25);
+    }
+
+    /* Secondary (rolling 24 h) */
+    .btn-secondary {
+      background: linear-gradient(135deg, #5594c8 0%, #3e7db5 100%);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(85,148,200,0.30);
+    }
+    .btn-secondary:hover {
+      background: linear-gradient(135deg, #66a3d1 0%, #4d8cc0 100%);
+      box-shadow: 0 3px 10px rgba(85,148,200,0.38);
+    }
+    .btn-secondary:active {
+      transform: scale(0.95);
+    }
+
+    /* Arrow glyphs */
+    .arrow { font-style: normal; font-size: 0.9em; }
+
+    /* ── Divider between groups ──────────────────────────────── */
+    .divider {
+      width: 1px;
+      height: 24px;
+      background: #d0e2f7;
+      flex-shrink: 0;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    .chart-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.6rem 1.4rem;
+      background: #f0f6ff;
+      border-top: 1px solid #e4edf8;
+    }
+
+    .chart-footer span {
+      font-size: 0.75rem;
+      color: #8aabca;
+    }
+
+    .legend {
+      display: flex;
+      gap: 1rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      color: #7a9dc0;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>timeseries<span>.js</span></h1>
+    <p>Interactive canvas-based time series visualization</p>
+  </header>
+
+  <main>
+    <div class="chart-card">
+
+      <div class="canvas-wrap">
+        <canvas id="timeseries"></canvas>
+      </div>
+
+      <div class="controls">
+
+        <!-- Day navigation -->
+        <div class="control-group">
+          <span class="group-label">Day</span>
+          <button class="btn-ghost" onclick="ts.yesterday()" title="Yesterday">
+            <i class="arrow">&#8249;</i> Yesterday
+          </button>
+          <button class="btn-primary" onclick="ts.today()">Today</button>
+          <button class="btn-ghost" onclick="ts.tomorrow()" title="Tomorrow">
+            Tomorrow <i class="arrow">&#8250;</i>
+          </button>
         </div>
-        <script src="../dist/timeseries.js"></script>
-        <script src="./artificial.js"></script>
-        <script>
-        window.ts = new TimeSeries({'canvas': 'timeseries', 'sources': [artificial] });
-        </script>
-    </body>
+
+        <div class="divider"></div>
+
+        <!-- Rolling 24 h -->
+        <div class="control-group">
+          <span class="group-label">24 h</span>
+          <button class="btn-ghost" onclick="ts.last24()" title="Previous 24 hours">
+            <i class="arrow">&#8249;</i> Last 24 h
+          </button>
+          <button class="btn-secondary" onclick="ts.last24()">Rolling 24 h</button>
+          <button class="btn-ghost" onclick="ts.next24()" title="Next 24 hours">
+            Next 24 h <i class="arrow">&#8250;</i>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Week navigation -->
+        <div class="control-group">
+          <span class="group-label">Week</span>
+          <button class="btn-ghost" onclick="ts.lastWeek()" title="Last week">
+            <i class="arrow">&#8249;</i> Last week
+          </button>
+          <button class="btn-primary" onclick="ts.thisWeek()">This week</button>
+          <button class="btn-ghost" onclick="ts.nextWeek()" title="Next week">
+            Next week <i class="arrow">&#8250;</i>
+          </button>
+        </div>
+
+      </div><!-- /.controls -->
+
+      <div class="chart-footer">
+        <span>Scroll to zoom &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Click labels to navigate</span>
+        <div class="legend">
+          <span class="legend-item">
+            <span class="legend-dot" style="background:#ffa6a6;"></span> Weekend / Holiday
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background:#5594c8;"></span> Month boundary
+          </span>
+          <span class="legend-item">
+            <span class="legend-dot" style="background:rgba(255,0,0,0.6);"></span> Now
+          </span>
+        </div>
+      </div>
+
+    </div><!-- /.chart-card -->
+  </main>
+
+  <script src="../dist/timeseries.js"></script>
+  <script src="./artificial.js"></script>
+  <script>
+    window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
+  </script>
+
+</body>
 </html>
