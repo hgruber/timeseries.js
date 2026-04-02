@@ -605,6 +605,12 @@ export default function TimeSeries(options) {
     } else if (e.touches.length === 2) {
       var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
       var following = follow_timers > 0 && !follow_stopped;
+      if (following) {
+        now = Date.now();
+        var range0 = tmax - tmin;
+        tmin = now - follow_fraction * range0;
+        tmax = tmin + range0;
+      }
       touchState = {
         type: 'pinch',
         dist0: Math.abs(e.touches[1].clientX - e.touches[0].clientX),
@@ -643,8 +649,16 @@ export default function TimeSeries(options) {
   canvas.onwheel = function (e) {
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
+    // When following, reposition to the actual current now before zooming.
+    // Without this the pivot maps to the now from the last tick, and the next
+    // tick repositioning to real Date.now() causes a visible jump.
+    if (follow_timers > 0 && !follow_stopped) {
+      now = Date.now();
+      var range0 = tmax - tmin;
+      tmin = now - follow_fraction * range0;
+      tmax = tmin + range0;
+    }
     var r = tmax - tmin;
-    // When following, zoom around now so the view doesn't jump on the next tick.
     var lr = (follow_timers > 0 && !follow_stopped)
       ? follow_fraction
       : (e.clientX - offset.x - margin.left) / plotWidth;
