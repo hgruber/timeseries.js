@@ -2,9 +2,9 @@ function gauss(x, a, s) {
   return Math.exp(-(x - a) * (x - a) / s);
 }
 
-var a = {}
+var artificialData = {}
 for (var j = 0; j < 1440; j++) {
-  a[j] = {
+  artificialData[j] = {
     0: 67 * gauss(j, 1220, 1e5) * ( 1 + gauss(Math.floor(Math.random() * 4), 0, 1) / 2),
     1: 92 * gauss(j, 400, 1e5) * ( 1 + gauss(Math.floor(Math.random() * 4), 0, 1) / 3),
     2: 75 * gauss(j, 1040, 1e5) * ( 1 + gauss(Math.floor(Math.random() * 4), 0, 1) / 2),
@@ -25,6 +25,6 @@ var artificial = {
   "interval": 60,
   "interval_start": +new Date(new Date(Date.now() - 86400000).toDateString())/1000,
   "interval_end": +new Date(new Date().toDateString())/1000,
-  "data": a
+  "data": artificialData
 }
 
