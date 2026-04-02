@@ -543,13 +543,19 @@ export default function TimeSeries(options) {
   };
 
   canvas.onmousemove = function (e) {
-    if (startDragX == 0) {
+    if (startDragX != 0) {
+      canvas.style.cursor = 'grabbing';
+      var move = ((startDragX - e.clientX) / plotWidth) * (tmax - tmin);
+      tmin = startTmin + move;
+      tmax = startTmax + move;
+      plotAll();
       return;
     }
-    var move = ((startDragX - e.clientX) / plotWidth) * (tmax - tmin);
-    tmin = startTmin + move;
-    tmax = startTmax + move;
-    plotAll();
+    var item = mouse_position(e);
+    canvas.style.cursor =
+      item && item !== 'frame' && (item.level || item.key) ? 'pointer' :
+      item && item !== 'frame' ? 'grab' :
+      'default';
   };
 
   canvas.onmouseup = function (e) {
@@ -558,6 +564,7 @@ export default function TimeSeries(options) {
 
   canvas.onmouseout = function (e) {
     startDragX = 0;
+    canvas.style.cursor = 'default';
   };
 
   canvas.onwheel = function (e) {
