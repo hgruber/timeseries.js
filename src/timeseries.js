@@ -520,6 +520,9 @@ export default function TimeSeries(options) {
     canvas.height = canvas.clientHeight;
     plotWidth = canvas.width - margin.left - margin.right;
     plotHeight = canvas.height - margin.top - margin.bottom;
+    var BB = canvas.getBoundingClientRect();
+    offset.x = BB.left;
+    offset.y = BB.top;
     plotAll();
   };
 
