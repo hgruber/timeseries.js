@@ -393,6 +393,7 @@
   <script src="./artificial.js"></script>
   <script>
     window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
+    ts.onStop(function () { setLive(null); });
 
     // Update Live group visual state. pos = 0..100 when following, null when stopped.
     function setLive(pos) {

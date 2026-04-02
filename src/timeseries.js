@@ -73,6 +73,7 @@ export default function TimeSeries(options) {
   var follow_timers = 0;
   var follow_stopped = false;
   var follow_fraction = 1.0;   // 0 = now at left edge, 1 = now at right edge
+  var follow_stop_cb = null;
   var tmax = now;
   var tmin = tmax - 86400000;
   var ymin = 0;
@@ -548,6 +549,7 @@ export default function TimeSeries(options) {
   };
 
   canvas.onmousedown = function (e) {
+    doStop();
     var item = mouse_position(e);
     if (item.level) {
       var dir = "center";
@@ -596,6 +598,7 @@ export default function TimeSeries(options) {
   canvas.ontouchstart = function (e) {
     e.preventDefault();
     if (e.touches.length === 1) {
+      doStop();
       touchState = {
         type: 'pan',
         x0: e.touches[0].clientX,
@@ -1219,6 +1222,11 @@ export default function TimeSeries(options) {
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
+  function doStop() {
+    follow_stopped = true;
+    if (follow_stop_cb) follow_stop_cb();
+  }
+
   // Animated entry: zoom to position then start/continue rolling.
   function follow_animated(p) {
     follow_stopped = false;
@@ -1241,7 +1249,8 @@ export default function TimeSeries(options) {
   };
   this.followNow  = function () { follow_animated(100); };
   this.previewNow = function () { follow_animated(0); };
-  this.stop = function () { follow_stopped = true; };
+  this.stop   = function () { doStop(); };
+  this.onStop = function (f) { follow_stop_cb = f; };
 
   function onClickDataCallback(f) {
     onClickData = f;
