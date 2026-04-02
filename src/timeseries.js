@@ -443,18 +443,21 @@ export default function TimeSeries(options) {
   }
   this.zoom = zoom;
   this.today = function () {
+    doStop();
     var today = last_midnight();
     var tomorrow = new Date(today);
     tomorrow = new Date(tomorrow.setDate(tomorrow.getDate() + 1));
     zoom(today, tomorrow);
   };
   this.yesterday = function () {
+    doStop();
     var today = last_midnight();
     var yesterday = new Date(today);
     yesterday = new Date(yesterday.setDate(yesterday.getDate() - 1));
     zoom(yesterday, today);
   };
   this.tomorrow = function () {
+    doStop();
     var tomorrow = new Date(last_midnight());
     tomorrow = new Date(tomorrow.setDate(tomorrow.getDate() + 1));
     var dayafter = new Date(tomorrow);
@@ -462,12 +465,19 @@ export default function TimeSeries(options) {
     zoom(tomorrow, dayafter);
   };
   this.last24 = function () {
-    zoom(+Date.now() - 86400000, +Date.now());
+    follow_stopped = false;
+    follow_fraction = 1.0;
+    zoom(Date.now() - 86400000, Date.now());
+    setTimeout(start_follower, zoom_onclick_time);
   };
   this.next24 = function () {
-    zoom(+Date.now(), +Date.now() + 86400000);
+    follow_stopped = false;
+    follow_fraction = 0.0;
+    zoom(Date.now(), Date.now() + 86400000);
+    setTimeout(start_follower, zoom_onclick_time);
   };
   this.lastWeek = function () {
+    doStop();
     var lastweek = new Date(last_midnight());
     lastweek = new Date(
       lastweek.setDate(lastweek.getDate() - 6 - lastweek.getDay()),
@@ -477,6 +487,7 @@ export default function TimeSeries(options) {
     zoom(lastweek, thisweek);
   };
   this.thisWeek = function () {
+    doStop();
     var thisweek = new Date(last_midnight());
     thisweek = new Date(
       thisweek.setDate(thisweek.getDate() + 1 - thisweek.getDay()),
@@ -486,6 +497,7 @@ export default function TimeSeries(options) {
     zoom(thisweek, nextweek);
   };
   this.nextWeek = function () {
+    doStop();
     var nextweek = new Date(last_midnight());
     nextweek = new Date(
       nextweek.setDate(nextweek.getDate() + 8 - nextweek.getDay()),

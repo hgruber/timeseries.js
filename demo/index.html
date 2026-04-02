@@ -326,11 +326,11 @@
         <!-- Rolling 24 h -->
         <div class="control-group">
           <span class="group-label">24 h</span>
-          <button class="btn-ghost" onclick="ts.last24()" title="Previous 24 hours">
+          <button class="btn-ghost" onclick="ts.last24(); setLive(100)" title="Previous 24 hours">
             <i class="arrow">&#8249;</i> Last 24 h
           </button>
-          <button class="btn-secondary" onclick="ts.last24()">Rolling 24 h</button>
-          <button class="btn-ghost" onclick="ts.next24()" title="Next 24 hours">
+          <button class="btn-secondary" onclick="ts.last24(); setLive(100)">Rolling 24 h</button>
+          <button class="btn-ghost" onclick="ts.next24(); setLive(0)" title="Next 24 hours">
             Next 24 h <i class="arrow">&#8250;</i>
           </button>
         </div>
@@ -355,14 +355,14 @@
         <div class="control-group" id="live-group">
           <span class="group-label">Live</span>
           <button class="btn-secondary" id="btn-preview"
-                  onclick="ts.previewNow(); document.getElementById('follow-slider').value=0; setLive(0)"
+                  onclick="ts.previewNow(); setLive(0)"
                   title="Now at left edge — forward-looking mode">&#9711; Preview</button>
           <input id="follow-slider" type="range" min="0" max="100" value="100"
                  title="Now position: 0% = left edge, 100% = right edge"
                  oninput="ts.follow(+this.value); setLive(+this.value)"
                  style="width:70px; accent-color:#5594c8; cursor:pointer;">
           <button class="btn-secondary" id="btn-follow"
-                  onclick="ts.followNow(); document.getElementById('follow-slider').value=100; setLive(100)"
+                  onclick="ts.followNow(); setLive(100)"
                   title="Now at right edge — seismograph mode">&#9679; Follow</button>
           <button class="btn-ghost" id="btn-stop" disabled
                   onclick="ts.stop(); setLive(null)"
@@ -402,6 +402,7 @@
       document.getElementById('btn-stop').disabled = !on;
       document.getElementById('btn-preview').classList.toggle('btn-live-on', on && pos === 0);
       document.getElementById('btn-follow').classList.toggle('btn-live-on', on && pos === 100);
+      if (on) document.getElementById('follow-slider').value = pos;
     }
   </script>
 
