@@ -501,7 +501,7 @@ export default function TimeSeries(options) {
 
   function plotAll() {
     c.clearRect(0, 0, canvas.width, canvas.height);
-    prepare_grid();
+    prepare_grid(); // must run before rctx is built: recalculates ppms, ppv, ppv, mspp
     rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight };
     background();
     yAxis();
