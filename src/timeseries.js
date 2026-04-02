@@ -316,7 +316,7 @@ export default function TimeSeries(options) {
   }
 
   // navigate view to specific day, month or year (center current or go to left or right)
-  function navigate(level, direction) {
+  function navigate(item, level, direction) {
     if (level == 4) {
       if (direction == "center")
         zoom(
@@ -532,7 +532,7 @@ export default function TimeSeries(options) {
         if (e.clientX - offset.x > plotWidth + margin.left - font_height)
           dir = "right";
       }
-      navigate(item.level, dir);
+      navigate(item, item.level, dir);
     }
     if (item.key) {
       onClickData(data[item.plot], item.n, item.key);
