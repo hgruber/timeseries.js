@@ -71,6 +71,7 @@ export default function TimeSeries(options) {
   var now = Date.now();
   var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   var follow_timers = 0;
+  var follow_stopped = false;
   var tmax = now;
   var tmin = tmax - 86400000;
   var ymin = 0;
@@ -299,6 +300,7 @@ export default function TimeSeries(options) {
 
   function follow_view() {
     follow_timers--;
+    if (follow_stopped) return;
     now = Date.now();
     if (tmax - mspp < now && now < tmax + 10 * mspp) {
       tmin = tmin + now - tmax;
@@ -325,6 +327,7 @@ export default function TimeSeries(options) {
       var range = tmax - tmin;
       tmin = now - frac * range;
       tmax = tmin + range;
+      if (follow_stopped) return;
       var t = mspp;
       if (mspp > 5000) t = 5000;
       timer(tick, t);
@@ -1201,6 +1204,7 @@ export default function TimeSeries(options) {
   // Animate to now at position p% from the left and start rolling.
   // follow(0) = now at left edge, follow(100) = now at right edge.
   var follow_active = function (p) {
+    follow_stopped = false;
     var frac = Math.max(0, Math.min(100, p)) / 100;
     var range = tmax - tmin;
     zoom(Date.now() - frac * range, Date.now() + (1 - frac) * range);
@@ -1211,6 +1215,7 @@ export default function TimeSeries(options) {
   this.follow    = follow_active;
   this.followNow = function () { follow_active(100); };
   this.previewNow = function () { follow_active(0); };
+  this.stop = function () { follow_stopped = true; };
 
   function onClickDataCallback(f) {
     onClickData = f;
