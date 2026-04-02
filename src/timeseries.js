@@ -17,6 +17,27 @@ export default function TimeSeries(options) {
     zoomDuration: 500,     // animation duration in ms for zoom transitions
     zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
+    colors: {
+      frameBg:     '#f0f6ff',                    // margin / axis area background
+      text:        '#1a2e45',                    // all text and plot border
+      plotBg:      '#ffffff',                    // plot area background
+      gridLine:    'rgba(100,100,100,0.35)',      // vertical time grid lines
+      gridLineY:   'rgba(150,150,150,0.55)',      // horizontal y-axis lines
+      weekNumber:  '#999999',                    // week-number label
+      nowLine:     'rgba(210,0,0,0.65)',          // the now indicator line
+      future:      'rgba(150,150,150,0.28)',      // fog-of-future overlay
+      stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
+      stripSecond: ['rgba(255,255,215,0.55)', 'rgba(255,255,165,0.55)'],
+      stripMinute: ['rgba(215,255,215,0.55)', 'rgba(165,240,165,0.55)'],
+      stripHour:   ['rgba(215,215,255,0.55)', 'rgba(165,165,240,0.55)'],
+      dayDefault:  'rgba(190,190,190,0.45)',      // regular weekday stripe
+      dayWeekend:  'rgba(255,155,155,0.50)',      // weekend / holiday stripe
+      dayOdd:      'rgba(215,215,215,0.42)',      // alternate weekday stripe
+      yearOdd:     'rgba(255,255,255,0.40)',      // alternating year stripes
+      yearEven:    'rgba(232,232,232,0.40)',
+      monthOdd:    'rgba(85,148,200,0.48)',       // alternating month stripes
+      monthEven:   'rgba(232,232,232,0.42)',
+    },
     holidays: {
       1.1: "Neujahr",
       1.5: "Maifeiertag",
@@ -879,8 +900,8 @@ export default function TimeSeries(options) {
             fill:
               part == 1
                 ? t % 2
-                  ? "rgba(240,240,240,0.5)"
-                  : "rgba(196,196,196,0.5)"
+                  ? settings.colors.stripMs[0]
+                  : settings.colors.stripMs[1]
                 : false,
           });
         }
@@ -903,8 +924,8 @@ export default function TimeSeries(options) {
             fill:
               part == 1
                 ? s % 2
-                  ? "rgba(255,255,240,0.5)"
-                  : "rgba(255,255,196,0.5)"
+                  ? settings.colors.stripSecond[0]
+                  : settings.colors.stripSecond[1]
                 : false,
           });
       }
@@ -926,8 +947,8 @@ export default function TimeSeries(options) {
             fill:
               part == 1
                 ? m % 2
-                  ? "rgba(240,255,240,0.5)"
-                  : "rgba(196,255,196,0.5)"
+                  ? settings.colors.stripMinute[0]
+                  : settings.colors.stripMinute[1]
                 : false,
           });
       }
@@ -950,8 +971,8 @@ export default function TimeSeries(options) {
             fill:
               part == 1
                 ? h % 2
-                  ? "rgba(240,240,255,0.5)"
-                  : "rgba(196,196,255,0.5)"
+                  ? settings.colors.stripHour[0]
+                  : settings.colors.stripHour[1]
                 : false,
           });
       }
@@ -980,9 +1001,9 @@ export default function TimeSeries(options) {
             h = (label(t, "day", len - holiday_pixels[h] - 5) + " " + h).trim();
         }
         var wd = t.getDay();
-        var fill = "rgba(196,196,196,0.5)";
-        if (wd == 0 || wd == 6 || bh) fill = "rgba(255,166,166,0.5)";
-        else if (wd % 2) fill = "rgba(224,224,224,0.5)";
+        var fill = settings.colors.dayDefault;
+        if (wd == 0 || wd == 6 || bh) fill = settings.colors.dayWeekend;
+        else if (wd % 2) fill = settings.colors.dayOdd;
         grid[4].push({
           tm: t,
           label: h ? h : label(t, "day", len),
@@ -1014,7 +1035,7 @@ export default function TimeSeries(options) {
           x: x,
           len: len,
           fill:
-            t.getMonth() % 2 ? "rgba(85,148,200,0.5)" : "rgba(240,240,240,0.5)",
+            t.getMonth() % 2 ? settings.colors.monthOdd : settings.colors.monthEven,
           browse: t <= tmin && len + x >= canvas.width - margin.right,
         });
         dm = new Date(t - 1);
@@ -1045,9 +1066,7 @@ export default function TimeSeries(options) {
           x: x,
           len: len,
           fill:
-            t.getFullYear() % 2
-              ? "rgba(255,255,255,0.4)"
-              : "rgba(240,240,240,0.4)",
+            t.getFullYear() % 2 ? settings.colors.yearOdd : settings.colors.yearEven,
           browse: t <= tmin && len + x >= canvas.width - margin.right,
         });
       }
@@ -1106,7 +1125,7 @@ export default function TimeSeries(options) {
     c.textBaseline = "bottom";
     c.fillStyle = item.fill;
     c.fillRect(item.x, position - font_height, item.len, font_height);
-    c.fillStyle = style.color;
+    c.fillStyle = settings.colors.text;
     c.fillText(item.label, item.x + item.len / 2, position - 1);
     if (item.browse) {
       c.textAlign = "left";
@@ -1131,7 +1150,7 @@ export default function TimeSeries(options) {
   }
 
   function background() {
-    c.fillStyle = "white";
+    c.fillStyle = settings.colors.plotBg;
     c.fillRect(margin.left, margin.top, plotWidth, plotHeight);
     Object.keys(grid)
       .reverse()
@@ -1141,12 +1160,12 @@ export default function TimeSeries(options) {
             c.fillStyle = item.fill;
             c.fillRect(item.x, margin.top, item.len, plotHeight);
           }
-          vertical_line(item.tm, "grey");
+          vertical_line(item.tm, settings.colors.gridLine);
           if (item.cw) {
             c.textAlign = "left";
             var x = X(item.tm);
             if (x < margin.left) x = margin.left;
-            c.fillStyle = "#888";
+            c.fillStyle = settings.colors.weekNumber;
             c.textAlign = "left";
             c.textBaseline = "bottom";
             c.fillText(item.cw, x + 1, canvas.height - margin.bottom);
@@ -1156,7 +1175,7 @@ export default function TimeSeries(options) {
   }
 
   function frame() {
-    c.fillStyle = style.backgroundColor;
+    c.fillStyle = settings.colors.frameBg;
     c.fillRect(0, 0, canvas.width, margin.top);
     c.fillRect(0, margin.top, margin.left, canvas.height - margin.top);
     c.fillRect(
@@ -1179,9 +1198,9 @@ export default function TimeSeries(options) {
     c.lineTo(margin.left, margin.top);
     c.moveTo(canvas.width - margin.right, margin.top);
     c.lineTo(canvas.width - margin.right, margin.top - 2 * font_height);
-    c.strokeStyle = style.color;
+    c.strokeStyle = settings.colors.text;
     c.stroke();
-    c.fillStyle = style.color;
+    c.fillStyle = settings.colors.text;
     c.font = style.font;
     c.textAlign = "right";
     c.textBaseline = "middle";
@@ -1207,7 +1226,7 @@ export default function TimeSeries(options) {
       grid[6].forEach((item, i) => {
         horizontal_label(item, margin.top - font_height);
       });
-    c.fillStyle = style.color;
+    c.fillStyle = settings.colors.text;
     c.font = style.font;
     c.textAlign = "right";
     c.textBaseline = "middle";
@@ -1218,7 +1237,7 @@ export default function TimeSeries(options) {
   }
 
   function yAxis() {
-    c.strokeStyle = "#aaa";
+    c.strokeStyle = settings.colors.gridLineY;
     ygrid.forEach((item, i) => {
       var y = Y(item.y);
       c.beginPath();
@@ -1232,15 +1251,10 @@ export default function TimeSeries(options) {
     c.beginPath();
     c.moveTo(X(now), 0);
     c.lineTo(X(now), canvas.height);
-    c.strokeStyle = "rgba(255,0,0,0.5)";
+    c.strokeStyle = settings.colors.nowLine;
     c.stroke();
-    c.textAlign = "left";
-    c.textBaseline = "middle";
-    c.font = "0.65em Arial";
-    c.fillStyle = "rgba(255,0,0, 0.5)";
-    // rotateText(timezone, X(now), canvas.height);
     c.font = style.font;
-    c.fillStyle = "black";
+    c.fillStyle = settings.colors.text;
   }
 
   function fog_of_future() {
@@ -1248,7 +1262,7 @@ export default function TimeSeries(options) {
     var x;
     if (now < tmin) x = margin.left;
     else x = X(now);
-    c.fillStyle = "rgba(160,160,160, 0.4)";
+    c.fillStyle = settings.colors.future;
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
@@ -1293,6 +1307,11 @@ export default function TimeSeries(options) {
     onClickData = f;
   }
 
+  this.setColors = function (obj) {
+    Object.assign(settings.colors, obj);
+    plotAll();
+  };
+
   this.onClickDataCallback = onClickDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
@@ -1301,3 +1320,102 @@ export default function TimeSeries(options) {
   var self = this;
   if (settings.initialView) setTimeout(function () { self[settings.initialView](); }, 0);
 }
+
+// ── Named colour themes ───────────────────────────────────────────────────────
+// Each theme is a complete colors object suitable for new TimeSeries({ colors: … })
+// or ts.setColors(TimeSeries.themes.dark).
+
+TimeSeries.themes = {
+
+  // ── Default (light blue) — matches built-in defaults ─────────────────────
+  light: {
+    frameBg:     '#f0f6ff',
+    text:        '#1a2e45',
+    plotBg:      '#ffffff',
+    gridLine:    'rgba(100,100,100,0.35)',
+    gridLineY:   'rgba(150,150,150,0.55)',
+    weekNumber:  '#999999',
+    nowLine:     'rgba(210,0,0,0.65)',
+    future:      'rgba(150,150,150,0.28)',
+    stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
+    stripSecond: ['rgba(255,255,215,0.55)', 'rgba(255,255,165,0.55)'],
+    stripMinute: ['rgba(215,255,215,0.55)', 'rgba(165,240,165,0.55)'],
+    stripHour:   ['rgba(215,215,255,0.55)', 'rgba(165,165,240,0.55)'],
+    dayDefault:  'rgba(190,190,190,0.45)',
+    dayWeekend:  'rgba(255,155,155,0.50)',
+    dayOdd:      'rgba(215,215,215,0.42)',
+    yearOdd:     'rgba(255,255,255,0.40)',
+    yearEven:    'rgba(232,232,232,0.40)',
+    monthOdd:    'rgba(85,148,200,0.48)',
+    monthEven:   'rgba(232,232,232,0.42)',
+  },
+
+  // ── Dark ─────────────────────────────────────────────────────────────────
+  dark: {
+    frameBg:     '#1a1f2e',
+    text:        '#c8d8e8',
+    plotBg:      '#0f1420',
+    gridLine:    'rgba(150,165,190,0.22)',
+    gridLineY:   'rgba(150,165,190,0.32)',
+    weekNumber:  '#4a5a6a',
+    nowLine:     'rgba(255,90,90,0.75)',
+    future:      'rgba(0,0,0,0.38)',
+    stripMs:     ['rgba(35,42,60,0.60)', 'rgba(50,62,88,0.60)'],
+    stripSecond: ['rgba(60,58,25,0.55)', 'rgba(82,78,20,0.55)'],
+    stripMinute: ['rgba(22,52,28,0.55)', 'rgba(22,72,32,0.55)'],
+    stripHour:   ['rgba(24,28,62,0.55)', 'rgba(24,28,85,0.55)'],
+    dayDefault:  'rgba(55,68,92,0.42)',
+    dayWeekend:  'rgba(120,38,38,0.48)',
+    dayOdd:      'rgba(45,52,70,0.35)',
+    yearOdd:     'rgba(255,255,255,0.04)',
+    yearEven:    'rgba(90,115,150,0.09)',
+    monthOdd:    'rgba(42,88,145,0.48)',
+    monthEven:   'rgba(55,68,92,0.38)',
+  },
+
+  // ── High contrast (WCAG-friendly) ────────────────────────────────────────
+  highContrast: {
+    frameBg:     '#ffffff',
+    text:        '#000000',
+    plotBg:      '#ffffff',
+    gridLine:    'rgba(0,0,0,0.50)',
+    gridLineY:   'rgba(0,0,0,0.62)',
+    weekNumber:  '#333333',
+    nowLine:     'rgba(200,0,0,0.92)',
+    future:      'rgba(80,80,80,0.28)',
+    stripMs:     ['rgba(215,215,215,0.75)', 'rgba(160,160,160,0.75)'],
+    stripSecond: ['rgba(255,255,170,0.85)', 'rgba(255,240,100,0.85)'],
+    stripMinute: ['rgba(170,255,170,0.85)', 'rgba(90,230,90,0.85)'],
+    stripHour:   ['rgba(170,170,255,0.85)', 'rgba(90,90,230,0.85)'],
+    dayDefault:  'rgba(140,140,140,0.52)',
+    dayWeekend:  'rgba(255,80,80,0.55)',
+    dayOdd:      'rgba(180,180,180,0.45)',
+    yearOdd:     'rgba(255,255,255,0.55)',
+    yearEven:    'rgba(195,195,195,0.55)',
+    monthOdd:    'rgba(0,80,200,0.65)',
+    monthEven:   'rgba(195,195,195,0.55)',
+  },
+
+  // ── Warm (amber / sepia) ─────────────────────────────────────────────────
+  warm: {
+    frameBg:     '#fdf6ec',
+    text:        '#3d2200',
+    plotBg:      '#fffef8',
+    gridLine:    'rgba(140,90,30,0.28)',
+    gridLineY:   'rgba(140,90,30,0.42)',
+    weekNumber:  '#b08040',
+    nowLine:     'rgba(200,50,0,0.72)',
+    future:      'rgba(180,140,90,0.25)',
+    stripMs:     ['rgba(255,242,215,0.58)', 'rgba(242,215,168,0.58)'],
+    stripSecond: ['rgba(255,255,195,0.58)', 'rgba(255,242,140,0.58)'],
+    stripMinute: ['rgba(215,252,205,0.58)', 'rgba(185,238,168,0.58)'],
+    stripHour:   ['rgba(215,210,255,0.58)', 'rgba(188,180,242,0.58)'],
+    dayDefault:  'rgba(195,162,118,0.42)',
+    dayWeekend:  'rgba(255,148,105,0.52)',
+    dayOdd:      'rgba(222,192,148,0.38)',
+    yearOdd:     'rgba(255,248,232,0.52)',
+    yearEven:    'rgba(238,220,192,0.52)',
+    monthOdd:    'rgba(175,105,32,0.48)',
+    monthEven:   'rgba(238,218,185,0.48)',
+  },
+};

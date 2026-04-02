@@ -241,6 +241,142 @@
       flex-shrink: 0;
     }
 
+    /* ── Theme: dark ────────────────────────────────────────── */
+    body.theme-dark {
+      background: linear-gradient(160deg, #1a1f2e 0%, #141928 40%, #0f1420 100%);
+      color: #c8d8e8;
+    }
+    body.theme-dark header h1       { color: #c8d8e8; }
+    body.theme-dark header h1 span  { color: #5594c8; }
+    body.theme-dark header p        { color: #5a7a9a; }
+    body.theme-dark .chart-card {
+      background: #1a1f2e;
+      box-shadow:
+        0 1px 3px rgba(0,0,0,0.4),
+        0 8px 32px rgba(0,0,0,0.5),
+        0 0 0 1px rgba(80,120,180,0.18);
+    }
+    body.theme-dark .canvas-wrap    { border-bottom-color: #2a3348; }
+    body.theme-dark #timeseries     { background: #0f1420; }
+    body.theme-dark .controls {
+      background: linear-gradient(180deg, #1e2438 0%, #181d2e 100%);
+    }
+    body.theme-dark .control-group {
+      background: rgba(30,38,58,0.8);
+      border-color: #2a3a54;
+    }
+    body.theme-dark .group-label    { color: #4a6a8a; }
+    body.theme-dark .btn-ghost      { color: #6aabdf; }
+    body.theme-dark .btn-ghost:hover { background: rgba(90,148,200,0.15); color: #9acce8; }
+    body.theme-dark .divider        { background: #2a3a54; }
+    body.theme-dark .chart-footer {
+      background: #151a28;
+      border-top-color: #2a3348;
+    }
+    body.theme-dark .chart-footer span { color: #4a6a8a; }
+    body.theme-dark .legend-item    { color: #5a7a9a; }
+    body.theme-dark .control-group.live-on {
+      border-color: #3a6a9a;
+      background: rgba(42,68,110,0.35);
+    }
+    body.theme-dark .control-group.live-on .group-label { color: #6aabdf; }
+
+    /* ── Theme: high-contrast ───────────────────────────────── */
+    body.theme-highContrast {
+      background: #ffffff;
+      color: #000000;
+    }
+    body.theme-highContrast header h1       { color: #000000; }
+    body.theme-highContrast header h1 span  { color: #0050c8; }
+    body.theme-highContrast header p        { color: #333333; }
+    body.theme-highContrast .chart-card {
+      background: #ffffff;
+      box-shadow: 0 0 0 2px #000000;
+    }
+    body.theme-highContrast .canvas-wrap    { border-bottom-color: #000000; }
+    body.theme-highContrast #timeseries     { background: #ffffff; }
+    body.theme-highContrast .controls       { background: #eeeeee; }
+    body.theme-highContrast .control-group {
+      background: #ffffff;
+      border: 2px solid #000000;
+    }
+    body.theme-highContrast .group-label    { color: #222222; }
+    body.theme-highContrast .btn-ghost      { color: #0050c8; }
+    body.theme-highContrast .btn-ghost:hover { background: #ddeeff; }
+    body.theme-highContrast .divider        { background: #000000; }
+    body.theme-highContrast .chart-footer {
+      background: #f0f0f0;
+      border-top-color: #000000;
+    }
+    body.theme-highContrast .chart-footer span { color: #000000; }
+    body.theme-highContrast .legend-item    { color: #000000; }
+
+    /* ── Theme: warm ────────────────────────────────────────── */
+    body.theme-warm {
+      background: linear-gradient(160deg, #fdf6ec 0%, #f5e8d0 40%, #ecdabb 100%);
+      color: #3d2200;
+    }
+    body.theme-warm header h1       { color: #3d2200; }
+    body.theme-warm header h1 span  { color: #a05a10; }
+    body.theme-warm header p        { color: #8a6030; }
+    body.theme-warm .chart-card {
+      background: #fffef8;
+      box-shadow:
+        0 1px 3px rgba(80,40,0,0.08),
+        0 8px 32px rgba(80,40,0,0.12),
+        0 0 0 1px rgba(160,100,30,0.15);
+    }
+    body.theme-warm .canvas-wrap    { border-bottom-color: #e8d0a8; }
+    body.theme-warm #timeseries     { background: #fffef8; }
+    body.theme-warm .controls {
+      background: linear-gradient(180deg, #fdf3e3 0%, #f8ecda 100%);
+    }
+    body.theme-warm .control-group {
+      background: rgba(255,252,240,0.8);
+      border-color: #d8b878;
+    }
+    body.theme-warm .group-label    { color: #b08040; }
+    body.theme-warm .btn-ghost      { color: #a05a10; }
+    body.theme-warm .btn-ghost:hover { background: rgba(160,90,16,0.10); }
+    body.theme-warm .btn-primary {
+      background: linear-gradient(135deg, #a05a10 0%, #7a3e08 100%);
+      box-shadow: 0 2px 6px rgba(100,50,8,0.30);
+    }
+    body.theme-warm .btn-secondary {
+      background: linear-gradient(135deg, #c87828 0%, #a05a10 100%);
+      box-shadow: 0 2px 6px rgba(160,90,16,0.30);
+    }
+    body.theme-warm .divider        { background: #d8b878; }
+    body.theme-warm .chart-footer {
+      background: #fdf6ec;
+      border-top-color: #e8d0a8;
+    }
+    body.theme-warm .chart-footer span { color: #b08040; }
+    body.theme-warm .legend-item    { color: #8a6030; }
+    body.theme-warm .control-group.live-on {
+      border-color: #c87828;
+      background: rgba(200,120,40,0.10);
+    }
+    body.theme-warm .control-group.live-on .group-label { color: #a05a10; }
+
+    /* ── Theme switcher buttons ─────────────────────────────── */
+    .theme-btn {
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      padding: 0;
+      border: 2px solid transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .theme-btn:hover  { transform: scale(1.18); }
+    .theme-btn.active { border-color: #fff; box-shadow: 0 0 0 2px #2d6a9f; }
+    body.theme-dark   .theme-btn.active { border-color: #0f1420; box-shadow: 0 0 0 2px #6aabdf; }
+    .theme-btn-light  { background: linear-gradient(135deg, #f0f6ff, #c8daf5); }
+    .theme-btn-dark   { background: linear-gradient(135deg, #1a1f2e, #2a3a54); }
+    .theme-btn-hc     { background: linear-gradient(135deg, #ffffff, #000000); }
+    .theme-btn-warm   { background: linear-gradient(135deg, #fdf6ec, #c87828); }
+
     /* ── Responsive / mobile ─────────────────────────────────── */
     @media (max-width: 640px) {
       html, body {
@@ -379,6 +515,21 @@
 
         <div class="divider"></div>
 
+        <!-- Theme -->
+        <div class="control-group">
+          <span class="group-label">Theme</span>
+          <button class="theme-btn theme-btn-light active" id="tbtn-light"
+                  onclick="applyTheme('light')" title="Light"></button>
+          <button class="theme-btn theme-btn-dark" id="tbtn-dark"
+                  onclick="applyTheme('dark')" title="Dark"></button>
+          <button class="theme-btn theme-btn-hc" id="tbtn-highContrast"
+                  onclick="applyTheme('highContrast')" title="High contrast"></button>
+          <button class="theme-btn theme-btn-warm" id="tbtn-warm"
+                  onclick="applyTheme('warm')" title="Warm"></button>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- Live -->
         <div class="control-group" id="live-group">
           <span class="group-label">Live</span>
@@ -423,6 +574,18 @@
     window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
     ts.onStop(function () { setLive(null); });
     ts.onFollow(setLive);
+
+    var currentTheme = 'light';
+    function applyTheme(name) {
+      var themes = ['light', 'dark', 'highContrast', 'warm'];
+      themes.forEach(function (t) {
+        document.body.classList.toggle('theme-' + t, t === name && name !== 'light');
+        var btn = document.getElementById('tbtn-' + t);
+        if (btn) btn.classList.toggle('active', t === name);
+      });
+      currentTheme = name;
+      ts.setColors(TimeSeries.themes[name]);
+    }
 
     // Update Live group visual state. pos = 0..100 when following, null when stopped.
     function setLive(pos) {
