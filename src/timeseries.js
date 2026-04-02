@@ -315,16 +315,22 @@ export default function TimeSeries(options) {
     plotAll();
   }
 
-  function follow_left() {
-    follow_timers--;
-    now = Date.now();
-    var range = tmax - tmin;
-    tmin = now;
-    tmax = now + range;
-    var t = mspp;
-    if (mspp > 5000) t = 5000;
-    timer(follow_left, t);
-    plotAll();
+  // Returns a rolling function that keeps now at position p% from the left (0–100).
+  // follow(0) = now at left edge, follow(100) = now at right edge.
+  function makeFollower(p) {
+    var frac = Math.max(0, Math.min(100, p)) / 100;
+    function tick() {
+      follow_timers--;
+      now = Date.now();
+      var range = tmax - tmin;
+      tmin = now - frac * range;
+      tmax = tmin + range;
+      var t = mspp;
+      if (mspp > 5000) t = 5000;
+      timer(tick, t);
+      plotAll();
+    }
+    return tick;
   }
 
   // navigate view to specific day, month or year (center current or go to left or right)
@@ -1192,25 +1198,19 @@ export default function TimeSeries(options) {
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
-  // Animate to now and start rolling (seismograph mode, now at right edge).
-  // zoom() handles the transition; follow_view() takes over once it completes.
-  this.followNow = function () {
+  // Animate to now at position p% from the left and start rolling.
+  // follow(0) = now at left edge, follow(100) = now at right edge.
+  var follow_active = function (p) {
+    var frac = Math.max(0, Math.min(100, p)) / 100;
     var range = tmax - tmin;
-    zoom(Date.now() - range, Date.now());
+    zoom(Date.now() - frac * range, Date.now() + (1 - frac) * range);
     setTimeout(function () {
-      if (follow_timers === 0) timer(follow_view, 0);
+      if (follow_timers === 0) timer(makeFollower(p), 0);
     }, zoom_onclick_time);
   };
-
-  // Animate to now and start rolling (forward-looking mode, now at left edge).
-  // zoom() handles the transition; follow_left() takes over once it completes.
-  this.previewNow = function () {
-    var range = tmax - tmin;
-    zoom(Date.now(), Date.now() + range);
-    setTimeout(function () {
-      if (follow_timers === 0) timer(follow_left, 0);
-    }, zoom_onclick_time);
-  };
+  this.follow    = follow_active;
+  this.followNow = function () { follow_active(100); };
+  this.previewNow = function () { follow_active(0); };
 
   function onClickDataCallback(f) {
     onClickData = f;
