@@ -76,11 +76,25 @@ export default function TimeSeries(options) {
   var fm = c.measureText("22:00:00");
   var font_height = 1.4 * fm.actualBoundingBoxAscent + 4;
   var font_width = fm.width;
+
+  // Read the canvas container's CSS padding to use as the outer whitespace.
+  // Set padding on .canvas-wrap in CSS to control the space around the chart.
+  function readContainerPad() {
+    var cs = window.getComputedStyle(canvas.parentElement);
+    return {
+      top:    parseFloat(cs.paddingTop)    || 0,
+      right:  parseFloat(cs.paddingRight)  || 0,
+      bottom: parseFloat(cs.paddingBottom) || 0,
+      left:   parseFloat(cs.paddingLeft)   || 0,
+    };
+  }
+  var basePad = readContainerPad();
+
   var margin = {
-    top: 3 * font_height,
-    right: 1 * font_height,
-    bottom: font_width,
-    left: 70, // should be dependant on y scale
+    top:    2 * font_height + basePad.top,    // 2 label rows + css padding
+    right:  basePad.right,                    // css padding only
+    bottom: font_width + basePad.bottom,      // time labels + css padding (animated)
+    left:   70 + basePad.left,               // y-axis + css padding (animated)
   };
 
   var startDragX = 0,
@@ -145,6 +159,19 @@ export default function TimeSeries(options) {
   // decade in top row, year in second row: 2 (not used..)
   // century in top row, decade in second row: 3 (not used..)
   var label_level = 0;
+  var label_level_prev = 0;
+  var label_level_alpha = 1.0;   // 0 = showing prev, 1 = fully at label_level
+  var label_anim_startT = 0;
+  var label_anim_dur = 280;      // ms for horizontal-label crossfade
+  var ygrid_alpha = 1.0;         // opacity for y-axis lines + labels
+  var ygrid_anim_startT = 0;
+  var ygrid_had_data = false;
+  var ygrid_initialized = false;
+  var margin_left_anim   = { from: 70 + basePad.left,           to: 70 + basePad.left,           startT: 0, dur: 300 };
+  var margin_bottom_anim = { from: font_width + basePad.bottom, to: font_width + basePad.bottom, startT: 0, dur: 250 };
+  var margin_left_initialized   = false;
+  var margin_bottom_initialized = false;
+  var axis_anim_pending = false;
   var grid_level_label = [
     [5, 6, 7],
     [4, 5, 6],
@@ -554,6 +581,12 @@ export default function TimeSeries(options) {
           : (2 - Math.pow(2, -20 * x + 10)) / 2;
   }
 
+  function scheduleAxisTransition() {
+    if (axis_anim_pending) return;
+    axis_anim_pending = true;
+    setTimeout(function () { axis_anim_pending = false; plotAll(); }, 12);
+  }
+
   function animate() {
     now = Date.now();
     var done = false;
@@ -584,14 +617,16 @@ export default function TimeSeries(options) {
     // console.log(grid);
     if (follow_timers < 0) timer(follow_view, 1000);
     if (follow_stopped || follow_timers === 0) scheduleNowLine();
-    c.fillText("1 Pixel = " + period(mspp), plotWidth - 60, 11);
   }
 
   window.onresize = function () {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
-    plotWidth = canvas.width - margin.left - margin.right;
-    plotHeight = canvas.height - margin.top - margin.bottom;
+    basePad = readContainerPad();
+    margin.top   = 2 * font_height + basePad.top;
+    margin.right = basePad.right;
+    plotWidth  = canvas.width  - margin.left - margin.right;
+    plotHeight = canvas.height - margin.top  - margin.bottom;
     var BB = canvas.getBoundingClientRect();
     offset.x = BB.left;
     offset.y = BB.top;
@@ -874,9 +909,36 @@ export default function TimeSeries(options) {
       }
     }
 
-    // Reclaim y-axis space when no data is visible
-    margin.left = ygrid.length > 0 ? 70 : margin.right;
+    // Animate margin.left when y-axis appears / disappears
+    var margin_left_new = ygrid.length > 0 ? 70 + basePad.left : basePad.left;
+    if (!margin_left_initialized) {
+      margin.left = margin_left_new;
+      margin_left_anim = { from: margin_left_new, to: margin_left_new, startT: 0, dur: 0 };
+      margin_left_initialized = true;
+    } else if (margin_left_new !== margin_left_anim.to) {
+      margin_left_anim = { from: margin.left, to: margin_left_new, startT: Date.now(), dur: 300 };
+    }
+    var mlt = margin_left_anim.dur > 0
+      ? Math.min(1, (Date.now() - margin_left_anim.startT) / margin_left_anim.dur)
+      : 1;
+    margin.left = Math.round(margin_left_anim.from + (margin_left_anim.to - margin_left_anim.from) * easeInOutExpo(mlt));
+    if (mlt < 1) scheduleAxisTransition();
     plotWidth = canvas.width - margin.left - margin.right;
+
+    // Fade in y-axis labels / lines when data enters the viewport
+    var has_ygrid = ygrid.length > 0;
+    if (!ygrid_initialized) {
+      ygrid_alpha = has_ygrid ? 1.0 : 0.0;
+      ygrid_had_data = has_ygrid;
+      ygrid_initialized = true;
+    } else if (has_ygrid !== ygrid_had_data) {
+      ygrid_had_data = has_ygrid;
+      if (has_ygrid) { ygrid_alpha = 0; ygrid_anim_startT = Date.now(); }
+    }
+    if (has_ygrid && ygrid_alpha < 1) {
+      ygrid_alpha = Math.min(1, (Date.now() - ygrid_anim_startT) / 300);
+      if (ygrid_alpha < 1) scheduleAxisTransition();
+    }
 
     // milliseconds
     var part = time_part(part1000, 1, dvtl);
@@ -1072,13 +1134,37 @@ export default function TimeSeries(options) {
       }
     }
 
-    if (labels.day_pixels[labels.day_pixels.length - 1] > ppms * f.d) {
-      // year in top row, month in second row
-      label_level = 1;
-    } else {
-      // month in top row, day in second row
-      label_level = 0;
+    var new_level = labels.day_pixels[labels.day_pixels.length - 1] > ppms * f.d ? 1 : 0;
+    if (new_level !== label_level) {
+      label_level_prev = label_level;
+      label_level = new_level;
+      label_level_alpha = 0;
+      label_anim_startT = Date.now();
     }
+    if (label_level_alpha < 1) {
+      label_level_alpha = Math.min(1, (Date.now() - label_anim_startT) / label_anim_dur);
+      if (label_level_alpha < 1) scheduleAxisTransition();
+    }
+
+    // Animate margin.bottom when vertical time labels (10:00, 11:00 …) appear / disappear
+    var has_time_labels = false;
+    for (var tli = 0; tli < 4 && !has_time_labels; tli++)
+      if (grid[tli]) for (var tlj = 0; tlj < grid[tli].length && !has_time_labels; tlj++)
+        if (grid[tli][tlj].label) has_time_labels = true;
+    var margin_bottom_new = (has_time_labels ? font_width : 0) + basePad.bottom;
+    if (!margin_bottom_initialized) {
+      margin.bottom = margin_bottom_new;
+      margin_bottom_anim = { from: margin_bottom_new, to: margin_bottom_new, startT: 0, dur: 0 };
+      margin_bottom_initialized = true;
+    } else if (margin_bottom_new !== margin_bottom_anim.to) {
+      margin_bottom_anim = { from: margin.bottom, to: margin_bottom_new, startT: Date.now(), dur: 250 };
+    }
+    var mbt = margin_bottom_anim.dur > 0
+      ? Math.min(1, (Date.now() - margin_bottom_anim.startT) / margin_bottom_anim.dur)
+      : 1;
+    margin.bottom = Math.round(margin_bottom_anim.from + (margin_bottom_anim.to - margin_bottom_anim.from) * easeInOutExpo(mbt));
+    if (mbt < 1) scheduleAxisTransition();
+    plotHeight = canvas.height - margin.top - margin.bottom;
   }
 
   function X(t) {
@@ -1174,6 +1260,16 @@ export default function TimeSeries(options) {
       });
   }
 
+  // Draw horizontal axis label rows for a given label_level at the given alpha.
+  function drawAxisLabels(lvl, alpha) {
+    if (alpha <= 0) return;
+    c.globalAlpha = alpha;
+    if (lvl === 0) grid[4].forEach(function (item) { horizontal_label(item, margin.top); });
+    grid[5].forEach(function (item) { horizontal_label(item, margin.top - (1 - lvl) * font_height); });
+    if (lvl > 0) grid[6].forEach(function (item) { horizontal_label(item, margin.top - font_height); });
+    c.globalAlpha = 1;
+  }
+
   function frame() {
     c.fillStyle = settings.colors.frameBg;
     c.fillRect(0, 0, canvas.width, margin.top);
@@ -1213,38 +1309,31 @@ export default function TimeSeries(options) {
             canvas.height - margin.bottom + 4,
           );
       });
-    // days
-    grid[4].forEach((item, i) => {
-      horizontal_label(item, margin.top);
-    });
-    // months
-    grid[5].forEach((item, i) => {
-      horizontal_label(item, margin.top - (1 - label_level) * font_height);
-    });
-    // years
-    if (label_level > 0)
-      grid[6].forEach((item, i) => {
-        horizontal_label(item, margin.top - font_height);
-      });
-    c.fillStyle = settings.colors.text;
-    c.font = style.font;
-    c.textAlign = "right";
-    c.textBaseline = "middle";
-    ygrid.forEach((item, i) => {
-      var y = Y(item.y);
-      c.fillText(String(item.label), margin.left - 4, y);
-    });
+    if (label_level_alpha < 1) drawAxisLabels(label_level_prev, 1 - label_level_alpha);
+    drawAxisLabels(label_level, label_level_alpha);
+    if (ygrid.length > 0 && ygrid_alpha > 0) {
+      c.globalAlpha = ygrid_alpha;
+      c.fillStyle = settings.colors.text;
+      c.font = style.font;
+      c.textAlign = "right";
+      c.textBaseline = "middle";
+      ygrid.forEach(function (item) { c.fillText(String(item.label), margin.left - 4, Y(item.y)); });
+      c.globalAlpha = 1;
+    }
   }
 
   function yAxis() {
+    if (!ygrid.length || ygrid_alpha <= 0) return;
+    c.globalAlpha = ygrid_alpha;
     c.strokeStyle = settings.colors.gridLineY;
-    ygrid.forEach((item, i) => {
+    ygrid.forEach(function (item) {
       var y = Y(item.y);
       c.beginPath();
       c.moveTo(margin.left, y);
       c.lineTo(margin.left + plotWidth, y);
       c.stroke();
     });
+    c.globalAlpha = 1;
   }
 
   function redLine() {

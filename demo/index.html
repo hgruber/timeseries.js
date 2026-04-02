@@ -1,10 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>timeseries.js — Interactive Time Series Visualization</title>
-  <style>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport"
+              content="width=device-width, initial-scale=1.0, user-scalable=no">
+        <title>timeseries.js — Interactive Time Series Visualization</title>
+        <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -46,7 +47,7 @@
     }
 
     .chart-card {
-      background: #ffffff;
+      background: #f0f6ff;
       border-radius: 16px;
       box-shadow:
         0 1px 3px rgba(30, 60, 100, 0.08),
@@ -57,7 +58,7 @@
 
     /* ── Canvas wrapper ──────────────────────────────────────── */
     .canvas-wrap {
-      padding: 0;
+      padding: 8px;
       border-bottom: 1px solid #e4edf8;
     }
 
@@ -320,7 +321,7 @@
     body.theme-warm header h1 span  { color: #a05a10; }
     body.theme-warm header p        { color: #8a6030; }
     body.theme-warm .chart-card {
-      background: #fffef8;
+      background: #fdf6ec;
       box-shadow:
         0 1px 3px rgba(80,40,0,0.08),
         0 8px 32px rgba(80,40,0,0.12),
@@ -455,122 +456,127 @@
         gap: 0.5rem 0.9rem;
       }
     }
-  </style>
-</head>
-<body>
-
-  <header>
-    <h1>timeseries<span>.js</span></h1>
-    <p>Interactive canvas-based time series visualization</p>
-  </header>
-
-  <main>
-    <div class="chart-card">
-
-      <div class="canvas-wrap">
-        <canvas id="timeseries"></canvas>
-      </div>
-
-      <div class="controls">
-
-        <!-- Day navigation -->
-        <div class="control-group">
-          <span class="group-label">Day</span>
-          <button class="btn-ghost" onclick="ts.yesterday()" title="Yesterday">
-            <i class="arrow">&#8249;</i> Yesterday
-          </button>
-          <button class="btn-primary" onclick="ts.today()">Today</button>
-          <button class="btn-ghost" onclick="ts.tomorrow()" title="Tomorrow">
-            Tomorrow <i class="arrow">&#8250;</i>
-          </button>
-        </div>
-
-        <div class="divider"></div>
-
-        <!-- Rolling 24 h -->
-        <div class="control-group">
-          <span class="group-label">24 h</span>
-          <button class="btn-ghost" onclick="ts.last24()" title="Previous 24 hours">
-            <i class="arrow">&#8249;</i> Last 24 h
-          </button>
-          <button class="btn-secondary" onclick="ts.last24()">Rolling 24 h</button>
-          <button class="btn-ghost" onclick="ts.next24()" title="Next 24 hours">
-            Next 24 h <i class="arrow">&#8250;</i>
-          </button>
-        </div>
-
-        <div class="divider"></div>
-
-        <!-- Week navigation -->
-        <div class="control-group">
-          <span class="group-label">Week</span>
-          <button class="btn-ghost" onclick="ts.lastWeek()" title="Last week">
-            <i class="arrow">&#8249;</i> Last week
-          </button>
-          <button class="btn-primary" onclick="ts.thisWeek()">This week</button>
-          <button class="btn-ghost" onclick="ts.nextWeek()" title="Next week">
-            Next week <i class="arrow">&#8250;</i>
-          </button>
-        </div>
-
-        <div class="divider"></div>
-
-        <!-- Theme -->
-        <div class="control-group">
-          <span class="group-label">Theme</span>
-          <button class="theme-btn theme-btn-light active" id="tbtn-light"
-                  onclick="applyTheme('light')" title="Light"></button>
-          <button class="theme-btn theme-btn-dark" id="tbtn-dark"
-                  onclick="applyTheme('dark')" title="Dark"></button>
-          <button class="theme-btn theme-btn-hc" id="tbtn-highContrast"
-                  onclick="applyTheme('highContrast')" title="High contrast"></button>
-          <button class="theme-btn theme-btn-warm" id="tbtn-warm"
-                  onclick="applyTheme('warm')" title="Warm"></button>
-        </div>
-
-        <div class="divider"></div>
-
-        <!-- Live -->
-        <div class="control-group" id="live-group">
-          <span class="group-label">Live</span>
-          <button class="btn-secondary" id="btn-preview"
-                  onclick="ts.previewNow(); setLive(0)"
-                  title="Now at left edge — forward-looking mode">&#9711; Preview</button>
-          <input id="follow-slider" type="range" min="0" max="100" value="100"
-                 title="Now position: 0% = left edge, 100% = right edge"
-                 oninput="ts.follow(+this.value); setLive(+this.value)"
-                 style="width:70px; accent-color:#5594c8; cursor:pointer;">
-          <button class="btn-secondary" id="btn-follow"
-                  onclick="ts.followNow(); setLive(100)"
-                  title="Now at right edge — seismograph mode">&#9679; Follow</button>
-          <button class="btn-ghost" id="btn-stop" disabled
-                  onclick="ts.stop(); setLive(null)"
-                  title="Stop following">&#9646;&#9646; Stop</button>
-        </div>
-
-      </div><!-- /.controls -->
-
-      <div class="chart-footer">
-        <span>Scroll to zoom &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Click labels to navigate &nbsp;·&nbsp; Pinch to zoom on touch</span>
-        <div class="legend">
-          <span class="legend-item">
-            <span class="legend-dot" style="background:#ffa6a6;"></span> Weekend / Holiday
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot" style="background:#5594c8;"></span> Month boundary
-          </span>
-          <span class="legend-item">
-            <span class="legend-dot" style="background:rgba(255,0,0,0.6);"></span> Now
-          </span>
-        </div>
-      </div>
-
-    </div><!-- /.chart-card -->
-  </main>
-
-  <script src="../dist/timeseries.js"></script>
-  <script src="./artificial.js"></script>
-  <script>
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>
+                timeseries<span>.js</span>
+            </h1>
+            <p>Interactive canvas-based time series visualization</p>
+        </header>
+        <main>
+            <div class="chart-card">
+                <div class="canvas-wrap">
+                    <canvas id="timeseries"></canvas>
+                </div>
+                <div class="controls">
+                    <!-- Day navigation -->
+                    <div class="control-group">
+                        <span class="group-label">Day</span>
+                        <button class="btn-ghost" onclick="ts.yesterday()" title="Yesterday">
+                            <i class="arrow">&#8249;</i> Yesterday
+                        </button>
+                        <button class="btn-primary" onclick="ts.today()">Today</button>
+                        <button class="btn-ghost" onclick="ts.tomorrow()" title="Tomorrow">
+                            Tomorrow <i class="arrow">&#8250;</i>
+                        </button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Rolling 24 h -->
+                    <div class="control-group">
+                        <span class="group-label">24 h</span>
+                        <button class="btn-ghost" onclick="ts.last24()" title="Previous 24 hours">
+                            <i class="arrow">&#8249;</i> Last 24 h
+                        </button>
+                        <button class="btn-secondary" onclick="ts.last24()">Rolling 24 h</button>
+                        <button class="btn-ghost" onclick="ts.next24()" title="Next 24 hours">
+                            Next 24 h <i class="arrow">&#8250;</i>
+                        </button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Week navigation -->
+                    <div class="control-group">
+                        <span class="group-label">Week</span>
+                        <button class="btn-ghost" onclick="ts.lastWeek()" title="Last week">
+                            <i class="arrow">&#8249;</i> Last week
+                        </button>
+                        <button class="btn-primary" onclick="ts.thisWeek()">This week</button>
+                        <button class="btn-ghost" onclick="ts.nextWeek()" title="Next week">
+                            Next week <i class="arrow">&#8250;</i>
+                        </button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Theme -->
+                    <div class="control-group">
+                        <span class="group-label">Theme</span>
+                        <button class="theme-btn theme-btn-light active"
+                                id="tbtn-light"
+                                onclick="applyTheme('light')"
+                                title="Light"></button>
+                        <button class="theme-btn theme-btn-dark"
+                                id="tbtn-dark"
+                                onclick="applyTheme('dark')"
+                                title="Dark"></button>
+                        <button class="theme-btn theme-btn-hc"
+                                id="tbtn-highContrast"
+                                onclick="applyTheme('highContrast')"
+                                title="High contrast"></button>
+                        <button class="theme-btn theme-btn-warm"
+                                id="tbtn-warm"
+                                onclick="applyTheme('warm')"
+                                title="Warm"></button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Live -->
+                    <div class="control-group" id="live-group">
+                        <span class="group-label">Live</span>
+                        <button class="btn-secondary"
+                                id="btn-preview"
+                                onclick="ts.previewNow(); setLive(0)"
+                                title="Now at left edge — forward-looking mode">&#9711; Preview</button>
+                        <input id="follow-slider"
+                               type="range"
+                               min="0"
+                               max="100"
+                               value="100"
+                               title="Now position: 0% = left edge, 100% = right edge"
+                               oninput="ts.follow(+this.value); setLive(+this.value)"
+                               style="width:70px;
+                                      accent-color:#5594c8;
+                                      cursor:pointer">
+                        <button class="btn-secondary"
+                                id="btn-follow"
+                                onclick="ts.followNow(); setLive(100)"
+                                title="Now at right edge — seismograph mode">&#9679; Follow</button>
+                        <button class="btn-ghost"
+                                id="btn-stop"
+                                disabled
+                                onclick="ts.stop(); setLive(null)"
+                                title="Stop following">&#9646;&#9646; Stop</button>
+                    </div>
+                </div>
+                <!-- /.controls -->
+                <div class="chart-footer">
+                    <span>Scroll to zoom &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Click labels to navigate &nbsp;·&nbsp; Pinch to zoom on touch</span>
+                    <div class="legend">
+                        <span class="legend-item">
+                            <span class="legend-dot" style="background:#ffa6a6;"></span> Weekend / Holiday
+                        </span>
+                        <span class="legend-item">
+                            <span class="legend-dot" style="background:#5594c8;"></span> Month boundary
+                        </span>
+                        <span class="legend-item">
+                            <span class="legend-dot" style="background:rgba(255,0,0,0.6);"></span> Now
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <!-- /.chart-card -->
+        </main>
+        <script src="../dist/timeseries.js"></script>
+        <script src="./artificial.js"></script>
+        <script>
     window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
     ts.onStop(function () { setLive(null); });
     ts.onFollow(setLive);
@@ -596,7 +602,6 @@
       document.getElementById('btn-follow').classList.toggle('btn-live-on', on && pos === 100);
       if (on) document.getElementById('follow-slider').value = pos;
     }
-  </script>
-
-</body>
+        </script>
+    </body>
 </html>
