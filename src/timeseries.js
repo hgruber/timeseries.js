@@ -72,6 +72,7 @@ export default function TimeSeries(options) {
   var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   var follow_timers = 0;
   var follow_stopped = false;
+  var follow_fraction = 1.0;   // 0 = now at left edge, 1 = now at right edge
   var tmax = now;
   var tmin = tmax - 86400000;
   var ymin = 0;
@@ -317,23 +318,22 @@ export default function TimeSeries(options) {
     plotAll();
   }
 
-  // Returns a rolling function that keeps now at position p% from the left (0–100).
-  // follow(0) = now at left edge, follow(100) = now at right edge.
-  function makeFollower(p) {
-    var frac = Math.max(0, Math.min(100, p)) / 100;
-    function tick() {
-      follow_timers--;
-      now = Date.now();
-      var range = tmax - tmin;
-      tmin = now - frac * range;
-      tmax = tmin + range;
-      if (follow_stopped) return;
-      var t = mspp;
-      if (mspp > 5000) t = 5000;
-      timer(tick, t);
-      plotAll();
-    }
-    return tick;
+  // Single persistent tick; reads follow_fraction so the slider can update it live.
+  function follower_tick() {
+    follow_timers--;
+    if (follow_stopped) return;
+    now = Date.now();
+    var range = tmax - tmin;
+    tmin = now - follow_fraction * range;
+    tmax = tmin + range;
+    var t = mspp;
+    if (mspp > 5000) t = 5000;
+    timer(follower_tick, t);
+    plotAll();
+  }
+
+  function start_follower() {
+    if (follow_timers === 0) timer(follower_tick, 0);
   }
 
   // navigate view to specific day, month or year (center current or go to left or right)
@@ -1201,20 +1201,28 @@ export default function TimeSeries(options) {
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
-  // Animate to now at position p% from the left and start rolling.
-  // follow(0) = now at left edge, follow(100) = now at right edge.
-  var follow_active = function (p) {
+  // Animated entry: zoom to position then start/continue rolling.
+  function follow_animated(p) {
     follow_stopped = false;
-    var frac = Math.max(0, Math.min(100, p)) / 100;
+    follow_fraction = Math.max(0, Math.min(100, p)) / 100;
     var range = tmax - tmin;
-    zoom(Date.now() - frac * range, Date.now() + (1 - frac) * range);
-    setTimeout(function () {
-      if (follow_timers === 0) timer(makeFollower(p), 0);
-    }, zoom_onclick_time);
+    zoom(Date.now() - follow_fraction * range, Date.now() + (1 - follow_fraction) * range);
+    setTimeout(start_follower, zoom_onclick_time);
+  }
+
+  // Immediate snap: update fraction, reposition view at once, start/continue rolling.
+  this.follow = function (p) {
+    follow_stopped = false;
+    follow_fraction = Math.max(0, Math.min(100, p)) / 100;
+    now = Date.now();
+    var range = tmax - tmin;
+    tmin = now - follow_fraction * range;
+    tmax = tmin + range;
+    start_follower();
+    plotAll();
   };
-  this.follow    = follow_active;
-  this.followNow = function () { follow_active(100); };
-  this.previewNow = function () { follow_active(0); };
+  this.followNow  = function () { follow_animated(100); };
+  this.previewNow = function () { follow_animated(0); };
   this.stop = function () { follow_stopped = true; };
 
   function onClickDataCallback(f) {
