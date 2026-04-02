@@ -781,6 +781,10 @@ export default function TimeSeries(options) {
       }
     }
 
+    // Reclaim y-axis space when no data is visible
+    margin.left = ygrid.length > 0 ? 70 : margin.right;
+    plotWidth = canvas.width - margin.left - margin.right;
+
     // milliseconds
     var part = time_part(part1000, 1, dvtl);
     var partl = time_part(part1000, 1, dtl);
