@@ -69,7 +69,7 @@ function onZabbixData(source, opt, d, callbacks) {
     }
   });
   if (source["plot-type"] == "multibar")
-    for (var i in result) {
+    for (const i of Object.keys(result)) {
       var sv = sumValues(result[i]);
       if (tmp.max < sv) tmp.max = sv;
     }
