@@ -627,6 +627,7 @@ export default function TimeSeries(options) {
   canvas.ontouchstart = function (e) {
     e.preventDefault();
     if (e.touches.length === 1) {
+      if (follow_timers > 0 && !follow_stopped) return; // pan not allowed while following
       doStop();
       touchState = {
         type: 'pan',
