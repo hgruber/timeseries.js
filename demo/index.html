@@ -318,12 +318,12 @@
         <!-- Live -->
         <div class="control-group">
           <span class="group-label">Live</span>
-          <button class="btn-secondary" onclick="ts.previewNow()" title="Now at left edge — forward-looking mode">&#9711; Preview</button>
+          <button class="btn-secondary" onclick="ts.previewNow(); document.getElementById('follow-slider').value=0" title="Now at left edge — forward-looking mode">&#9711; Preview</button>
           <input id="follow-slider" type="range" min="0" max="100" value="100"
                  title="Now position: 0% = left edge, 100% = right edge"
                  oninput="ts.follow(+this.value)"
                  style="width:70px; accent-color:#5594c8; cursor:pointer;">
-          <button class="btn-secondary" onclick="ts.followNow()" title="Now at right edge — seismograph mode">&#9679; Follow</button>
+          <button class="btn-secondary" onclick="ts.followNow(); document.getElementById('follow-slider').value=100" title="Now at right edge — seismograph mode">&#9679; Follow</button>
           <button class="btn-ghost" onclick="ts.stop()" title="Stop following">&#9646;&#9646; Stop</button>
         </div>
 
