@@ -1337,9 +1337,10 @@ export default function TimeSeries(options) {
   }
 
   function redLine() {
+    var x = X(now);
     c.beginPath();
-    c.moveTo(X(now), 0);
-    c.lineTo(X(now), canvas.height);
+    c.moveTo(x, margin.top);
+    c.lineTo(x, margin.top + plotHeight);
     c.strokeStyle = settings.colors.nowLine;
     c.stroke();
     c.font = style.font;
