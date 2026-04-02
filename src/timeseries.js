@@ -1180,15 +1180,14 @@ export default function TimeSeries(options) {
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
-  // Snap tmax to now and start rolling (seismograph mode).
-  // The existing follow_view() mechanism takes over once the view is aligned.
+  // Animate to now and start rolling (seismograph mode).
+  // zoom() handles the transition; follow_view() takes over once it completes.
   this.followNow = function () {
     var range = tmax - tmin;
-    now = Date.now();
-    tmax = now;
-    tmin = now - range;
-    if (follow_timers === 0) timer(follow_view, 0);
-    plotAll();
+    zoom(Date.now() - range, Date.now());
+    setTimeout(function () {
+      if (follow_timers === 0) timer(follow_view, 0);
+    }, zoom_onclick_time);
   };
 
   function onClickDataCallback(f) {
