@@ -567,6 +567,54 @@ export default function TimeSeries(options) {
     canvas.style.cursor = 'default';
   };
 
+  var touchState = null;
+
+  canvas.ontouchstart = function (e) {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      touchState = {
+        type: 'pan',
+        x0: e.touches[0].clientX,
+        tmin0: tmin,
+        tmax0: tmax,
+      };
+    } else if (e.touches.length === 2) {
+      var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      touchState = {
+        type: 'pinch',
+        dist0: Math.abs(e.touches[1].clientX - e.touches[0].clientX),
+        midTime: rT(cx - offset.x),
+        midFrac: (cx - offset.x - margin.left) / plotWidth,
+        tmin0: tmin,
+        tmax0: tmax,
+      };
+    }
+  };
+
+  canvas.ontouchmove = function (e) {
+    e.preventDefault();
+    if (!touchState) return;
+    if (e.touches.length === 1 && touchState.type === 'pan') {
+      var move = ((touchState.x0 - e.touches[0].clientX) / plotWidth) * (touchState.tmax0 - touchState.tmin0);
+      tmin = touchState.tmin0 + move;
+      tmax = touchState.tmax0 + move;
+      plotAll();
+    } else if (e.touches.length === 2 && touchState.type === 'pinch') {
+      var dist = Math.abs(e.touches[1].clientX - e.touches[0].clientX);
+      if (dist === 0) return;
+      var scale = touchState.dist0 / dist;
+      var newRange = (touchState.tmax0 - touchState.tmin0) * scale;
+      tmin = touchState.midTime - touchState.midFrac * newRange;
+      tmax = tmin + newRange;
+      plotAll();
+    }
+  };
+
+  canvas.ontouchend = function (e) {
+    e.preventDefault();
+    touchState = null;
+  };
+
   canvas.onwheel = function (e) {
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
