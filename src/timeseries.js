@@ -315,6 +315,18 @@ export default function TimeSeries(options) {
     plotAll();
   }
 
+  function follow_left() {
+    follow_timers--;
+    now = Date.now();
+    var range = tmax - tmin;
+    tmin = now;
+    tmax = now + range;
+    var t = mspp;
+    if (mspp > 5000) t = 5000;
+    timer(follow_left, t);
+    plotAll();
+  }
+
   // navigate view to specific day, month or year (center current or go to left or right)
   function navigate(item, level, direction) {
     if (level == 4) {
@@ -1180,13 +1192,23 @@ export default function TimeSeries(options) {
     c.fillRect(x, margin.top, plotWidth, plotHeight);
   }
 
-  // Animate to now and start rolling (seismograph mode).
+  // Animate to now and start rolling (seismograph mode, now at right edge).
   // zoom() handles the transition; follow_view() takes over once it completes.
   this.followNow = function () {
     var range = tmax - tmin;
     zoom(Date.now() - range, Date.now());
     setTimeout(function () {
       if (follow_timers === 0) timer(follow_view, 0);
+    }, zoom_onclick_time);
+  };
+
+  // Animate to now and start rolling (forward-looking mode, now at left edge).
+  // zoom() handles the transition; follow_left() takes over once it completes.
+  this.previewNow = function () {
+    var range = tmax - tmin;
+    zoom(Date.now(), Date.now() + range);
+    setTimeout(function () {
+      if (follow_timers === 0) timer(follow_left, 0);
     }, zoom_onclick_time);
   };
 
