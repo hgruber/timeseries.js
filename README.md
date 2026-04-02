@@ -34,13 +34,13 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 </script>
 ```
 
-### ES module (development)
+### Development
 
-```js
-import TimeSeries from './src/timeseries.js';
+```bash
+npm run build   # build dist/timeseries.js first
+npm run serve   # static server on :8080
+# open http://localhost:8080/demo/index.html
 ```
-
-No build step needed for development — open `demo/index.html` via a static server.
 
 ---
 
