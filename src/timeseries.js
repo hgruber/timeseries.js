@@ -81,6 +81,7 @@ export default function TimeSeries(options) {
   var ppv = plotHeight / (ymax - ymin); // pixels per value
   var vpp = 1 / ppv; // values per pixel
   var data = [];
+  var activePlot;
   var rctx = null; // render context, updated on each plotAll() call
 
   var f = {
