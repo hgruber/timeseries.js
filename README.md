@@ -2,9 +2,9 @@
 
 A lightweight, dependency-free JavaScript library for interactive time series visualization on HTML canvas. Designed for fluid navigation at any time scale — from minutes to years — with correct daylight saving time handling and calendar-aware labeling.
 
-[![demo image](demo.png)](https://hgruber.github.io/timeseries.js/index.html)
+[![demo image](demo.png)](https://hgruber.github.io/timeseries.js/demo/index.html)
 
-**[Live demo](https://hgruber.github.io/timeseries.js/index.html)**
+**[Live demo](https://hgruber.github.io/timeseries.js/demo/index.html)**
 
 ---
 
