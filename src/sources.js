@@ -45,7 +45,6 @@ function sumValues(obj) {
 }
 
 function onZabbixData(source, opt, d, callbacks) {
-  console.log("onZabbixData");
   var tmp = {
     name: d[0].itemid,
     type: source["plot-type"],
@@ -75,7 +74,6 @@ function onZabbixData(source, opt, d, callbacks) {
       if (tmp.max < sv) tmp.max = sv;
     }
   tmp.data = result;
-  console.log(tmp);
   callbacks.pushData(tmp);
   callbacks.requestRedraw();
 }
@@ -95,23 +93,21 @@ registerSource({
     }
 
     function authSuccess() {
-      console.log("zabbix_auth_success");
       var viewport = callbacks.getViewport();
       var options = {
         itemids: source["itemids"],
         time_from: Math.floor(viewport.tmin / 1000),
         time_till: Math.ceil(viewport.tmax / 1000),
       };
-      console.log(options);
       server.api("history.get", options).then(
         (d) => onZabbixData(source, options, d, callbacks),
-        (e) => { console.log("zabbix_failure", e); },
+        (e) => { console.warn("zabbix_failure", e); },
       );
     }
 
     server
       .setAuth(source["auth-token"])
-      .then(authSuccess, (e) => { console.log("zabbix_failure", e); });
+      .then(authSuccess, (e) => { console.warn("zabbix_failure", e); });
     source.server = server;
   }
 });

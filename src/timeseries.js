@@ -170,7 +170,6 @@ export default function TimeSeries(options) {
 
   var onClickData = function (plot, n, item) {
     _highlight(plot, n, item, rctx);
-    console.log(plot, n, item);
   };
 
   ////////////////////////////////////
