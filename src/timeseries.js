@@ -604,11 +604,12 @@ export default function TimeSeries(options) {
       };
     } else if (e.touches.length === 2) {
       var cx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      var following = follow_timers > 0 && !follow_stopped;
       touchState = {
         type: 'pinch',
         dist0: Math.abs(e.touches[1].clientX - e.touches[0].clientX),
-        midTime: rT(cx - offset.x),
-        midFrac: (cx - offset.x - margin.left) / plotWidth,
+        midTime: following ? now : rT(cx - offset.x),
+        midFrac: following ? follow_fraction : (cx - offset.x - margin.left) / plotWidth,
         tmin0: tmin,
         tmax0: tmax,
       };
@@ -643,7 +644,10 @@ export default function TimeSeries(options) {
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
     var r = tmax - tmin;
-    var lr = (e.clientX - offset.x - margin.left) / plotWidth;
+    // When following, zoom around now so the view doesn't jump on the next tick.
+    var lr = (follow_timers > 0 && !follow_stopped)
+      ? follow_fraction
+      : (e.clientX - offset.x - margin.left) / plotWidth;
     var rr = 1 - lr;
     if (e.deltaY > 0) {
       tmin -= zf * lr * r;
