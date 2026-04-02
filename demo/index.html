@@ -161,6 +161,42 @@
     /* Arrow glyphs */
     .arrow { font-style: normal; font-size: 0.9em; }
 
+    /* ── Live / follow-mode state ────────────────────────────── */
+    .control-group.live-on {
+      border-color: #5594c8;
+      background: rgba(85, 148, 200, 0.10);
+      box-shadow: 0 0 0 2px rgba(85,148,200,0.22), 0 1px 4px rgba(30,60,100,0.06);
+    }
+
+    .control-group.live-on .group-label {
+      color: #2d6a9f;
+    }
+
+    .control-group.live-on .group-label::after {
+      content: ' ●';
+      font-size: 0.7em;
+      color: #e03030;
+      animation: live-pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes live-pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.2; }
+    }
+
+    /* Highlighted when at their exact edge position */
+    .btn-live-on {
+      background: linear-gradient(135deg, #2d6a9f 0%, #1a4f80 100%) !important;
+      color: #fff !important;
+      box-shadow: 0 2px 8px rgba(29,78,128,0.38) !important;
+    }
+
+    button:disabled {
+      opacity: 0.32;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
     /* ── Divider between groups ──────────────────────────────── */
     .divider {
       width: 1px;
@@ -316,15 +352,21 @@
         <div class="divider"></div>
 
         <!-- Live -->
-        <div class="control-group">
+        <div class="control-group" id="live-group">
           <span class="group-label">Live</span>
-          <button class="btn-secondary" onclick="ts.previewNow(); document.getElementById('follow-slider').value=0" title="Now at left edge — forward-looking mode">&#9711; Preview</button>
+          <button class="btn-secondary" id="btn-preview"
+                  onclick="ts.previewNow(); document.getElementById('follow-slider').value=0; setLive(0)"
+                  title="Now at left edge — forward-looking mode">&#9711; Preview</button>
           <input id="follow-slider" type="range" min="0" max="100" value="100"
                  title="Now position: 0% = left edge, 100% = right edge"
-                 oninput="ts.follow(+this.value)"
+                 oninput="ts.follow(+this.value); setLive(+this.value)"
                  style="width:70px; accent-color:#5594c8; cursor:pointer;">
-          <button class="btn-secondary" onclick="ts.followNow(); document.getElementById('follow-slider').value=100" title="Now at right edge — seismograph mode">&#9679; Follow</button>
-          <button class="btn-ghost" onclick="ts.stop()" title="Stop following">&#9646;&#9646; Stop</button>
+          <button class="btn-secondary" id="btn-follow"
+                  onclick="ts.followNow(); document.getElementById('follow-slider').value=100; setLive(100)"
+                  title="Now at right edge — seismograph mode">&#9679; Follow</button>
+          <button class="btn-ghost" id="btn-stop" disabled
+                  onclick="ts.stop(); setLive(null)"
+                  title="Stop following">&#9646;&#9646; Stop</button>
         </div>
 
       </div><!-- /.controls -->
@@ -351,6 +393,15 @@
   <script src="./artificial.js"></script>
   <script>
     window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
+
+    // Update Live group visual state. pos = 0..100 when following, null when stopped.
+    function setLive(pos) {
+      var on = pos !== null;
+      document.getElementById('live-group').classList.toggle('live-on', on);
+      document.getElementById('btn-stop').disabled = !on;
+      document.getElementById('btn-preview').classList.toggle('btn-live-on', on && pos === 0);
+      document.getElementById('btn-follow').classList.toggle('btn-live-on', on && pos === 100);
+    }
   </script>
 
 </body>
