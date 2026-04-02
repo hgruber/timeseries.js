@@ -1291,7 +1291,5 @@ export default function TimeSeries(options) {
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
 
-  // Default view is last 24h with now at right — start following immediately.
-  start_follower();
   plotAll();
 }
