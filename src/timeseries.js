@@ -75,6 +75,7 @@ export default function TimeSeries(options) {
   var follow_fraction = 1.0;   // 0 = now at left edge, 1 = now at right edge
   var follow_stop_cb = null;
   var follow_start_cb = null;
+  var nowline_timer = null;    // periodic redraw to keep now-line moving when not following
   var tmax = now;
   var tmin = tmax - 86400000;
   var ymin = 0;
@@ -338,6 +339,17 @@ export default function TimeSeries(options) {
     if (follow_timers === 0) timer(follower_tick, 0);
   }
 
+  // Keeps the now-line moving when not in follow mode.
+  // Fires at most once per second (faster at fine zoom levels).
+  function scheduleNowLine() {
+    if (nowline_timer !== null) return;
+    var t = Math.max(250, Math.min(mspp, 1000));
+    nowline_timer = setTimeout(function () {
+      nowline_timer = null;
+      plotAll();
+    }, t);
+  }
+
   // navigate view to specific day, month or year (center current or go to left or right)
   function navigate(item, level, direction) {
     if (level == 4) {
@@ -545,6 +557,7 @@ export default function TimeSeries(options) {
     // console.log('plot finished: ' + follow_timers);
     // console.log(grid);
     if (follow_timers < 0) timer(follow_view, 1000);
+    if (follow_stopped || follow_timers === 0) scheduleNowLine();
     c.fillText("1 Pixel = " + period(mspp), plotWidth - 60, 11);
   }
 
@@ -1236,9 +1249,11 @@ export default function TimeSeries(options) {
   function doStop() {
     follow_stopped = true;
     if (follow_stop_cb) follow_stop_cb();
+    scheduleNowLine();
   }
 
   function doFollow(p) {
+    if (nowline_timer !== null) { clearTimeout(nowline_timer); nowline_timer = null; }
     follow_stopped = false;
     follow_fraction = Math.max(0, Math.min(100, p)) / 100;
     if (follow_start_cb) follow_start_cb(Math.round(follow_fraction * 100));
@@ -1276,5 +1291,7 @@ export default function TimeSeries(options) {
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
 
-  follow_view();
+  // Default view is last 24h with now at right — start following immediately.
+  start_follower();
+  plotAll();
 }

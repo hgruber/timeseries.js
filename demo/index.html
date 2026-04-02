@@ -395,6 +395,7 @@
     window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
     ts.onStop(function () { setLive(null); });
     ts.onFollow(setLive);
+    setLive(100); // constructor starts in follow mode; callback not yet registered so set UI directly
 
     // Update Live group visual state. pos = 0..100 when following, null when stopped.
     function setLive(pos) {
