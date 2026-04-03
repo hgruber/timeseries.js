@@ -10,6 +10,46 @@ import { plotData as _plotData, highlight as _highlight, registerRenderer } from
 import { initSources, registerSource } from './sources.js';
 import { lttb } from './lttb.js';
 
+// ── Viewport group registry ───────────────────────────────────────────────────
+// Maps group name → Set of handles, one per instance.
+// Each handle: { setViewport, getViewport, stopFollow, startFollowAsTick,
+//               startFollowNoTick, getCanvasWidth }
+var _groups = new Map();
+
+// Per-group follow state: name → { active, fraction, leader }
+var _groupFollowState = new Map();
+
+function _groupJoin(name, handle) {
+  if (!_groups.has(name)) _groups.set(name, new Set());
+  _groups.get(name).add(handle);
+}
+
+function _groupLeave(name, handle) {
+  var g = _groups.get(name);
+  if (!g) return;
+  g.delete(handle);
+  if (g.size === 0) { _groups.delete(name); _groupFollowState.delete(name); }
+}
+
+function _groupBroadcast(name, t1, t2, sender) {
+  var g = _groups.get(name);
+  if (!g) return;
+  for (var h of g) {
+    if (h !== sender) h.setViewport(t1, t2);
+  }
+}
+
+function _groupStopFollow(name, sender) {
+  var fs = _groupFollowState.get(name);
+  if (fs) { fs.active = false; fs.leader = null; }
+  var g = _groups.get(name);
+  if (!g) return;
+  for (var h of g) {
+    if (h !== sender) h.stopFollow();
+  }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function TimeSeries(options) {
   var settings = {
     canvas: "timeseries",
@@ -126,6 +166,10 @@ export default function TimeSeries(options) {
   var viewportChangePending = null;
   var activePlot;
   var rctx = null; // render context, updated on each plotAll() call
+  var _currentGroup = null;  // name of the viewport-sync group this instance belongs to
+  var _syncing = false;      // true while applying a viewport broadcast from a peer
+  var _suppressTick = false; // true when this instance is a non-leader in a group follow session
+  var _handle = null;        // handle object registered in _groups
 
   var f = {
     s: 1000,
@@ -354,6 +398,91 @@ export default function TimeSeries(options) {
     onViewportChange(fn) { viewportChangeHandlers.push(fn); },
   });
 
+  // Receive a viewport update from a group peer — apply silently (no re-broadcast).
+  function setViewport(t1, t2) {
+    _syncing = true;
+    tmin = t1;
+    tmax = t2;
+    plotAll();
+    _syncing = false;
+  }
+
+  // Called by a group peer to stop follow mode on this instance.
+  function stopFollowFromPeer() {
+    _syncing = true;
+    doStop();
+    _syncing = false;
+  }
+
+  // Called when this instance is elected follow leader: start ticking.
+  function startFollowAsTick(fraction) {
+    _syncing = true;
+    _suppressTick = false;
+    doFollow(fraction);
+    start_follower();
+    _syncing = false;
+  }
+
+  // Called when this instance is a non-leader: visual follow state, no tick.
+  function startFollowNoTick(fraction) {
+    _syncing = true;
+    _suppressTick = true;
+    doFollow(fraction);
+    _syncing = false;
+  }
+
+  _handle = {
+    setViewport:      setViewport,
+    getViewport:      function () { return { tmin: tmin, tmax: tmax }; },
+    stopFollow:       stopFollowFromPeer,
+    startFollowAsTick: startFollowAsTick,
+    startFollowNoTick: startFollowNoTick,
+    getCanvasWidth:   function () { return canvas.width; },
+  };
+
+  this.joinGroup = function (name) {
+    if (_currentGroup) _groupLeave(_currentGroup, _handle);
+    _currentGroup = name;
+    _groupJoin(name, _handle);
+    // Adopt viewport from an existing peer so this instance snaps to the
+    // group's current view — peers must not jump to our stale position.
+    var g = _groups.get(name);
+    for (var h of g) {
+      if (h !== _handle) { var vp = h.getViewport(); setViewport(vp.tmin, vp.tmax); break; }
+    }
+  };
+
+  this.leaveGroup = function () {
+    if (!_currentGroup) return;
+    var name = _currentGroup;
+    var fs = _groupFollowState.get(name);
+    var wasLeader = fs && fs.active && fs.leader === _handle;
+
+    _groupLeave(name, _handle);
+    _currentGroup = null;
+    _suppressTick = false;
+
+    if (wasLeader) {
+      // Elect the next-largest remaining member as the new follow leader.
+      var g = _groups.get(name);
+      if (g && g.size > 0) {
+        var newLeader = null;
+        var maxW = -1;
+        for (var h of g) { var w = h.getCanvasWidth(); if (w > maxW) { maxW = w; newLeader = h; } }
+        if (newLeader) {
+          fs.leader = newLeader;
+          newLeader.startFollowAsTick(fs.fraction);
+          for (var h of g) { if (h !== newLeader) h.startFollowNoTick(fs.fraction); }
+        }
+      }
+    }
+  };
+
+  if (settings.group) {
+    _currentGroup = settings.group;
+    _groupJoin(_currentGroup, _handle);
+  }
+
   //////////////////////////
   // timeseries functions //
   //////////////////////////
@@ -387,6 +516,7 @@ export default function TimeSeries(options) {
   function follower_tick() {
     follow_timers--;
     if (follow_stopped) return;
+    if (_suppressTick) return; // non-leader in a group: do not drive time
     now = Date.now();
     var range = tmax - tmin;
     tmin = now - follow_fraction * range;
@@ -398,7 +528,36 @@ export default function TimeSeries(options) {
   }
 
   function start_follower() {
-    if (follow_timers === 0) timer(follower_tick, 0);
+    if (!_currentGroup) {
+      if (follow_timers === 0) timer(follower_tick, 0);
+      return;
+    }
+    // Group follow: elect the largest canvas as leader.
+    var g = _groups.get(_currentGroup);
+    if (!g) { if (follow_timers === 0) timer(follower_tick, 0); return; }
+
+    var leaderHandle = _handle;
+    for (var h of g) {
+      if (h.getCanvasWidth() > leaderHandle.getCanvasWidth()) leaderHandle = h;
+    }
+
+    _groupFollowState.set(_currentGroup, { active: true, fraction: follow_fraction * 100, leader: leaderHandle });
+
+    // Tell all non-leaders (other than this instance) to follow without ticking.
+    // Tell the leader (if it is not this instance) to start its tick.
+    for (var h of g) {
+      if (h === _handle) continue;
+      if (h === leaderHandle) h.startFollowAsTick(follow_fraction * 100);
+      else h.startFollowNoTick(follow_fraction * 100);
+    }
+
+    // This instance: leader starts the tick, non-leader suppresses it.
+    if (leaderHandle === _handle) {
+      _suppressTick = false;
+      if (follow_timers === 0) timer(follower_tick, 0);
+    } else {
+      _suppressTick = true;
+    }
   }
 
   // Keeps the now-line moving when not in follow mode.
@@ -691,6 +850,7 @@ export default function TimeSeries(options) {
     // console.log(grid);
     if (follow_timers < 0) timer(follow_view, 1000);
     if (follow_stopped || follow_timers === 0) scheduleNowLine();
+    if (!_syncing && !_suppressTick && _currentGroup) _groupBroadcast(_currentGroup, tmin, tmax, _handle);
   }
 
   window.onresize = function () {
@@ -1444,8 +1604,10 @@ export default function TimeSeries(options) {
 
   function doStop() {
     follow_stopped = true;
+    _suppressTick = false;
     if (follow_stop_cb) follow_stop_cb();
     scheduleNowLine();
+    if (!_syncing && _currentGroup) _groupStopFollow(_currentGroup, _handle);
   }
 
   function doFollow(p) {

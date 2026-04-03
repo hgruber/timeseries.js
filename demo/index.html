@@ -480,6 +480,29 @@
       padding: 0.28rem 0.65rem;
     }
 
+    .sync-label {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.72rem;
+      color: #7a9dc0;
+      cursor: pointer;
+      user-select: none;
+      margin-left: auto;
+      padding-left: 0.5rem;
+    }
+
+    .sync-label input[type="checkbox"] {
+      accent-color: #2d6a9f;
+      cursor: pointer;
+      width: 13px;
+      height: 13px;
+    }
+
+    body.theme-dark .sync-label       { color: #4a6a8a; }
+    body.theme-highContrast .sync-label { color: #333; }
+    body.theme-warm .sync-label        { color: #b08040; }
+
     body.theme-dark .type-section-heading { color: #4a6a8a; }
     body.theme-dark .type-card {
       background: #1a1f2e;
@@ -764,6 +787,9 @@
                             <button class="btn-ghost" onclick="tcNav('tc-multibar','yesterday')">&#8249; Prev</button>
                             <button class="btn-primary" onclick="tcNav('tc-multibar','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multibar','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-multibar',this.checked)"> Sync
+                            </label>
                         </div>
                     </div>
 
@@ -780,6 +806,9 @@
                             <button class="btn-ghost" onclick="tcNav('tc-multiline-b','yesterday')">&#8249; Prev</button>
                             <button class="btn-primary" onclick="tcNav('tc-multiline-b','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multiline-b','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-multiline-b',this.checked)"> Sync
+                            </label>
                         </div>
                     </div>
 
@@ -796,6 +825,9 @@
                             <button class="btn-ghost" onclick="tcNav('tc-multipoint-b','yesterday')">&#8249; Prev</button>
                             <button class="btn-primary" onclick="tcNav('tc-multipoint-b','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multipoint-b','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-multipoint-b',this.checked)"> Sync
+                            </label>
                         </div>
                     </div>
 
@@ -812,6 +844,9 @@
                             <button class="btn-ghost" onclick="tcNav('tc-multiline-p','yesterday')">&#8249; Prev</button>
                             <button class="btn-primary" onclick="tcNav('tc-multiline-p','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multiline-p','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-multiline-p',this.checked)"> Sync
+                            </label>
                         </div>
                     </div>
 
@@ -828,6 +863,9 @@
                             <button class="btn-ghost" onclick="tcNav('tc-scatter','yesterday')">&#8249; Prev</button>
                             <button class="btn-primary" onclick="tcNav('tc-scatter','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-scatter','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-scatter',this.checked)"> Sync
+                            </label>
                         </div>
                     </div>
 
@@ -839,7 +877,7 @@
         <script src="../dist/timeseries.js"></script>
         <script src="./artificial.js"></script>
         <script>
-    window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial] });
+    window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial], group: 'demo' });
     ts.onStop(function () { setLive(null); });
     ts.onFollow(setLive);
 
@@ -967,6 +1005,11 @@
     // ── Plot-type gallery ────────────────────────────────────────────────────
     var typeCharts = {};
 
+    // Browser may restore checkbox state across reloads; always start unchecked.
+    document.querySelectorAll('.sync-label input[type="checkbox"]').forEach(function (cb) {
+      cb.checked = false;
+    });
+
     (function initTypeCharts() {
       var defs = [
         { id: 'tc-multibar',    source: artificial,          initialView: 'yesterday' },
@@ -987,6 +1030,13 @@
 
     function tcNav(canvasId, method) {
       if (typeCharts[canvasId]) typeCharts[canvasId][method]();
+    }
+
+    function tcSync(canvasId, joined) {
+      var tc = typeCharts[canvasId];
+      if (!tc) return;
+      if (joined) tc.joinGroup('demo');
+      else tc.leaveGroup();
     }
 
     // Propagate theme changes to all type charts
