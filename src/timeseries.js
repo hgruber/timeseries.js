@@ -571,6 +571,65 @@ export default function TimeSeries(options) {
     zoom(nextweek, weekafter);
   };
 
+  // ── Month navigation ──────────────────────────────────────────────────────
+  this.thisMonth = function () {
+    doStop();
+    var d = new Date();
+    zoom(new Date(d.getFullYear(), d.getMonth(), 1),
+         new Date(d.getFullYear(), d.getMonth() + 1, 1));
+  };
+  this.lastMonth = function () {
+    doStop();
+    var d = new Date();
+    zoom(new Date(d.getFullYear(), d.getMonth() - 1, 1),
+         new Date(d.getFullYear(), d.getMonth(), 1));
+  };
+  this.nextMonth = function () {
+    doStop();
+    var d = new Date();
+    zoom(new Date(d.getFullYear(), d.getMonth() + 1, 1),
+         new Date(d.getFullYear(), d.getMonth() + 2, 1));
+  };
+  this.zoomMonth = function (year, month) {
+    doStop();
+    zoom(new Date(year, month, 1), new Date(year, month + 1, 1));
+  };
+
+  // ── Year navigation ───────────────────────────────────────────────────────
+  this.thisYear = function () {
+    doStop();
+    var y = new Date().getFullYear();
+    zoom(new Date(y, 0, 1), new Date(y + 1, 0, 1));
+  };
+  this.lastYear = function () {
+    doStop();
+    var y = new Date().getFullYear() - 1;
+    zoom(new Date(y, 0, 1), new Date(y + 1, 0, 1));
+  };
+  this.nextYear = function () {
+    doStop();
+    var y = new Date().getFullYear() + 1;
+    zoom(new Date(y, 0, 1), new Date(y + 1, 0, 1));
+  };
+  this.zoomYear = function (year) {
+    doStop();
+    zoom(new Date(year, 0, 1), new Date(year + 1, 0, 1));
+  };
+
+  // ── Calendar-week navigation (ISO 8601, Monday start) ────────────────────
+  function isoWeekStart(year, week) {
+    var jan4 = new Date(year, 0, 4);
+    var dayOfWeek = (jan4.getDay() + 6) % 7; // Mon=0 … Sun=6
+    return new Date(year, 0, 4 - dayOfWeek + (week - 1) * 7);
+  }
+  this.zoomWeek = function (year, week) {
+    doStop();
+    var start = isoWeekStart(year, week);
+    var end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    zoom(start, end);
+  };
+
   function easeInOutExpo(x) {
     return x === 0
       ? 0

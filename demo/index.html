@@ -199,6 +199,17 @@
       pointer-events: none;
     }
 
+    /* ── Dropdown selects ────────────────────────────────────── */
+    .nav-select {
+      padding: 4px 6px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      font-size: 13px;
+      cursor: pointer;
+      background: #fff;
+      color: #333;
+    }
+
     /* ── Divider between groups ──────────────────────────────── */
     .divider {
       width: 1px;
@@ -507,6 +518,30 @@
                         </button>
                     </div>
                     <div class="divider"></div>
+                    <!-- Year -->
+                    <div class="control-group">
+                        <span class="group-label">Year</span>
+                        <button class="btn-ghost" onclick="stepSelect('sel-year',-1)" title="Previous year">&#8249;</button>
+                        <select id="sel-year" class="nav-select" onchange="doYearChange()" title="Select year"></select>
+                        <button class="btn-ghost" onclick="stepSelect('sel-year',+1)" title="Next year">&#8250;</button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Month -->
+                    <div class="control-group">
+                        <span class="group-label">Month</span>
+                        <button class="btn-ghost" onclick="stepSelect('sel-month',-1)" title="Previous month">&#8249;</button>
+                        <select id="sel-month" class="nav-select" onchange="selMonth()" title="Select month"></select>
+                        <button class="btn-ghost" onclick="stepSelect('sel-month',+1)" title="Next month">&#8250;</button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Calendar week -->
+                    <div class="control-group">
+                        <span class="group-label">KW</span>
+                        <button class="btn-ghost" onclick="stepSelect('sel-week',-1)" title="Previous week">&#8249;</button>
+                        <select id="sel-week" class="nav-select" onchange="selWeek()" title="Select calendar week"></select>
+                        <button class="btn-ghost" onclick="stepSelect('sel-week',+1)" title="Next week">&#8250;</button>
+                    </div>
+                    <div class="divider"></div>
                     <!-- Theme -->
                     <div class="control-group">
                         <span class="group-label">Theme</span>
@@ -601,6 +636,105 @@
       document.getElementById('btn-preview').classList.toggle('btn-live-on', on && pos === 0);
       document.getElementById('btn-follow').classList.toggle('btn-live-on', on && pos === 100);
       if (on) document.getElementById('follow-slider').value = pos;
+    }
+
+    // ── Dropdown selects ────────────────────────────────────────────────────
+    var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+    function isoWeekOf(date) {
+      var d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+      var day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - day);
+      var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      return { year: d.getUTCFullYear(), week: Math.ceil(((d - yearStart) / 86400000 + 1) / 7) };
+    }
+
+    (function buildSelects() {
+      var now = new Date();
+      var cy = now.getFullYear(), cm = now.getMonth();
+
+      var ySel = document.getElementById('sel-year');
+      for (var y = cy - 3; y <= cy + 1; y++) {
+        var o = document.createElement('option');
+        o.value = y; o.textContent = y;
+        if (y === cy) o.selected = true;
+        ySel.appendChild(o);
+      }
+
+      var mSel = document.getElementById('sel-month');
+      for (var delta = -24; delta <= 6; delta++) {
+        var abs = cm + delta;
+        var oy = cy + Math.floor(abs / 12);
+        var om = ((abs % 12) + 12) % 12;
+        var o = document.createElement('option');
+        o.value = oy + ',' + om;
+        o.textContent = MONTHS[om] + ' ' + oy;
+        if (delta === 0) o.selected = true;
+        mSel.appendChild(o);
+      }
+
+      var wSel = document.getElementById('sel-week');
+      for (var delta = -52; delta <= 13; delta++) {
+        var d = new Date(now);
+        d.setDate(d.getDate() + delta * 7);
+        var w = isoWeekOf(d);
+        var o = document.createElement('option');
+        o.value = w.year + ',' + w.week;
+        o.textContent = 'KW ' + String(w.week).padStart(2,'0') + ' \u00b7 ' + w.year;
+        if (delta === 0) o.selected = true;
+        wSel.appendChild(o);
+      }
+    })();
+
+    // selLast tracks the index last confirmed by a dropdown action so
+    // stepSelect can step from the right position after a canvas-driven reset.
+    var selLast = {};
+
+    // When the user navigates via the canvas (drag, scroll, pinch) the period
+    // selects become stale.  Reset them to -1 so the next pick — including the
+    // same option that was already shown — always triggers onchange.
+    (function () {
+      var canvas = document.getElementById('timeseries');
+      function resetSelects() {
+        ['sel-year', 'sel-month', 'sel-week'].forEach(function (id) {
+          var sel = document.getElementById(id);
+          if (sel.selectedIndex !== -1) {
+            selLast[id] = sel.selectedIndex;
+            sel.selectedIndex = -1;
+          }
+        });
+      }
+      canvas.addEventListener('mousedown', resetSelects);
+      canvas.addEventListener('wheel', resetSelects, { passive: true });
+      canvas.addEventListener('touchstart', resetSelects, { passive: true });
+    })();
+
+    function doYearChange() {
+      var sel = document.getElementById('sel-year');
+      if (!sel.value) return;
+      selLast['sel-year'] = sel.selectedIndex;
+      ts.zoomYear(+sel.value);
+    }
+    function selMonth() {
+      var sel = document.getElementById('sel-month');
+      if (!sel.value) return;
+      selLast['sel-month'] = sel.selectedIndex;
+      var p = sel.value.split(',');
+      ts.zoomMonth(+p[0], +p[1]);
+    }
+    function selWeek() {
+      var sel = document.getElementById('sel-week');
+      if (!sel.value) return;
+      selLast['sel-week'] = sel.selectedIndex;
+      var p = sel.value.split(',');
+      ts.zoomWeek(+p[0], +p[1]);
+    }
+    function stepSelect(id, delta) {
+      var sel = document.getElementById(id);
+      var cur = selLast[id] !== undefined ? selLast[id] : sel.selectedIndex;
+      sel.selectedIndex = Math.max(0, Math.min(sel.options.length - 1, cur + delta));
+      selLast[id] = sel.selectedIndex;
+      sel.dispatchEvent(new Event('change'));
     }
         </script>
     </body>
