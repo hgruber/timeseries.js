@@ -853,10 +853,11 @@ export default function TimeSeries(options) {
     if (!_syncing && !_suppressTick && _currentGroup) _groupBroadcast(_currentGroup, tmin, tmax, _handle);
   }
 
-  window.onresize = function () {
+  var _resizeObserver = new ResizeObserver(function () {
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     basePad = readContainerPad();
+    recomputeFonts();
     margin.top   = 2 * font_height + basePad.top;
     margin.right = basePad.right;
     plotWidth  = canvas.width  - margin.left - margin.right;
@@ -865,7 +866,8 @@ export default function TimeSeries(options) {
     offset.x = BB.left;
     offset.y = BB.top;
     plotAll();
-  };
+  });
+  _resizeObserver.observe(canvas.parentElement || canvas);
 
   canvas.onmousedown = function (e) {
     doStop();
