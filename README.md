@@ -14,7 +14,11 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Calendar-aware time axis** — labels adapt to the zoom level (day/month/year), shows calendar weeks, public holidays, and working days
 - **Daylight saving time** — all day and month boundaries computed correctly in the browser's local time zone
 - **Rolling mode** — when the current time reaches the right edge, the chart follows it like a seismograph
+- **Viewport sync** — synchronize multiple chart instances' viewports to zoom/pan together
+- **Smart downsampling** — LTTB algorithm optimizes rendering performance for large PointSeries datasets
+- **Extended navigation** — month/year navigation, calendar weeks (ISO 8601), plus date helpers for day/week intervals
 - **Plugin architecture** — register custom renderers and data sources without modifying library code
+- **Customizable colors** — 4 built-in color schemas to match your theme
 - **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), scatter points (`multipoint`)
 - **Built-in data sources** — Zabbix JSON-RPC API, static/generated data
 
@@ -64,6 +68,10 @@ ts.thisWeek()    ts.lastWeek()    ts.nextWeek()
 ts.last24()      ts.next24()
 
 ts.zoom(tmin, tmax, animationMs)   // tmin/tmax: Unix ms
+ts.zoomMonth()   ts.zoomYear()    // quick month/year navigation
+
+ts.syncWith(otherTimeSeries)         // sync viewport with another instance
+ts.syncGroup(groupName)              // add to viewport sync group
 ```
 
 ---
@@ -109,6 +117,25 @@ TimeSeries.registerSource({
   data: { [slotIndex]: { [seriesId]: value } }
 }
 ```
+
+---
+
+## Configuration
+
+```js
+const ts = new TimeSeries({
+  canvas: 'my-canvas-id',
+  colors: 'default',  // 'default', 'dark', 'light', 'solarized'
+  followTick: true,
+  followInterval: 5000,
+  // ... more options
+});
+```
+
+### Mobile support
+- Full-screen layout
+- Disabled page zoom
+- Touch-locked in follow mode
 
 ---
 
