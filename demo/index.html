@@ -681,25 +681,46 @@
                     <!-- Year -->
                     <div class="control-group">
                         <span class="group-label">Year</span>
-                        <button class="btn-ghost" onclick="stepSelect('sel-year',-1)" title="Previous year">&#8249;</button>
-                        <select id="sel-year" class="nav-select" onchange="doYearChange()" title="Select year"></select>
-                        <button class="btn-ghost" onclick="stepSelect('sel-year',+1)" title="Next year">&#8250;</button>
+                        <button class="btn-ghost"
+                                onclick="stepSelect('sel-year',-1)"
+                                title="Previous year">&#8249;</button>
+                        <select id="sel-year"
+                                class="nav-select"
+                                onchange="doYearChange()"
+                                title="Select year"></select>
+                        <button class="btn-ghost"
+                                onclick="stepSelect('sel-year',+1)"
+                                title="Next year">&#8250;</button>
                     </div>
                     <div class="divider"></div>
                     <!-- Month -->
                     <div class="control-group">
                         <span class="group-label">Month</span>
-                        <button class="btn-ghost" onclick="stepSelect('sel-month',-1)" title="Previous month">&#8249;</button>
-                        <select id="sel-month" class="nav-select" onchange="selMonth()" title="Select month"></select>
-                        <button class="btn-ghost" onclick="stepSelect('sel-month',+1)" title="Next month">&#8250;</button>
+                        <button class="btn-ghost"
+                                onclick="stepSelect('sel-month',-1)"
+                                title="Previous month">&#8249;</button>
+                        <select id="sel-month"
+                                class="nav-select"
+                                onchange="selMonth()"
+                                title="Select month"></select>
+                        <button class="btn-ghost"
+                                onclick="stepSelect('sel-month',+1)"
+                                title="Next month">&#8250;</button>
                     </div>
                     <div class="divider"></div>
                     <!-- Calendar week -->
                     <div class="control-group">
                         <span class="group-label">KW</span>
-                        <button class="btn-ghost" onclick="stepSelect('sel-week',-1)" title="Previous week">&#8249;</button>
-                        <select id="sel-week" class="nav-select" onchange="selWeek()" title="Select calendar week"></select>
-                        <button class="btn-ghost" onclick="stepSelect('sel-week',+1)" title="Next week">&#8250;</button>
+                        <button class="btn-ghost"
+                                onclick="stepSelect('sel-week',-1)"
+                                title="Previous week">&#8249;</button>
+                        <select id="sel-week"
+                                class="nav-select"
+                                onchange="selWeek()"
+                                title="Select calendar week"></select>
+                        <button class="btn-ghost"
+                                onclick="stepSelect('sel-week',+1)"
+                                title="Next week">&#8250;</button>
                     </div>
                     <div class="divider"></div>
                     <!-- Theme -->
@@ -753,7 +774,8 @@
                 </div>
                 <!-- /.controls -->
                 <div class="chart-footer">
-                    <span>Scroll to zoom &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Click labels to navigate &nbsp;·&nbsp; Pinch to zoom on touch</span>
+                    <span>Scroll to zoom &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Click labels to navigate &nbsp;·&nbsp; Pinch to zoom on touch &nbsp;·&nbsp;
+                        <a href="https://github.com/hgruber/timeseries.js">on github.com</a></span>
                     <div class="legend">
                         <span class="legend-item">
                             <span class="legend-dot" style="background:#ffa6a6;"></span> Weekend / Holiday
@@ -768,12 +790,10 @@
                 </div>
             </div>
             <!-- /.chart-card -->
-
             <!-- ── Plot-type gallery ───────────────────────────────────── -->
             <div class="type-section">
                 <p class="type-section-heading">Plot Types</p>
                 <div class="type-grid">
-
                     <!-- multibar — BinnedSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -788,11 +808,11 @@
                             <button class="btn-primary" onclick="tcNav('tc-multibar','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multibar','today')">Today &#8250;</button>
                             <label class="sync-label">
-                                <input type="checkbox" onchange="tcSync('tc-multibar',this.checked)"> Sync
+                                <input type="checkbox" onchange="tcSync('tc-multibar',this.checked)">
+                                Sync
                             </label>
                         </div>
                     </div>
-
                     <!-- multiline — BinnedSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -807,11 +827,11 @@
                             <button class="btn-primary" onclick="tcNav('tc-multiline-b','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multiline-b','today')">Today &#8250;</button>
                             <label class="sync-label">
-                                <input type="checkbox" onchange="tcSync('tc-multiline-b',this.checked)"> Sync
+                                <input type="checkbox" onchange="tcSync('tc-multiline-b',this.checked)">
+                                Sync
                             </label>
                         </div>
                     </div>
-
                     <!-- multipoint — BinnedSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -826,11 +846,11 @@
                             <button class="btn-primary" onclick="tcNav('tc-multipoint-b','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multipoint-b','today')">Today &#8250;</button>
                             <label class="sync-label">
-                                <input type="checkbox" onchange="tcSync('tc-multipoint-b',this.checked)"> Sync
+                                <input type="checkbox" onchange="tcSync('tc-multipoint-b',this.checked)">
+                                Sync
                             </label>
                         </div>
                     </div>
-
                     <!-- multiline — PointSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -845,11 +865,11 @@
                             <button class="btn-primary" onclick="tcNav('tc-multiline-p','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-multiline-p','today')">Today &#8250;</button>
                             <label class="sync-label">
-                                <input type="checkbox" onchange="tcSync('tc-multiline-p',this.checked)"> Sync
+                                <input type="checkbox" onchange="tcSync('tc-multiline-p',this.checked)">
+                                Sync
                             </label>
                         </div>
                     </div>
-
                     <!-- scatter — PointSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -864,11 +884,11 @@
                             <button class="btn-primary" onclick="tcNav('tc-scatter','yesterday')">Yesterday</button>
                             <button class="btn-ghost" onclick="tcNav('tc-scatter','today')">Today &#8250;</button>
                             <label class="sync-label">
-                                <input type="checkbox" onchange="tcSync('tc-scatter',this.checked)"> Sync
+                                <input type="checkbox" onchange="tcSync('tc-scatter',this.checked)">
+                                Sync
                             </label>
                         </div>
                     </div>
-
                 </div>
                 <!-- /.type-grid -->
             </div>
