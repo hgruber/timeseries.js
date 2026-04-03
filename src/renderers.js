@@ -75,15 +75,28 @@ function multibar(plot, rctx) {
 
 function multipoint(plot, rctx) {
   var { c, X, Y, margin, plotWidth } = rctx;
-  var start = plot.interval_start * 1000;
-  var step = plot.interval * 1000;
-  for (const [t, value] of Object.entries(plot.data)) {
-    var x = X(start + t * step);
-    if (x >= margin.left && x <= margin.left + plotWidth) {
-      for (const [i, v] of Object.entries(value)) {
-        c.fillStyle = color(i, 0.8);
-        c.fillRect(x - 2, Y(v) - 2, 4, 4);
-        c.fill();
+  if (plot.category === 'point') {
+    for (const pt of plot.data) {
+      var x = X(pt.t);
+      if (x >= margin.left && x <= margin.left + plotWidth) {
+        for (const [i, v] of Object.entries(pt.values)) {
+          c.fillStyle = color(i, 0.8);
+          c.fillRect(x - 2, Y(v) - 2, 4, 4);
+          c.fill();
+        }
+      }
+    }
+  } else {
+    var start = plot.interval_start * 1000;
+    var step = plot.interval * 1000;
+    for (const [t, value] of Object.entries(plot.data)) {
+      var x = X(start + t * step);
+      if (x >= margin.left && x <= margin.left + plotWidth) {
+        for (const [i, v] of Object.entries(value)) {
+          c.fillStyle = color(i, 0.8);
+          c.fillRect(x - 2, Y(v) - 2, 4, 4);
+          c.fill();
+        }
       }
     }
   }
@@ -91,32 +104,72 @@ function multipoint(plot, rctx) {
 
 function multiline(plot, rctx) {
   var { c, X, Y, margin, plotWidth } = rctx;
-  var start = plot.interval_start * 1000;
-  var step = plot.interval * 1000;
   c.lineWidth = 1.5;
-  for (const v of Object.entries(plot.data[0])) {
-    var i = v[0];
-    var x = X(start);
-    var y = Y(plot.data[0][i]);
-    c.beginPath();
-    c.moveTo(x, y);
-    for (const [t, value] of Object.entries(plot.data)) {
-      x = X(start + t * step);
-      if (
-        x >= margin.left &&
-        x <= margin.left + plotWidth &&
-        value[i] != undefined
-      ) {
-        c.lineTo(x, Y(value[i]));
+  if (plot.category === 'point') {
+    var seriesIds = plot.series ? plot.series.map(s => s.id) : Object.keys(plot.data[0].values);
+    var si = 0;
+    for (const sid of seriesIds) {
+      var started = false;
+      c.beginPath();
+      for (const pt of plot.data) {
+        var v = pt.values[sid];
+        if (v == null) { started = false; continue; }
+        var x = X(pt.t);
+        if (!started) { c.moveTo(x, Y(v)); started = true; }
+        else c.lineTo(x, Y(v));
       }
+      c.strokeStyle = color(si, 0.8);
+      c.stroke();
+      si++;
     }
-    c.strokeStyle = color(i, 0.8);
-    c.stroke();
+  } else {
+    var start = plot.interval_start * 1000;
+    var step = plot.interval * 1000;
+    for (const v of Object.entries(plot.data[0])) {
+      var i = v[0];
+      var x = X(start);
+      var y = Y(plot.data[0][i]);
+      c.beginPath();
+      c.moveTo(x, y);
+      for (const [t, value] of Object.entries(plot.data)) {
+        x = X(start + t * step);
+        if (
+          x >= margin.left &&
+          x <= margin.left + plotWidth &&
+          value[i] != undefined
+        ) {
+          c.lineTo(x, Y(value[i]));
+        }
+      }
+      c.strokeStyle = color(i, 0.8);
+      c.stroke();
+    }
   }
   c.lineWidth = 1;
+}
+
+// scatter — PointSeries only: draws a filled circle per data point per series
+function scatter(plot, rctx) {
+  var { c, X, Y, margin, plotWidth } = rctx;
+  var seriesIds = plot.series ? plot.series.map(s => s.id) : Object.keys(plot.data[0].values);
+  var si = 0;
+  for (const sid of seriesIds) {
+    c.fillStyle = color(si, 0.75);
+    for (const pt of plot.data) {
+      var v = pt.values[sid];
+      if (v == null) continue;
+      var x = X(pt.t);
+      if (x < margin.left || x > margin.left + plotWidth) continue;
+      c.beginPath();
+      c.arc(x, Y(v), 3, 0, 2 * Math.PI);
+      c.fill();
+    }
+    si++;
+  }
 }
 
 // Register built-in renderers
 registerRenderer({ type: 'multibar',   draw: multibar,   highlight: highlight_multibar });
 registerRenderer({ type: 'multiline',  draw: multiline });
 registerRenderer({ type: 'multipoint', draw: multipoint });
+registerRenderer({ type: 'scatter',    draw: scatter });

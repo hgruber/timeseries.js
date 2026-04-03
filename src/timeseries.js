@@ -8,6 +8,7 @@
 import { intervalSubtract, intervalInvert, intervalIntersect, intervalAdd, intervalLength, getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
+import { lttb } from './lttb.js';
 
 export default function TimeSeries(options) {
   var settings = {
@@ -121,6 +122,8 @@ export default function TimeSeries(options) {
   var ppv = plotHeight / (ymax - ymin); // pixels per value
   var vpp = 1 / ppv; // values per pixel
   var data = [];
+  var viewportChangeHandlers = [];
+  var viewportChangePending = null;
   var activePlot;
   var rctx = null; // render context, updated on each plotAll() call
 
@@ -334,10 +337,21 @@ export default function TimeSeries(options) {
   // data retrieval stuff //
   //////////////////////////
 
+  function scheduleViewportChange() {
+    if (viewportChangePending !== null) clearTimeout(viewportChangePending);
+    viewportChangePending = setTimeout(function () {
+      viewportChangePending = null;
+      for (var fn of viewportChangeHandlers) fn(tmin, tmax, ppms);
+    }, 300);
+  }
+
   initSources(settings.sources, {
-    pushData(plot) { data.push(plot); },
+    pushData(plot) { var id = data.length; data.push(plot); return id; },
+    replaceData(id, plot) { data[id] = plot; },
+    removeData(id) { data[id] = null; },
     requestRedraw() { plotAll(); },
-    getViewport() { return { tmin, tmax }; },
+    getViewport() { return { tmin, tmax, ppms }; },
+    onViewportChange(fn) { viewportChangeHandlers.push(fn); },
   });
 
   //////////////////////////
@@ -660,6 +674,7 @@ export default function TimeSeries(options) {
     tmax = animation.start.tmax * (1 - t) + animation.end.tmax * t;
     if (!done) setTimeout(animate, 10);
     plotAll();
+    if (done) scheduleViewportChange();
   }
 
   function plotAll() {
@@ -729,10 +744,12 @@ export default function TimeSeries(options) {
   };
 
   canvas.onmouseup = function (e) {
+    if (startDragX !== 0) scheduleViewportChange();
     startDragX = 0;
   };
 
   canvas.onmouseout = function (e) {
+    if (startDragX !== 0) scheduleViewportChange();
     startDragX = 0;
     canvas.style.cursor = 'default';
   };
@@ -791,6 +808,7 @@ export default function TimeSeries(options) {
 
   canvas.ontouchend = function (e) {
     e.preventDefault();
+    if (touchState) scheduleViewportChange();
     touchState = null;
   };
 
@@ -819,6 +837,7 @@ export default function TimeSeries(options) {
       tmax -= zf * rr * r;
     }
     plotAll();
+    scheduleViewportChange();
   };
 
   // how many tic to use for a given interval
@@ -884,7 +903,8 @@ export default function TimeSeries(options) {
     var t = new Date(rT(x));
     var py = rY(y);
     // multibar identification
-    for (const i of activePlot)
+    for (const i of activePlot) {
+      if (!data[i] || data[i].category === 'point') continue;
       if (
         data[i].interval_start * 1000 <= t &&
         t <= data[i].interval_end * 1000
@@ -908,6 +928,7 @@ export default function TimeSeries(options) {
           h += v;
         }
       }
+    }
     return { t: t, y: py };
   }
 
@@ -930,13 +951,19 @@ export default function TimeSeries(options) {
     var ymax_array = [];
     if (data.length)
       data.forEach((plot, i) => {
-        plot.intervals = Object.keys(plot.data).length;
-        plot.interval_end =
-          plot.interval_start + plot.interval * plot.intervals;
-        var pp = plotpercentage(
-          plot.interval_start * 1000,
-          plot.interval_end * 1000,
-        );
+        if (!plot) return;
+        var ptmin, ptmax;
+        if (plot.category === 'point') {
+          ptmin = plot.tmin;
+          ptmax = plot.tmax;
+        } else {
+          plot.intervals = Object.keys(plot.data).length;
+          plot.interval_end =
+            plot.interval_start + plot.interval * plot.intervals;
+          ptmin = plot.interval_start * 1000;
+          ptmax = plot.interval_end * 1000;
+        }
+        var pp = plotpercentage(ptmin, ptmax);
         if (pp > 0) {
           activePlot.push(i);
           ymax_array.push([i, plot.max, pp]);
@@ -1464,6 +1491,7 @@ export default function TimeSeries(options) {
   this.onClickDataCallback = onClickDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
+  TimeSeries.lttb = lttb;
 
   plotAll();
   var self = this;

@@ -1,7 +1,13 @@
 // Data source plugin registry for timeseries.js
 //
 // Each source plugin: { type: string, init(source, callbacks) }
-// callbacks shape: { pushData(plotObj), requestRedraw(), getViewport() → {tmin, tmax} }
+// callbacks shape:
+//   pushData(plotObj) → plotId       push a new dataset, returns numeric ID
+//   replaceData(id, plotObj)         swap dataset in-place (same ID)
+//   removeData(id)                   remove a dataset
+//   requestRedraw()                  trigger canvas redraw
+//   getViewport() → {tmin,tmax,ppms} current visible range + pixel density
+//   onViewportChange(fn)             register fn(tmin,tmax,ppms) called after pan/zoom settles
 
 import jpZabbix from './jpZabbix.js';
 

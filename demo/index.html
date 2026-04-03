@@ -389,8 +389,145 @@
     .theme-btn-hc     { background: linear-gradient(135deg, #ffffff, #000000); }
     .theme-btn-warm   { background: linear-gradient(135deg, #fdf6ec, #c87828); }
 
+    /* ── Chart-type gallery ─────────────────────────────────────────────── */
+    .type-section {
+      margin-top: 2rem;
+    }
+
+    .type-section-heading {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #7a9dc0;
+      margin-bottom: 0.9rem;
+      padding-left: 0.2rem;
+    }
+
+    .type-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 1rem;
+    }
+
+    .type-card {
+      background: #f0f6ff;
+      border-radius: 14px;
+      box-shadow:
+        0 1px 3px rgba(30, 60, 100, 0.07),
+        0 4px 16px rgba(30, 60, 100, 0.09),
+        0 0 0 1px rgba(45, 106, 159, 0.09);
+      overflow: hidden;
+    }
+
+    .type-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.55rem 1rem;
+      background: linear-gradient(180deg, #f4f9ff 0%, #edf4ff 100%);
+      border-bottom: 1px solid #e4edf8;
+    }
+
+    .type-card-title {
+      font-size: 0.80rem;
+      font-weight: 600;
+      color: #1a2e45;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+    }
+
+    .type-badge {
+      font-size: 0.66rem;
+      font-weight: 600;
+      padding: 0.18rem 0.55rem;
+      border-radius: 20px;
+      letter-spacing: 0.04em;
+    }
+
+    .type-badge-binned {
+      background: rgba(45, 106, 159, 0.12);
+      color: #2d6a9f;
+    }
+
+    .type-badge-point {
+      background: rgba(80, 160, 80, 0.13);
+      color: #2a7a3a;
+    }
+
+    .type-card .canvas-wrap {
+      padding: 6px;
+      border-bottom: 1px solid #e4edf8;
+    }
+
+    .type-card canvas {
+      display: block;
+      width: 100%;
+      height: 200px;
+      background: #f8faff;
+      touch-action: none;
+    }
+
+    .type-card-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.3rem;
+      padding: 0.45rem 0.75rem;
+    }
+
+    .type-card-nav button {
+      font-size: 0.75rem;
+      padding: 0.28rem 0.65rem;
+    }
+
+    body.theme-dark .type-section-heading { color: #4a6a8a; }
+    body.theme-dark .type-card {
+      background: #1a1f2e;
+      box-shadow:
+        0 1px 3px rgba(0,0,0,0.4),
+        0 4px 16px rgba(0,0,0,0.45),
+        0 0 0 1px rgba(80,120,180,0.16);
+    }
+    body.theme-dark .type-card-header {
+      background: linear-gradient(180deg, #1e2438 0%, #181d2e 100%);
+      border-bottom-color: #2a3348;
+    }
+    body.theme-dark .type-card-title   { color: #c8d8e8; }
+    body.theme-dark .type-badge-binned { background: rgba(90,148,200,0.15); color: #6aabdf; }
+    body.theme-dark .type-badge-point  { background: rgba(80,180,80,0.13);  color: #6acf7a; }
+    body.theme-dark .type-card .canvas-wrap { border-bottom-color: #2a3348; }
+    body.theme-dark .type-card canvas  { background: #0f1420; }
+
+    body.theme-highContrast .type-card {
+      background: #fff;
+      box-shadow: 0 0 0 2px #000;
+    }
+    body.theme-highContrast .type-card-header { background: #eee; border-bottom-color: #000; }
+    body.theme-highContrast .type-card-title  { color: #000; }
+    body.theme-highContrast .type-badge-binned { background: #ddeeff; color: #0050c8; }
+    body.theme-highContrast .type-badge-point  { background: #ddffdd; color: #006600; }
+    body.theme-highContrast .type-card canvas  { background: #fff; }
+
+    body.theme-warm .type-section-heading { color: #b08040; }
+    body.theme-warm .type-card {
+      background: #fdf6ec;
+      box-shadow:
+        0 1px 3px rgba(80,40,0,0.07),
+        0 4px 16px rgba(80,40,0,0.11),
+        0 0 0 1px rgba(160,100,30,0.13);
+    }
+    body.theme-warm .type-card-header {
+      background: linear-gradient(180deg, #fdf3e3 0%, #f8ecda 100%);
+      border-bottom-color: #e8d0a8;
+    }
+    body.theme-warm .type-card-title   { color: #3d2200; }
+    body.theme-warm .type-badge-binned { background: rgba(160,90,16,0.12); color: #a05a10; }
+    body.theme-warm .type-badge-point  { background: rgba(80,140,40,0.12); color: #4a7a20; }
+    body.theme-warm .type-card canvas  { background: #fffef8; }
+
     /* ── Responsive / mobile ─────────────────────────────────── */
     @media (max-width: 640px) {
+      .type-section { display: none; }
       html, body {
         height: 100%;
         overflow: hidden;
@@ -608,6 +745,96 @@
                 </div>
             </div>
             <!-- /.chart-card -->
+
+            <!-- ── Plot-type gallery ───────────────────────────────────── -->
+            <div class="type-section">
+                <p class="type-section-heading">Plot Types</p>
+                <div class="type-grid">
+
+                    <!-- multibar — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multibar</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-multibar"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-multibar','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-multibar','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-multibar','today')">Today &#8250;</button>
+                        </div>
+                    </div>
+
+                    <!-- multiline — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multiline</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-multiline-b"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-multiline-b','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-multiline-b','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-multiline-b','today')">Today &#8250;</button>
+                        </div>
+                    </div>
+
+                    <!-- multipoint — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multipoint</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-multipoint-b"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-multipoint-b','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-multipoint-b','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-multipoint-b','today')">Today &#8250;</button>
+                        </div>
+                    </div>
+
+                    <!-- multiline — PointSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multiline</span>
+                            <span class="type-badge type-badge-point">PointSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-multiline-p"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-multiline-p','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-multiline-p','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-multiline-p','today')">Today &#8250;</button>
+                        </div>
+                    </div>
+
+                    <!-- scatter — PointSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">scatter</span>
+                            <span class="type-badge type-badge-point">PointSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-scatter"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-scatter','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-scatter','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-scatter','today')">Today &#8250;</button>
+                        </div>
+                    </div>
+
+                </div>
+                <!-- /.type-grid -->
+            </div>
+            <!-- /.type-section -->
         </main>
         <script src="../dist/timeseries.js"></script>
         <script src="./artificial.js"></script>
@@ -736,6 +963,39 @@
       selLast[id] = sel.selectedIndex;
       sel.dispatchEvent(new Event('change'));
     }
+
+    // ── Plot-type gallery ────────────────────────────────────────────────────
+    var typeCharts = {};
+
+    (function initTypeCharts() {
+      var defs = [
+        { id: 'tc-multibar',    source: artificial,          initialView: 'yesterday' },
+        { id: 'tc-multiline-b', source: artificialMultiline, initialView: 'yesterday' },
+        { id: 'tc-multipoint-b',source: artificialMultipoint,initialView: 'yesterday' },
+        { id: 'tc-multiline-p', source: artificialPointLine, initialView: 'yesterday' },
+        { id: 'tc-scatter',     source: artificialPointScatter, initialView: 'yesterday' },
+      ];
+
+      defs.forEach(function (d) {
+        typeCharts[d.id] = new TimeSeries({
+          canvas: d.id,
+          sources: [d.source],
+          initialView: d.initialView,
+        });
+      });
+    })();
+
+    function tcNav(canvasId, method) {
+      if (typeCharts[canvasId]) typeCharts[canvasId][method]();
+    }
+
+    // Propagate theme changes to all type charts
+    var _applyThemeOrig = applyTheme;
+    applyTheme = function (name) {
+      _applyThemeOrig(name);
+      var colorObj = TimeSeries.themes[name];
+      Object.values(typeCharts).forEach(function (tc) { tc.setColors(colorObj); });
+    };
         </script>
     </body>
 </html>
