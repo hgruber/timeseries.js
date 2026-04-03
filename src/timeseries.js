@@ -1042,7 +1042,7 @@ export default function TimeSeries(options) {
             y < plotHeight + margin.top
           ) {
             var item = wi;
-            return { cw: item.cw, level: 4.5 };
+            return { cw: item.cw, level: 4.5, tm: item.tm };
           }
         }
         // plot area
