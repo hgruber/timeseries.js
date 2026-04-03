@@ -113,10 +113,17 @@ export default function TimeSeries(options) {
     y: BB.top,
   };
   var style = window.getComputedStyle(canvas);
-  c.font = style.font;
-  var fm = c.measureText("22:00:00");
+  var _baseFontSize = parseFloat(style.fontSize) || 13;
+  var _fontL = style.font;
+  var _fontM = style.font.replace(/[\d.]+px/, Math.round(_baseFontSize * 0.80) + 'px');
+  var _fontS = style.font.replace(/[\d.]+px/, Math.round(_baseFontSize * 0.65) + 'px');
+  // x-axis font driven by canvas height; y-axis font driven by canvas width
+  function xFont() { return canvas.height >= 300 ? _fontL : canvas.height >= 150 ? _fontM : _fontS; }
+  function yFont() { return canvas.width  >= 600 ? _fontL : canvas.width  >= 300 ? _fontM : _fontS; }
+  c.font = xFont();
+  var fm = c.measureText("22:22");
   var font_height = 1.4 * fm.actualBoundingBoxAscent + 4;
-  var font_width = fm.width;
+  var font_width  = fm.width;
 
   // Read the canvas container's CSS padding to use as the outer whitespace.
   // Set padding on .canvas-wrap in CSS to control the space around the chart.
@@ -135,7 +142,7 @@ export default function TimeSeries(options) {
     top:    2 * font_height + basePad.top,    // 2 label rows + css padding
     right:  basePad.right,                    // css padding only
     bottom: font_width + basePad.bottom,      // time labels + css padding (animated)
-    left:   70 + basePad.left,               // y-axis + css padding (animated)
+    left:   basePad.left,                    // y-axis + css padding (set by prepare_grid)
   };
 
   var startDragX = 0,
@@ -214,7 +221,7 @@ export default function TimeSeries(options) {
   var ygrid_anim_startT = 0;
   var ygrid_had_data = false;
   var ygrid_initialized = false;
-  var margin_left_anim   = { from: 70 + basePad.left,           to: 70 + basePad.left,           startT: 0, dur: 300 };
+  var margin_left_anim   = { from: basePad.left,           to: basePad.left,           startT: 0, dur: 300 };
   var margin_bottom_anim = { from: font_width + basePad.bottom, to: font_width + basePad.bottom, startT: 0, dur: 250 };
   var margin_left_initialized   = false;
   var margin_bottom_initialized = false;
@@ -277,33 +284,44 @@ export default function TimeSeries(options) {
   // helper functions and variables //
   ////////////////////////////////////
 
-  // calculate the width of labels
+  // calculate the width of labels — wrapped in recomputeFonts() so resize can update them
   var holiday_pixels = {};
-  for (const [key, holiday] of Object.entries(holidays)) {
-    holiday_pixels[holiday] = c.measureText(holiday).width;
+
+  function recomputeFonts() {
+    c.font = xFont();
+    var _fm = c.measureText("22:22");
+    font_height = 1.4 * _fm.actualBoundingBoxAscent + 4;
+    font_width  = _fm.width;
+    dtl = 3 * font_height;
+
+    for (const [key, holiday] of Object.entries(holidays)) {
+      holiday_pixels[holiday] = c.measureText(holiday).width;
+    }
+
+    labels.day_pixels = new Array(labels.day.length).fill(0);
+    for (var i = 0; i < 7; i++) {
+      labels.day.forEach((format, j) => {
+        var l = c.measureText(
+          new Date((i + 355) * f.d).toLocaleString(nls, format),
+        ).width;
+        if (l > labels.day_pixels[j]) labels.day_pixels[j] = l;
+      });
+    }
+
+    labels.month_pixels = new Array(labels.month.length).fill(0);
+    for (var i = 0; i < 12; i++) {
+      labels.month.forEach((format, j) => {
+        var l = c.measureText(
+          new Date((i * 30 + 5) * f.d).toLocaleString(nls, format),
+        ).width;
+        if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
+      });
+    }
+
+    labels.year_pixels = [c.measureText("2000").width, c.measureText("20").width];
   }
 
-  labels.day_pixels = new Array(labels.day.length).fill(0);
-  for (var i = 0; i < 7; i++) {
-    labels.day.forEach((format, j) => {
-      var l = c.measureText(
-        new Date((i + 355) * f.d).toLocaleString(nls, format),
-      ).width;
-      if (l > labels.day_pixels[j]) labels.day_pixels[j] = l;
-    });
-  }
-
-  labels.month_pixels = new Array(labels.month.length).fill(0);
-  for (var i = 0; i < 12; i++) {
-    labels.month.forEach((format, j) => {
-      var l = c.measureText(
-        new Date((i * 30 + 5) * f.d).toLocaleString(nls, format),
-      ).width;
-      if (l > labels.month_pixels[j]) labels.month_pixels[j] = l;
-    });
-  }
-
-  labels.year_pixels = [c.measureText("2000").width, c.measureText("20").width];
+  recomputeFonts();
 
   function Easter(Y) {
     var C = Math.floor(Y / 100);
@@ -1157,8 +1175,17 @@ export default function TimeSeries(options) {
       }
     }
 
-    // Animate margin.left when y-axis appears / disappears
-    var margin_left_new = ygrid.length > 0 ? 70 + basePad.left : basePad.left;
+    // Animate margin.left — width from actual ygrid label text so longest label touches canvas left
+    var _yLabelW = 0;
+    if (ygrid.length > 0) {
+      c.font = yFont();
+      ygrid.forEach(function (item) {
+        var w = c.measureText(String(item.label)).width;
+        if (w > _yLabelW) _yLabelW = w;
+      });
+    }
+    // +4 preserves the existing 4px gap between label right-edge and axis line
+    var margin_left_new = ygrid.length > 0 ? Math.ceil(_yLabelW) + 4 + basePad.left : basePad.left;
     if (!margin_left_initialized) {
       margin.left = margin_left_new;
       margin_left_anim = { from: margin_left_new, to: margin_left_new, startT: 0, dur: 0 };
@@ -1496,6 +1523,7 @@ export default function TimeSeries(options) {
           }
           vertical_line(item.tm, settings.colors.gridLine);
           if (item.cw) {
+            c.font = xFont();
             c.textAlign = "left";
             var x = X(item.tm);
             if (x < margin.left) x = margin.left;
@@ -1545,7 +1573,7 @@ export default function TimeSeries(options) {
     c.strokeStyle = settings.colors.text;
     c.stroke();
     c.fillStyle = settings.colors.text;
-    c.font = style.font;
+    c.font = xFont();
     c.textAlign = "right";
     c.textBaseline = "middle";
     for (var level = 0; level < 4; level++)
@@ -1562,7 +1590,7 @@ export default function TimeSeries(options) {
     if (ygrid.length > 0 && ygrid_alpha > 0) {
       c.globalAlpha = ygrid_alpha;
       c.fillStyle = settings.colors.text;
-      c.font = style.font;
+      c.font = yFont();
       c.textAlign = "right";
       c.textBaseline = "middle";
       ygrid.forEach(function (item) { c.fillText(String(item.label), margin.left - 4, Y(item.y)); });
@@ -1591,7 +1619,7 @@ export default function TimeSeries(options) {
     c.lineTo(x, margin.top + plotHeight);
     c.strokeStyle = settings.colors.nowLine;
     c.stroke();
-    c.font = style.font;
+    c.font = xFont();
     c.fillStyle = settings.colors.text;
   }
 
