@@ -735,7 +735,7 @@ export default function TimeSeries(options) {
     doStop();
     var lastweek = new Date(last_midnight());
     lastweek = new Date(
-      lastweek.setDate(lastweek.getDate() - 6 - lastweek.getDay()),
+      lastweek.setDate(lastweek.getDate() - 6 - (lastweek.getDay() || 7)),
     );
     var thisweek = new Date(lastweek);
     thisweek = new Date(thisweek.setDate(thisweek.getDate() + 7));
@@ -745,7 +745,7 @@ export default function TimeSeries(options) {
     doStop();
     var thisweek = new Date(last_midnight());
     thisweek = new Date(
-      thisweek.setDate(thisweek.getDate() + 1 - thisweek.getDay()),
+      thisweek.setDate(thisweek.getDate() + 1 - (thisweek.getDay() || 7)),
     );
     var nextweek = new Date(thisweek);
     nextweek = new Date(nextweek.setDate(nextweek.getDate() + 7));
@@ -755,7 +755,7 @@ export default function TimeSeries(options) {
     doStop();
     var nextweek = new Date(last_midnight());
     nextweek = new Date(
-      nextweek.setDate(nextweek.getDate() + 8 - nextweek.getDay()),
+      nextweek.setDate(nextweek.getDate() + 8 - (nextweek.getDay() || 7)),
     );
     var weekafter = new Date(nextweek);
     weekafter = new Date(weekafter.setDate(weekafter.getDate() + 7));
