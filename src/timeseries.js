@@ -993,6 +993,7 @@ export default function TimeSeries(options) {
   };
 
   canvas.onwheel = function (e) {
+    e.preventDefault();
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
     // When following, reposition to the actual current now before zooming.
