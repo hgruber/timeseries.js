@@ -424,8 +424,19 @@ export default function TimeSeries(options) {
         newStart = plot.interval_start * 1000;
         newEnd = (plot.interval_start + plot.interval * (ms + 1)) * 1000;
       }
-      for (var i = 0; i < data.length; i++) {
+      // Push new data first so there's never a gap between old and new
+      var id = data.length;
+      data.push(plot);
+      // Then trim or remove old overlapping blocks
+      for (var i = 0; i < id; i++) {
         if (!data[i] || data[i].type !== plot.type) continue;
+        // Different interval: clear all old blocks of this type entirely
+        // so stale-resolution bars don't linger at the edges
+        if (data[i].interval !== undefined && plot.interval !== undefined
+            && data[i].interval !== plot.interval) {
+          data[i] = null;
+          continue;
+        }
         var es, ee;
         if (data[i].category === 'point') {
           es = data[i].tmin;
@@ -458,18 +469,11 @@ export default function TimeSeries(options) {
               }
               data[i].min = mn; data[i].max = mx;
             }
-            // Don't null out — keep the trimmed old block
           } else {
-            console.warn('TimeSeries: dropped overlapping ' + data[i].type + ' block (' +
-              new Date(es).toISOString() + ' – ' + new Date(ee).toISOString() +
-              ') in favour of new data (' +
-              new Date(newStart).toISOString() + ' – ' + new Date(newEnd).toISOString() + ')');
             data[i] = null;
           }
         }
       }
-      var id = data.length;
-      data.push(plot);
       return id;
     },
     replaceData(id, plot) { data[id] = plot; },
