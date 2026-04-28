@@ -1173,7 +1173,9 @@ export default function TimeSeries(options) {
           ptmin = plot.tmin;
           ptmax = plot.tmax;
         } else {
-          plot.intervals = Object.keys(plot.data).length;
+          var maxSlot = 0;
+          for (var k in plot.data) { var n = +k; if (n > maxSlot) maxSlot = n; }
+          plot.intervals = maxSlot + 1;
           plot.interval_end =
             plot.interval_start + plot.interval * plot.intervals;
           ptmin = plot.interval_start * 1000;
