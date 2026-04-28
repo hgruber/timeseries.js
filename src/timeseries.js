@@ -419,8 +419,10 @@ export default function TimeSeries(options) {
         newStart = plot.tmin;
         newEnd = plot.tmax;
       } else {
+        var ms = 0;
+        for (var k in plot.data) { var n = +k; if (n > ms) ms = n; }
         newStart = plot.interval_start * 1000;
-        newEnd = (plot.interval_start + plot.interval * Object.keys(plot.data).length) * 1000;
+        newEnd = (plot.interval_start + plot.interval * (ms + 1)) * 1000;
       }
       for (var i = 0; i < data.length; i++) {
         if (!data[i] || data[i].type !== plot.type) continue;
@@ -429,15 +431,41 @@ export default function TimeSeries(options) {
           es = data[i].tmin;
           ee = data[i].tmax;
         } else {
+          var dms = 0;
+          for (var k in data[i].data) { var n = +k; if (n > dms) dms = n; }
           es = data[i].interval_start * 1000;
-          ee = (data[i].interval_start + data[i].interval * Object.keys(data[i].data).length) * 1000;
+          ee = (data[i].interval_start + data[i].interval * (dms + 1)) * 1000;
         }
         if (newStart < ee && newEnd > es) {
-          console.warn('TimeSeries: dropped overlapping ' + data[i].type + ' block (' +
-            new Date(es).toISOString() + ' – ' + new Date(ee).toISOString() +
-            ') in favour of new data (' +
-            new Date(newStart).toISOString() + ' – ' + new Date(newEnd).toISOString() + ')');
-          data[i] = null;
+          if (data[i].type === 'multibar' && data[i].interval === plot.interval
+              && data[i].category !== 'point' && plot.category !== 'point') {
+            // Concatenate: trim old block's slots at/after new block's start
+            for (var s in data[i].data) {
+              var slotTime = data[i].interval_start + +s * data[i].interval;
+              if (slotTime * 1000 >= newStart) delete data[i].data[s];
+            }
+            // Recalculate old block's metadata
+            data[i].count = Object.keys(data[i].data).length;
+            if (data[i].count === 0) {
+              data[i].min = 0; data[i].max = 0;
+            } else {
+              var mn = Infinity, mx = -Infinity;
+              for (var s in data[i].data) {
+                var total = 0;
+                for (var series in data[i].data[s]) total += data[i].data[s][series];
+                if (total < mn) mn = total;
+                if (total > mx) mx = total;
+              }
+              data[i].min = mn; data[i].max = mx;
+            }
+            // Don't null out — keep the trimmed old block
+          } else {
+            console.warn('TimeSeries: dropped overlapping ' + data[i].type + ' block (' +
+              new Date(es).toISOString() + ' – ' + new Date(ee).toISOString() +
+              ') in favour of new data (' +
+              new Date(newStart).toISOString() + ' – ' + new Date(newEnd).toISOString() + ')');
+            data[i] = null;
+          }
         }
       }
       var id = data.length;
@@ -949,6 +977,7 @@ export default function TimeSeries(options) {
       tmin = startTmin + move;
       tmax = startTmax + move;
       plotAll();
+      scheduleViewportChange();
       return;
     }
     var item = mouse_position(e);
@@ -1010,6 +1039,7 @@ export default function TimeSeries(options) {
       tmin = touchState.tmin0 + move;
       tmax = touchState.tmax0 + move;
       plotAll();
+      scheduleViewportChange();
     } else if (e.touches.length === 2 && touchState.type === 'pinch') {
       var dist = Math.abs(e.touches[1].clientX - e.touches[0].clientX);
       if (dist === 0) return;
@@ -1018,6 +1048,7 @@ export default function TimeSeries(options) {
       tmin = touchState.midTime - touchState.midFrac * newRange;
       tmax = tmin + newRange;
       plotAll();
+      scheduleViewportChange();
     }
   };
 
