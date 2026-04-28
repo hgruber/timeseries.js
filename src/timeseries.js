@@ -133,7 +133,7 @@ export default function TimeSeries(options) {
   // Read the canvas container's CSS padding to use as the outer whitespace.
   // Set padding on .canvas-wrap in CSS to control the space around the chart.
   function readContainerPad() {
-    var cs = window.getComputedStyle(canvas.parentElement);
+    var cs = window.getComputedStyle(canvas.parentElement || canvas);
     return {
       top:    parseFloat(cs.paddingTop)    || 0,
       right:  parseFloat(cs.paddingRight)  || 0,
