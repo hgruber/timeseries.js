@@ -102,6 +102,11 @@ export default function TimeSeries(options) {
     }
   }
   var canvas = document.getElementById(settings.canvas);
+  if (canvas._tsInstance) {
+    console.warn('TimeSeries: canvas "' + settings.canvas + '" already has an instance');
+    return;
+  }
+  canvas._tsInstance = this;
   var c = canvas.getContext("2d");
   var holidays = settings.holidays;
 
@@ -408,7 +413,37 @@ export default function TimeSeries(options) {
   }
 
   initSources(settings.sources, {
-    pushData(plot) { var id = data.length; data.push(plot); return id; },
+    pushData(plot) {
+      var newStart, newEnd;
+      if (plot.category === 'point') {
+        newStart = plot.tmin;
+        newEnd = plot.tmax;
+      } else {
+        newStart = plot.interval_start * 1000;
+        newEnd = (plot.interval_start + plot.interval * Object.keys(plot.data).length) * 1000;
+      }
+      for (var i = 0; i < data.length; i++) {
+        if (!data[i] || data[i].type !== plot.type) continue;
+        var es, ee;
+        if (data[i].category === 'point') {
+          es = data[i].tmin;
+          ee = data[i].tmax;
+        } else {
+          es = data[i].interval_start * 1000;
+          ee = (data[i].interval_start + data[i].interval * Object.keys(data[i].data).length) * 1000;
+        }
+        if (newStart < ee && newEnd > es) {
+          console.warn('TimeSeries: dropped overlapping ' + data[i].type + ' block (' +
+            new Date(es).toISOString() + ' – ' + new Date(ee).toISOString() +
+            ') in favour of new data (' +
+            new Date(newStart).toISOString() + ' – ' + new Date(newEnd).toISOString() + ')');
+          data[i] = null;
+        }
+      }
+      var id = data.length;
+      data.push(plot);
+      return id;
+    },
     replaceData(id, plot) { data[id] = plot; },
     removeData(id) { data[id] = null; },
     requestRedraw() { plotAll(); },
@@ -1669,6 +1704,7 @@ export default function TimeSeries(options) {
   this.followNow  = function () { follow_animated(100); };
   this.previewNow = function () { follow_animated(0); };
   this.stop     = function () { doStop(); };
+  this.clearAll = function () { data = []; plotAll(); };
   this.onStop   = function (f) { follow_stop_cb = f; };
   this.onFollow = function (f) { follow_start_cb = f; };
 
