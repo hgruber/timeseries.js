@@ -32,7 +32,7 @@ export function highlight(plot, n, item, rctx) {
   if (plugin && plugin.highlight) plugin.highlight(plot, n, item, rctx);
 }
 
-function color(i, t) {
+export function seriesColor(i, t) {
   var r = (((i + 111) % 67) * 798) % 255;
   var g = (((i + 53) % 23) * 1131) % 255;
   var b = (((i + 79) % 19) * 979) % 255;
@@ -48,7 +48,7 @@ function highlight_multibar(plot, n, item, rctx) {
   var x = X(start + n * step);
   for (const [i, bar] of Object.entries(plot.data[n])) {
     if (i == item) {
-      c.fillStyle = color(i, 0.8);
+      c.fillStyle = seriesColor(i, 0.8);
       c.fillRect(x, Y(height), barWidth, -ppv * bar);
       return;
     }
@@ -66,7 +66,7 @@ function multibar(plot, rctx) {
     var x = X(start + t * step);
     if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
       for (const [i, bar] of Object.entries(bars)) {
-        c.fillStyle = color(i, 0.8);
+        c.fillStyle = seriesColor(i, 0.8);
         c.fillRect(x, Y(height), barWidth, -ppv * bar);
         height += bar;
       }
@@ -80,7 +80,7 @@ function multipoint(plot, rctx) {
       var x = X(pt.t);
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(pt.values)) {
-          c.fillStyle = color(i, 0.8);
+          c.fillStyle = seriesColor(i, 0.8);
           c.fillRect(x - 2, Y(v) - 2, 4, 4);
           c.fill();
         }
@@ -93,7 +93,7 @@ function multipoint(plot, rctx) {
       var x = X(start + t * step);
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(value)) {
-          c.fillStyle = color(i, 0.8);
+          c.fillStyle = seriesColor(i, 0.8);
           c.fillRect(x - 2, Y(v) - 2, 4, 4);
           c.fill();
         }
@@ -118,7 +118,7 @@ function multiline(plot, rctx) {
         if (!started) { c.moveTo(x, Y(v)); started = true; }
         else c.lineTo(x, Y(v));
       }
-      c.strokeStyle = color(si, 0.8);
+      c.strokeStyle = seriesColor(si, 0.8);
       c.stroke();
       si++;
     }
@@ -141,7 +141,7 @@ function multiline(plot, rctx) {
           c.lineTo(x, Y(value[i]));
         }
       }
-      c.strokeStyle = color(i, 0.8);
+      c.strokeStyle = seriesColor(i, 0.8);
       c.stroke();
     }
   }
@@ -154,7 +154,7 @@ function scatter(plot, rctx) {
   var seriesIds = plot.series ? plot.series.map(s => s.id) : Object.keys(plot.data[0].values);
   var si = 0;
   for (const sid of seriesIds) {
-    c.fillStyle = color(si, 0.75);
+    c.fillStyle = seriesColor(si, 0.75);
     for (const pt of plot.data) {
       var v = pt.values[sid];
       if (v == null) continue;

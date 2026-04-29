@@ -6,7 +6,7 @@
 // settings                                         //
 //////////////////////////////////////////////////////
 import { intervalSubtract, intervalInvert, intervalIntersect, intervalAdd, intervalLength, getWeek } from './intervals.js';
-import { plotData as _plotData, highlight as _highlight, registerRenderer } from './renderers.js';
+import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 import { lttb } from './lttb.js';
 
@@ -1757,6 +1757,7 @@ export default function TimeSeries(options) {
   this.onClickDataCallback = onClickDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
+  TimeSeries.seriesColor = seriesColor;
   TimeSeries.lttb = lttb;
 
   plotAll();
