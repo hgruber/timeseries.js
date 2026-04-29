@@ -1246,10 +1246,17 @@ export default function TimeSeries(options) {
       var step = Math.pow(10, Math.ceil(Math.log10(s)));
       //if (s / step <= 0.2) step = 0.2 * step;
       if (s / step <= 0.5) step = 0.5 * step;
-      for (var i = 0; i <= ymax; i += step) {
+      // Iterate by integer count, not `i += step`, to avoid accumulated FP
+      // error producing labels like "0.15000000000000002" for step=0.05.
+      // parseFloat(toFixed(d)) trims any single-multiplication residue too.
+      var decimals = Math.max(0, -Math.floor(Math.log10(step)));
+      var labelEvery = step > vpp * 2 * font_height ? 1 : 2;
+      var n = Math.round(ymax / step);
+      for (var k = 0; k <= n; k++) {
+        var v = parseFloat((k * step).toFixed(decimals));
         ygrid.push({
-          label: step > vpp * 2 * font_height || (i / step) % 2 == 0 ? i : "",
-          y: i,
+          label: k % labelEvery == 0 ? v : "",
+          y: v,
         });
       }
     }
