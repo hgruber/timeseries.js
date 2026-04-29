@@ -33,9 +33,18 @@ export function highlight(plot, n, item, rctx) {
 }
 
 export function seriesColor(i, t) {
-  var r = (((i + 111) % 67) * 798) % 255;
-  var g = (((i + 53) % 23) * 1131) % 255;
-  var b = (((i + 79) % 19) * 979) % 255;
+  // Convert series key to a numeric hash. Numeric strings use their value;
+  // non-numeric strings get a deterministic hash so colors are always valid.
+  var key = Number(i);
+  if (isNaN(key)) {
+    key = 0;
+    for (var j = 0; j < i.length; j++)
+      key = ((key << 5) - key + i.charCodeAt(j)) | 0;
+    key = Math.abs(key);
+  }
+  var r = (((key + 111) % 67) * 798) % 255;
+  var g = (((key + 53) % 23) * 1131) % 255;
+  var b = (((key + 79) % 19) * 979) % 255;
   return "rgb(" + r + "," + g + "," + b + ", " + t + ")";
 }
 

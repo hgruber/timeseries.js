@@ -1742,6 +1742,8 @@ export default function TimeSeries(options) {
   this.previewNow = function () { follow_animated(0); };
   this.stop     = function () { doStop(); };
   this.clearAll = function () { data = []; plotAll(); };
+  this.getData = function () { return data; };
+  this.getPlotArea = function () { return { margin: margin, plotWidth: plotWidth, plotHeight: plotHeight }; };
   this.onStop   = function (f) { follow_stop_cb = f; };
   this.onFollow = function (f) { follow_start_cb = f; };
 
