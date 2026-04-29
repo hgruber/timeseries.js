@@ -405,7 +405,11 @@ export default function TimeSeries(options) {
   //////////////////////////
 
   function scheduleViewportChange() {
-    if (viewportChangePending !== null) clearTimeout(viewportChangePending);
+    // Throttle, not debounce: fire once per 300 ms with the latest
+    // tmin/tmax/ppms.  A pure trailing-edge debounce would starve under fast
+    // tick rates — follower_tick at high zoom fires every mspp ms (could be
+    // <300 ms), and resetting the timer on each call means it never elapses.
+    if (viewportChangePending !== null) return;
     viewportChangePending = setTimeout(function () {
       viewportChangePending = null;
       for (var fn of viewportChangeHandlers) fn(tmin, tmax, ppms);
@@ -594,6 +598,7 @@ export default function TimeSeries(options) {
       if (mspp > 5000) t = 5000;
       timer(follow_view, t);
     }
+    scheduleViewportChange();
     plotAll();
   }
 
@@ -609,6 +614,7 @@ export default function TimeSeries(options) {
     var t = mspp;
     if (mspp > 5000) t = 5000;
     timer(follower_tick, t);
+    scheduleViewportChange();
     plotAll();
   }
 
@@ -1743,6 +1749,7 @@ export default function TimeSeries(options) {
   this.stop     = function () { doStop(); };
   this.clearAll = function () { data = []; plotAll(); };
   this.getData = function () { return data; };
+  this.getViewport = function () { return { tmin: tmin, tmax: tmax, ppms: ppms }; };
   this.getPlotArea = function () { return { margin: margin, plotWidth: plotWidth, plotHeight: plotHeight }; };
   this.onStop   = function (f) { follow_stop_cb = f; };
   this.onFollow = function (f) { follow_start_cb = f; };
