@@ -1167,13 +1167,12 @@ export default function TimeSeries(options) {
         t <= data[i].interval_end * 1000
       ) {
         var n = Math.floor(
-          (((+t - data[i].interval_start * 1000) /
-            (data[i].interval_end - data[i].interval_start)) *
-            data[i].count) /
-            1000,
+          (+t / 1000 - data[i].interval_start) / data[i].interval,
         );
+        var slot = data[i].data[n];
+        if (!slot) continue;
         var h = 0;
-        for (const [k, v] of Object.entries(data[i].data[n])) {
+        for (const [k, v] of Object.entries(slot)) {
           if (py < h + v) {
             return {
               plot: i,

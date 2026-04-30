@@ -33,9 +33,12 @@ export function highlight(plot, n, item, rctx) {
 }
 
 export function seriesColor(i, t) {
+  // Strip the '_' prefix that the backend adds to integer-like series keys
+  // so JS preserves insertion order. The prefix must not affect color.
+  var raw = (i[0] === '_') ? i.slice(1) : i;
   // Convert series key to a numeric hash. Numeric strings use their value;
   // non-numeric strings get a deterministic hash so colors are always valid.
-  var key = Number(i);
+  var key = Number(raw);
   if (isNaN(key)) {
     key = 0;
     for (var j = 0; j < i.length; j++)
