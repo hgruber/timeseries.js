@@ -58,6 +58,8 @@ export default function TimeSeries(options) {
     zoomDuration: 500,     // animation duration in ms for zoom transitions
     zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
+    yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
+    yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
     colors: {
       frameBg:     '#f0f6ff',                    // margin / axis area background
       text:        '#1a2e45',                    // all text and plot border
@@ -178,6 +180,7 @@ export default function TimeSeries(options) {
   var viewportChangePending = null;
   var activePlot;
   var rctx = null; // render context, updated on each plotAll() call
+  var renderInterval = null; // when set via setRenderInterval(), prepare_grid renders only blocks at this interval
   var _currentGroup = null;  // name of the viewport-sync group this instance belongs to
   var _syncing = false;      // true while applying a viewport broadcast from a peer
   var _suppressTick = false; // true when this instance is a non-leader in a group follow session
@@ -288,6 +291,20 @@ export default function TimeSeries(options) {
   ////////////////////////////////////
   // helper functions and variables //
   ////////////////////////////////////
+
+  // SI prefix formatter: 1500 → "1.5k", 1200000 → "1.2M", 0.5 → "0.5"
+  function siFormat(v) {
+    if (v === 0) return "0";
+    var abs = Math.abs(v);
+    if (abs >= 1e12)  return (v / 1e12).toFixed(1).replace(/\.0$/, '')  + 'T';
+    if (abs >= 1e9)   return (v / 1e9).toFixed(1).replace(/\.0$/, '')   + 'G';
+    if (abs >= 1e6)   return (v / 1e6).toFixed(1).replace(/\.0$/, '')   + 'M';
+    if (abs >= 1e3)   return (v / 1e3).toFixed(1).replace(/\.0$/, '')   + 'k';
+    return String(v);
+  }
+
+  var _yFmt = settings.yAxisFormat || siFormat;
+  var _yLabel = settings.yAxisLabel || '';
 
   // calculate the width of labels — wrapped in recomputeFonts() so resize can update them
   var holiday_pixels = {};
@@ -434,11 +451,10 @@ export default function TimeSeries(options) {
       // Then trim or remove old overlapping blocks
       for (var i = 0; i < id; i++) {
         if (!data[i] || data[i].type !== plot.type) continue;
-        // Different interval: clear all old blocks of this type entirely
-        // so stale-resolution bars don't linger at the edges
+        // Different interval: keep both — rendering selects the best
+        // interval for the current zoom level in prepare_grid.
         if (data[i].interval !== undefined && plot.interval !== undefined
             && data[i].interval !== plot.interval) {
-          data[i] = null;
           continue;
         }
         var es, ee;
@@ -1228,6 +1244,57 @@ export default function TimeSeries(options) {
           ymin = 0;
         }
       });
+    // For each plot type, keep only blocks at the best interval for the
+    // current zoom. This prevents rendering bars at wildly different widths
+    // simultaneously (e.g. 60s bars on top of 3600s bars).
+    (function() {
+      var byType = {};
+      for (var j = 0; j < activePlot.length; j++) {
+        var p = data[activePlot[j]];
+        if (!p || p.category === 'point' || p.interval === undefined) continue;
+        var t = p.type;
+        if (!byType[t]) byType[t] = {};
+        if (!byType[t][p.interval]) byType[t][p.interval] = [];
+        byType[t][p.interval].push(j);
+      }
+      for (var t in byType) {
+        var ivs = byType[t];
+        var keys = Object.keys(ivs);
+        if (keys.length <= 1) continue;
+        var best = null;
+        // If the caller has set an explicit render interval and we have
+        // blocks at that interval, use it — the GUI owns the transition
+        // policy via setRenderInterval().
+        if (renderInterval !== null && ivs[renderInterval]) {
+          best = +renderInterval;
+        } else {
+          // Fallback: finest interval whose bar width is at least 2px;
+          // if none qualify, the coarsest available — better wide-but-
+          // readable bars than invisible sub-pixel ones.
+          var coarsest = null;
+          for (var k = 0; k < keys.length; k++) {
+            var iv = +keys[k];
+            var w = iv * 1000 * ppms;
+            if (coarsest === null || iv > coarsest) coarsest = iv;
+            if (w >= 2 && (best === null || iv < best)) best = iv;
+          }
+          if (best === null) best = coarsest;
+        }
+        for (var k = 0; k < keys.length; k++) {
+          if (+keys[k] !== best) {
+            for (var m = 0; m < ivs[keys[k]].length; m++)
+              activePlot[ivs[keys[k]][m]] = -1;
+          }
+        }
+      }
+      if (activePlot.indexOf(-1) !== -1) {
+        var kept = [];
+        for (var j = 0; j < activePlot.length; j++)
+          if (activePlot[j] !== -1) kept.push(activePlot[j]);
+        activePlot = kept;
+        ymax_array = ymax_array.filter(function(a) { return activePlot.indexOf(a[0]) !== -1; });
+      }
+    })();
     ymax_array.sort(function (first, second) {
       return second[1] - first[1];
     });
@@ -1254,7 +1321,7 @@ export default function TimeSeries(options) {
       for (var k = 0; k <= n; k++) {
         var v = parseFloat((k * step).toFixed(decimals));
         ygrid.push({
-          label: k % labelEvery == 0 ? v : "",
+          label: k % labelEvery == 0 ? _yFmt(v) : "",
           y: v,
         });
       }
@@ -1268,6 +1335,12 @@ export default function TimeSeries(options) {
         var w = c.measureText(String(item.label)).width;
         if (w > _yLabelW) _yLabelW = w;
       });
+    }
+    // If a yAxisLabel is set, it sits above the top grid line; include its width
+    if (_yLabel) {
+      c.font = yFont();
+      var _yw = c.measureText(_yLabel).width;
+      if (_yw > _yLabelW) _yLabelW = _yw;
     }
     // +4 preserves the existing 4px gap between label right-edge and axis line
     var margin_left_new = ygrid.length > 0 ? Math.ceil(_yLabelW) + 4 + basePad.left : basePad.left;
@@ -1679,6 +1752,10 @@ export default function TimeSeries(options) {
       c.textAlign = "right";
       c.textBaseline = "middle";
       ygrid.forEach(function (item) { c.fillText(String(item.label), margin.left - 4, Y(item.y)); });
+      if (_yLabel) {
+        c.textBaseline = "bottom";
+        c.fillText(_yLabel, margin.left - 4, margin.top - 2);
+      }
       c.globalAlpha = 1;
     }
   }
@@ -1769,11 +1846,17 @@ export default function TimeSeries(options) {
     plotAll();
   };
 
+  this.setRenderInterval = function (iv) {
+    renderInterval = (iv == null) ? null : +iv;
+    plotAll();
+  };
+
   this.onClickDataCallback = onClickDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
   TimeSeries.seriesColor = seriesColor;
   TimeSeries.lttb = lttb;
+  TimeSeries.siFormat = siFormat;
 
   plotAll();
   var self = this;
