@@ -1753,8 +1753,10 @@ export default function TimeSeries(options) {
       c.textBaseline = "middle";
       ygrid.forEach(function (item) { c.fillText(String(item.label), margin.left - 4, Y(item.y)); });
       if (_yLabel) {
+        // Sit a full font_height above the top grid line so the topmost
+        // (center-aligned) tick label has clearance below the y-axis label.
         c.textBaseline = "bottom";
-        c.fillText(_yLabel, margin.left - 4, margin.top - 2);
+        c.fillText(_yLabel, margin.left - 4, margin.top - font_height);
       }
       c.globalAlpha = 1;
     }
