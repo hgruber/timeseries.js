@@ -1851,6 +1851,11 @@ export default function TimeSeries(options) {
     plotAll();
   };
 
+  this.setYAxisLabel = function (label) {
+    _yLabel = label || '';
+    plotAll();
+  };
+
   this.onClickDataCallback = onClickDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
