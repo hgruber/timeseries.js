@@ -440,10 +440,20 @@ export default function TimeSeries(options) {
         newStart = plot.tmin;
         newEnd = plot.tmax;
       } else {
-        var ms = 0;
-        for (var k in plot.data) { var n = +k; if (n > ms) ms = n; }
         newStart = plot.interval_start * 1000;
-        newEnd = (plot.interval_start + plot.interval * (ms + 1)) * 1000;
+        // Prefer the server-provided interval_end so an empty or sparse
+        // plot correctly covers the full requested window — otherwise
+        // empty results (e.g. a brand-new filter that excludes everything)
+        // would only trim one interval of stale data and leave the rest
+        // visible. Fall back to the slot-derived extent when interval_end
+        // is missing.
+        if (typeof plot.interval_end === 'number') {
+          newEnd = plot.interval_end * 1000;
+        } else {
+          var ms = 0;
+          for (var k in plot.data) { var n = +k; if (n > ms) ms = n; }
+          newEnd = (plot.interval_start + plot.interval * (ms + 1)) * 1000;
+        }
       }
       // Push new data first so there's never a gap between old and new
       var id = data.length;
@@ -973,6 +983,9 @@ export default function TimeSeries(options) {
     offset.x = BB.left;
     offset.y = BB.top;
     plotAll();
+    // Notify viewport-change listeners — plotWidth changed so ppms changed
+    // even though tmin/tmax did not. Throttled at 300 ms inside scheduleViewportChange.
+    scheduleViewportChange();
   });
   _resizeObserver.observe(canvas.parentElement || canvas);
 
