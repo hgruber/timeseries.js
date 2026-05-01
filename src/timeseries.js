@@ -154,7 +154,8 @@ export default function TimeSeries(options) {
 
   var startDragX = 0,
     startTmin,
-    startTmax;
+    startTmax,
+    pendingClickItem = null;
   var nls = "default";
   var plotWidth = canvas.width - margin.left - margin.right;
   var plotHeight = canvas.height - margin.top - margin.bottom;
@@ -1002,9 +1003,7 @@ export default function TimeSeries(options) {
       }
       navigate(item, item.level, dir);
     }
-    if (item.key) {
-      onClickData(data[item.plot], item.n, item.key);
-    }
+    pendingClickItem = item.key ? item : null;
     startDragX = e.clientX;
     startTmin = tmin;
     startTmax = tmax;
@@ -1039,6 +1038,10 @@ export default function TimeSeries(options) {
 
   canvas.onmouseup = function (e) {
     if (startDragX !== 0) scheduleViewportChange();
+    if (pendingClickItem && Math.abs(e.clientX - startDragX) < 4) {
+      onClickData(data[pendingClickItem.plot], pendingClickItem.n, pendingClickItem.key, pendingClickItem.value);
+    }
+    pendingClickItem = null;
     startDragX = 0;
   };
 
