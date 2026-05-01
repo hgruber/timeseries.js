@@ -287,6 +287,7 @@ export default function TimeSeries(options) {
   var onClickData = function (plot, n, item) {
     _highlight(plot, n, item, rctx);
   };
+  var onHoverData = null;
 
   ////////////////////////////////////
   // helper functions and variables //
@@ -1024,6 +1025,16 @@ export default function TimeSeries(options) {
       item && item !== 'frame' && (item.level || item.key) ? 'pointer' :
       item && item !== 'frame' ? 'grab' :
       'default';
+    if (onHoverData) {
+      if (item && item !== 'frame' && item.key != null)
+        onHoverData(data[item.plot], item.n, item.key, item.value);
+      else
+        onHoverData(null, null, null, null);
+    }
+  };
+
+  canvas.onmouseleave = function () {
+    if (onHoverData) onHoverData(null, null, null, null);
   };
 
   canvas.onmouseup = function (e) {
@@ -1860,6 +1871,10 @@ export default function TimeSeries(options) {
     onClickData = f;
   }
 
+  function onHoverDataCallback(f) {
+    onHoverData = f;
+  }
+
   this.setColors = function (obj) {
     Object.assign(settings.colors, obj);
     plotAll();
@@ -1876,6 +1891,7 @@ export default function TimeSeries(options) {
   };
 
   this.onClickDataCallback = onClickDataCallback;
+  this.onHoverDataCallback = onHoverDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
   TimeSeries.registerSource = registerSource;
   TimeSeries.seriesColor = seriesColor;
