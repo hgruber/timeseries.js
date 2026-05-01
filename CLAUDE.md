@@ -45,7 +45,7 @@ The entire library is a single closure function `TimeSeries(options)`. All inter
 - `grid[]`/`ygrid[]`: computed axis tick positions
 - `rctx`: render context object, rebuilt on every `plotAll()` call and passed to renderer plugins
 
-The draw loop (`plotAll()`) runs on every interaction: builds `rctx`, calls `prepare_grid()`, then draws background → y-axis → data → frame → time indicator.
+The draw loop (`plotAll()`) runs on every interaction: builds `rctx`, calls `prepare_grid()`, then draws background → watermark → y-axis → data → frame → time indicator.
 
 **Time axis levels**: `label_level` (0 = month/day, 1 = year/month) controls which formats `grid_level_label` selects. Easter-based holidays computed from the `holidays` settings object.
 
@@ -89,4 +89,4 @@ Renderers receive a `plot` object with:
 
 ### Public API (TimeSeries instance)
 
-`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`
+`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`

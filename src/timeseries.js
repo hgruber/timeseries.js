@@ -97,6 +97,9 @@ export default function TimeSeries(options) {
       26.12: "2. Weihnachtstag",
       31.12: "Sylvester",
     },
+    watermark: null,          // URL string or HTMLImageElement drawn behind all chart content
+    watermarkWidth: 0.63,    // fraction of plot width
+    watermarkAlpha: 0.2,     // opacity (0 = invisible, 1 = opaque)
   };
   if (options) {
     for (const [key, value] of Object.entries(options)) {
@@ -186,6 +189,7 @@ export default function TimeSeries(options) {
   var _syncing = false;      // true while applying a viewport broadcast from a peer
   var _suppressTick = false; // true when this instance is a non-leader in a group follow session
   var _handle = null;        // handle object registered in _groups
+  var _watermarkImg = null;  // preloaded HTMLImageElement for watermark drawing
 
   var f = {
     s: 1000,
@@ -931,6 +935,63 @@ export default function TimeSeries(options) {
     zoom(start, end);
   };
 
+  // ── Viewport pan: one "screen" left (dir=-1) or right (dir=+1) ───────────
+  // Both edges snap to the nearest local-time calendar boundary for the most
+  // meaningful unit at the current zoom level (second … year, incl. ISO week).
+  // DST-safe: all arithmetic uses local Date methods, not fixed-ms offsets.
+  function panSnapUnit(span) {
+    var s = 1000, m = 60000, h = 3600000, d = 86400000;
+    if (span <  90 * s)        return 'second';
+    if (span <  90 * m)        return 'minute';
+    if (span <  36 * h)        return 'hour';
+    if (span <  14 * d)        return 'day';
+    if (span <  60 * d)        return 'week';
+    if (span < 2 * 365.25 * d) return 'month';
+    return 'year';
+  }
+  function panFloor(ms, unit) {
+    var d = new Date(ms);
+    if      (unit === 'year')   { d.setMonth(0, 1);  d.setHours(0, 0, 0, 0); }
+    else if (unit === 'month')  { d.setDate(1);       d.setHours(0, 0, 0, 0); }
+    else if (unit === 'week')   { d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); }
+    else if (unit === 'day')    { d.setHours(0, 0, 0, 0); }
+    else if (unit === 'hour')   { d.setMinutes(0, 0, 0); }
+    else if (unit === 'minute') { d.setSeconds(0, 0); }
+    else                        { d.setMilliseconds(0); }  // second
+    return d.getTime();
+  }
+  function panAdd(ms, unit, n) {
+    var d = new Date(ms);
+    if      (unit === 'year')   d.setFullYear(d.getFullYear() + n);
+    else if (unit === 'month')  d.setMonth(d.getMonth() + n);
+    else if (unit === 'week')   d.setDate(d.getDate() + n * 7);
+    else if (unit === 'day')    d.setDate(d.getDate() + n);
+    else if (unit === 'hour')   d.setHours(d.getHours() + n);
+    else if (unit === 'minute') d.setMinutes(d.getMinutes() + n);
+    else                        d.setSeconds(d.getSeconds() + n);
+    return d.getTime();
+  }
+  function panDiff(lo, hi, unit) {
+    if (unit === 'second') return Math.round((hi - lo) / 1000);
+    if (unit === 'minute') return Math.round((hi - lo) / 60000);
+    if (unit === 'hour')   return Math.round((hi - lo) / 3600000);
+    if (unit === 'day')    return Math.round((hi - lo) / 86400000);
+    if (unit === 'week')   return Math.round((hi - lo) / 604800000);
+    var a = new Date(lo), b = new Date(hi);
+    if (unit === 'month')
+      return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+    return b.getFullYear() - a.getFullYear();
+  }
+  this.pan = function (dir) {
+    doStop();
+    var unit = panSnapUnit(tmax - tmin);
+    var lo   = panFloor(tmin, unit);
+    var hiF  = panFloor(tmax, unit);
+    var hi   = hiF < tmax ? panAdd(hiF, unit, 1) : hiF;
+    var n    = Math.max(1, panDiff(lo, hi, unit));
+    zoom(panAdd(lo, unit, dir * n), panAdd(hi, unit, dir * n));
+  };
+
   function easeInOutExpo(x) {
     return x === 0
       ? 0
@@ -964,12 +1025,23 @@ export default function TimeSeries(options) {
     if (done) scheduleViewportChange();
   }
 
+  function watermark() {
+    if (!_watermarkImg) return;
+    var w = plotWidth * settings.watermarkWidth;
+    var h = w * _watermarkImg.naturalHeight / _watermarkImg.naturalWidth;
+    c.save();
+    c.globalAlpha = settings.watermarkAlpha;
+    c.drawImage(_watermarkImg, margin.left, margin.top, w, h);
+    c.restore();
+  }
+
   function plotAll() {
     now = Date.now();
     c.clearRect(0, 0, canvas.width, canvas.height);
     prepare_grid(); // must run before rctx is built: recalculates ppms, ppv, ppv, mspp
     rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight };
     background();
+    watermark();
     yAxis();
     _plotData(activePlot, data, rctx);
     frame();
@@ -1917,6 +1989,19 @@ export default function TimeSeries(options) {
     plotAll();
   };
 
+  this.setWatermark = function (src) {
+    if (!src) { _watermarkImg = null; plotAll(); return; }
+    if (typeof src === 'string') {
+      var img = new Image();
+      img.onload = function () { _watermarkImg = img; plotAll(); };
+      img.onerror = function () { console.warn('TimeSeries: watermark failed to load', src); };
+      img.src = src;
+    } else {
+      _watermarkImg = src;
+      plotAll();
+    }
+  };
+
   this.onClickDataCallback = onClickDataCallback;
   this.onHoverDataCallback = onHoverDataCallback;
   TimeSeries.registerRenderer = registerRenderer;
@@ -1925,6 +2010,7 @@ export default function TimeSeries(options) {
   TimeSeries.lttb = lttb;
   TimeSeries.siFormat = siFormat;
 
+  if (settings.watermark) this.setWatermark(settings.watermark);
   plotAll();
   var self = this;
   if (settings.initialView) setTimeout(function () { self[settings.initialView](); }, 0);
