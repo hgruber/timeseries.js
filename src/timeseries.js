@@ -1267,7 +1267,22 @@ export default function TimeSeries(options) {
         var pp = plotpercentage(ptmin, ptmax);
         if (pp > 0) {
           activePlot.push(i);
-          ymax_array.push([i, plot.max, pp]);
+          // Compute ymax from slots visible in the current viewport,
+          // not from the data block's precomputed max (which covers
+          // the entire block including off-screen bars).
+          var vpMax = 0;
+          if (plot.data) {
+            for (var sk in plot.data) {
+              var slotTime = (plot.interval_start + +sk * plot.interval) * 1000;
+              if (slotTime + plot.interval * 1000 > tmin && slotTime < tmax) {
+                var slotSum = 0;
+                var slot = plot.data[sk];
+                for (var key in slot) slotSum += slot[key];
+                if (slotSum > vpMax) vpMax = slotSum;
+              }
+            }
+          }
+          ymax_array.push([i, vpMax || plot.max, pp]);
           ymin = 0;
         }
       });
