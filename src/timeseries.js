@@ -1847,6 +1847,10 @@ export default function TimeSeries(options) {
   this.stop     = function () { doStop(); };
   this.clearAll = function () { data = []; plotAll(); };
   this.getData = function () { return data; };
+  this.getActiveData = function () { return activePlot.map(i => data[i]).filter(Boolean); };
+  this.getRenderBounds = function () {
+    return { tmin: rT(margin.left), tmax: rT(margin.left + plotWidth) };
+  };
   this.getViewport = function () { return { tmin: tmin, tmax: tmax, ppms: ppms }; };
   this.getPlotArea = function () { return { margin: margin, plotWidth: plotWidth, plotHeight: plotHeight }; };
   this.onStop   = function (f) { follow_stop_cb = f; };

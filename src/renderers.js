@@ -36,19 +36,20 @@ export function seriesColor(i, t) {
   // Strip the '_' prefix that the backend adds to integer-like series keys
   // so JS preserves insertion order. The prefix must not affect color.
   var raw = (i[0] === '_') ? i.slice(1) : i;
-  // Convert series key to a numeric hash. Numeric strings use their value;
-  // non-numeric strings get a deterministic hash so colors are always valid.
+  // Convert series key to a numeric seed. Numeric strings use their value;
+  // non-numeric strings get a deterministic hash.
   var key = Number(raw);
   if (isNaN(key)) {
     key = 0;
-    for (var j = 0; j < i.length; j++)
-      key = ((key << 5) - key + i.charCodeAt(j)) | 0;
+    for (var j = 0; j < raw.length; j++)
+      key = ((key << 5) - key + raw.charCodeAt(j)) | 0;
     key = Math.abs(key);
   }
-  var r = (((key + 111) % 67) * 798) % 255;
-  var g = (((key + 53) % 23) * 1131) % 255;
-  var b = (((key + 79) % 19) * 979) % 255;
-  return "rgb(" + r + "," + g + "," + b + ", " + t + ")";
+  // Golden-angle hue rotation (~137.5°) gives maximally spaced hues
+  // for any consecutive series keys. Fixed saturation/lightness keeps
+  // colors vivid and readable on both light and dark backgrounds.
+  var hue = (key * 137.508) % 360;
+  return 'hsla(' + hue.toFixed(1) + ',65%,50%,' + t + ')';
 }
 
 function highlight_multibar(plot, n, item, rctx) {
