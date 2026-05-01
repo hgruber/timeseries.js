@@ -515,11 +515,19 @@ export default function TimeSeries(options) {
     onViewportChange(fn) { viewportChangeHandlers.push(fn); },
   });
 
+  // Clamp t1/tt2 so t1 < t2; swap if inverted, add 1h if equal.
+  function clampRange(t1, t2) {
+    if (t1 > t2) return [t2, t1];
+    if (t1 === t2) return [t1, t1 + 3600000];
+    return [t1, t2];
+  }
+
   // Receive a viewport update from a group peer — apply silently (no re-broadcast).
   function setViewport(t1, t2) {
+    var r = clampRange(t1, t2);
     _syncing = true;
-    tmin = t1;
-    tmax = t2;
+    tmin = r[0];
+    tmax = r[1];
     plotAll();
     _syncing = false;
   }
@@ -780,7 +788,8 @@ export default function TimeSeries(options) {
   }
 
   function zoom(target_tmin, target_tmax, time) {
-    if (tmin == target_tmin && tmax == target_tmax) return;
+    var r = clampRange(target_tmin, target_tmax);
+    if (tmin == r[0] && tmax == r[1]) return;
     animation.startT = +Date.now() - 20;
     animation.endT = animation.startT + zoom_onclick_time;
     animation.start = {
@@ -788,8 +797,8 @@ export default function TimeSeries(options) {
       tmax: tmax,
     };
     animation.end = {
-      tmin: target_tmin,
-      tmax: target_tmax,
+      tmin: r[0],
+      tmax: r[1],
     };
     animate();
   }
