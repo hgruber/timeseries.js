@@ -52,6 +52,21 @@ export function seriesColor(i, t) {
   return 'hsla(' + hue.toFixed(1) + ',65%,50%,' + t + ')';
 }
 
+// Per-plot color override: a `plot.series_colors` map ({ [seriesKey]: cssColor })
+// wins over the auto-hashed color. Hex values get an alpha byte appended so
+// stacked bars match the auto-color translucency; named/hsla/rgba colors pass
+// through untouched.
+function resolveColor(plot, i, t) {
+  var override = plot.series_colors && plot.series_colors[i];
+  if (!override) return seriesColor(i, t);
+  if (override[0] === '#' && override.length === 7) {
+    var a = Math.round(t * 255).toString(16);
+    if (a.length < 2) a = '0' + a;
+    return override + a;
+  }
+  return override;
+}
+
 function highlight_multibar(plot, n, item, rctx) {
   var { c, X, Y, ppms, ppv } = rctx;
   var start = plot.interval_start * 1000;
@@ -61,7 +76,7 @@ function highlight_multibar(plot, n, item, rctx) {
   var x = X(start + n * step);
   for (const [i, bar] of Object.entries(plot.data[n])) {
     if (i == item) {
-      c.fillStyle = seriesColor(i, 0.8);
+      c.fillStyle = resolveColor(plot, i, 0.8);
       c.fillRect(x, Y(height), barWidth, -ppv * bar);
       return;
     }
@@ -79,7 +94,7 @@ function multibar(plot, rctx) {
     var x = X(start + t * step);
     if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
       for (const [i, bar] of Object.entries(bars)) {
-        c.fillStyle = seriesColor(i, 0.8);
+        c.fillStyle = resolveColor(plot, i, 0.8);
         c.fillRect(x, Y(height), barWidth, -ppv * bar);
         height += bar;
       }
