@@ -486,10 +486,15 @@ export default function TimeSeries(options) {
         if (newStart < ee && newEnd > es) {
           if (data[i].type === 'multibar' && data[i].interval === plot.interval
               && data[i].category !== 'point' && plot.category !== 'point') {
-            // Concatenate: trim old block's slots at/after new block's start
+            // Concatenate: trim old block's slots inside the new block's
+            // range only. Slots past newEnd belong to a different plot
+            // (e.g. a back-extended live block that overlaps the new
+            // plot's left edge but extends well past its right edge) —
+            // deleting them wipes data the new plot doesn't replace.
             for (var s in data[i].data) {
               var slotTime = data[i].interval_start + +s * data[i].interval;
-              if (slotTime * 1000 >= newStart) delete data[i].data[s];
+              var slotMs = slotTime * 1000;
+              if (slotMs >= newStart && slotMs < newEnd) delete data[i].data[s];
             }
             // Recalculate old block's metadata
             data[i].count = Object.keys(data[i].data).length;
@@ -984,10 +989,13 @@ export default function TimeSeries(options) {
   }
   this.pan = function (dir) {
     doStop();
-    var unit = panSnapUnit(tmax - tmin);
-    var lo   = panFloor(tmin, unit);
-    var hiF  = panFloor(tmax, unit);
-    var hi   = hiF < tmax ? panAdd(hiF, unit, 1) : hiF;
+    var inFlight = animation.endT && Date.now() < animation.endT;
+    var srcMin = inFlight ? animation.end.tmin : tmin;
+    var srcMax = inFlight ? animation.end.tmax : tmax;
+    var unit = panSnapUnit(srcMax - srcMin);
+    var lo   = panFloor(srcMin, unit);
+    var hiF  = panFloor(srcMax, unit);
+    var hi   = hiF < srcMax ? panAdd(hiF, unit, 1) : hiF;
     var n    = Math.max(1, panDiff(lo, hi, unit));
     zoom(panAdd(lo, unit, dir * n), panAdd(hi, unit, dir * n));
   };
