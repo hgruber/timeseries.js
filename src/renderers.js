@@ -72,15 +72,20 @@ function highlight_multibar(plot, n, item, rctx) {
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   var barWidth = ppms * step;
-  var height = 0;
+  var dirs = plot.series_directions;
+  var heightUp = 0;
+  var heightDown = 0;
   var x = X(start + n * step);
   for (const [i, bar] of Object.entries(plot.data[n])) {
+    var down = dirs && dirs[i] === 'down';
     if (i == item) {
       c.fillStyle = resolveColor(plot, i, 0.8);
-      c.fillRect(x, Y(height), barWidth, -ppv * bar);
+      if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * bar);
+      else      c.fillRect(x, Y(heightUp),    barWidth, -ppv * bar);
       return;
     }
-    height += bar;
+    if (down) heightDown += bar;
+    else      heightUp   += bar;
   }
 }
 
@@ -89,14 +94,21 @@ function multibar(plot, rctx) {
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   var barWidth = ppms * step;
+  var dirs = plot.series_directions;
   for (const [t, bars] of Object.entries(plot.data)) {
-    var height = 0;
+    var heightUp = 0;
+    var heightDown = 0;
     var x = X(start + t * step);
     if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
       for (const [i, bar] of Object.entries(bars)) {
         c.fillStyle = resolveColor(plot, i, 0.8);
-        c.fillRect(x, Y(height), barWidth, -ppv * bar);
-        height += bar;
+        if (dirs && dirs[i] === 'down') {
+          c.fillRect(x, Y(-heightDown), barWidth, ppv * bar);
+          heightDown += bar;
+        } else {
+          c.fillRect(x, Y(heightUp), barWidth, -ppv * bar);
+          heightUp += bar;
+        }
       }
   }
 }

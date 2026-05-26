@@ -1303,17 +1303,20 @@ export default function TimeSeries(options) {
         );
         var slot = data[i].data[n];
         if (!slot) continue;
-        var h = 0;
+        var dirs = data[i].series_directions;
+        var hUp = 0, hDown = 0;
         for (const [k, v] of Object.entries(slot)) {
-          if (py < h + v) {
-            return {
-              plot: i,
-              n: n,
-              key: k,
-              value: v,
-            };
+          if (dirs && dirs[k] === 'down') {
+            if (py < -hDown && py >= -(hDown + v)) {
+              return { plot: i, n: n, key: k, value: v };
+            }
+            hDown += v;
+          } else {
+            if (py >= hUp && py < hUp + v) {
+              return { plot: i, n: n, key: k, value: v };
+            }
+            hUp += v;
           }
-          h += v;
         }
       }
     }
@@ -1337,6 +1340,7 @@ export default function TimeSeries(options) {
     // find data that can be displayed and assign it to activePlot
     activePlot = [];
     var ymax_array = [];
+    var ymin_array = [];
     if (data.length)
       data.forEach((plot, i) => {
         if (!plot) return;
@@ -1359,20 +1363,28 @@ export default function TimeSeries(options) {
           // Compute ymax from slots visible in the current viewport,
           // not from the data block's precomputed max (which covers
           // the entire block including off-screen bars).
-          var vpMax = 0;
+          // When plot.series_directions marks some keys as 'down', sum
+          // those into vpDownMax separately so the y-axis can extend
+          // below zero for butterfly plots.
+          var vpUpMax = 0, vpDownMax = 0;
+          var dirs = plot.series_directions;
           if (plot.data) {
             for (var sk in plot.data) {
               var slotTime = (plot.interval_start + +sk * plot.interval) * 1000;
               if (slotTime + plot.interval * 1000 > tmin && slotTime < tmax) {
-                var slotSum = 0;
+                var upSum = 0, downSum = 0;
                 var slot = plot.data[sk];
-                for (var key in slot) slotSum += slot[key];
-                if (slotSum > vpMax) vpMax = slotSum;
+                for (var key in slot) {
+                  if (dirs && dirs[key] === 'down') downSum += slot[key];
+                  else                              upSum   += slot[key];
+                }
+                if (upSum   > vpUpMax)   vpUpMax   = upSum;
+                if (downSum > vpDownMax) vpDownMax = downSum;
               }
             }
           }
-          ymax_array.push([i, vpMax || plot.max, pp]);
-          ymin = 0;
+          ymax_array.push([i, vpUpMax || plot.max, pp]);
+          ymin_array.push([i, vpDownMax, pp]);
         }
       });
     // For each plot type, keep only blocks at the best interval for the
@@ -1424,6 +1436,7 @@ export default function TimeSeries(options) {
           if (activePlot[j] !== -1) kept.push(activePlot[j]);
         activePlot = kept;
         ymax_array = ymax_array.filter(function(a) { return activePlot.indexOf(a[0]) !== -1; });
+        ymin_array = ymin_array.filter(function(a) { return activePlot.indexOf(a[0]) !== -1; });
       }
     })();
     ymax_array.sort(function (first, second) {
@@ -1434,9 +1447,19 @@ export default function TimeSeries(options) {
       ymax = s * ymax_array[0][1] + (1 - s) * ymax_array[1][1];
     } else if (ymax_array.length == 1) ymax = ymax_array[0][1];
     else ymax = 0;
+    // Mirror the ymax blend for downward-stack magnitudes; ymin = -blend.
+    ymin_array.sort(function (first, second) {
+      return second[1] - first[1];
+    });
+    var _downMax = 0;
+    if (ymin_array.length > 1) {
+      var sd = easeInOutExpo((ymin_array[0][2] / ymin_array[1][2]) * 4);
+      _downMax = sd * ymin_array[0][1] + (1 - sd) * ymin_array[1][1];
+    } else if (ymin_array.length == 1) _downMax = ymin_array[0][1];
+    ymin = -_downMax;
 
     ygrid = [];
-    if (ymax != 0) {
+    if (ymax > ymin) {
       ppv = plotHeight / (ymax - ymin);
       vpp = 1 / ppv;
       var s = vpp * font_height;
@@ -1455,6 +1478,18 @@ export default function TimeSeries(options) {
           label: k % labelEvery == 0 ? _yFmt(v) : "",
           y: v,
         });
+      }
+      // Negative ticks for butterfly plots; ymin < 0 only when at least
+      // one active plot has down-stacked series.
+      if (ymin < 0) {
+        var nmin = Math.round(-ymin / step);
+        for (var k = 1; k <= nmin; k++) {
+          var v = parseFloat((-k * step).toFixed(decimals));
+          ygrid.push({
+            label: k % labelEvery == 0 ? _yFmt(v) : "",
+            y: v,
+          });
+        }
       }
     }
 
