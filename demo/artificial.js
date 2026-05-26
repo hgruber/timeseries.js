@@ -88,3 +88,11 @@ var artificialPointScatter = Object.assign({}, _pointBase, {
   data: artificialPointData.filter(function (_, i) { return i % 10 === 0; }),
 });
 
+// ── Butterfly stacked variant ─────────────────────────────────────────────────
+// Same multibar data, but series 1, 3, 5 stack DOWN from y=0 while 0, 2, 4
+// stack UP. The renderer reads `series_directions` to decide direction.
+var artificialButterfly = Object.assign({}, artificial, {
+  name: "example butterfly (BinnedSeries)",
+  series_directions: { 1: 'down', 3: 'down', 5: 'down' },
+});
+

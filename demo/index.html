@@ -813,6 +813,25 @@
                             </label>
                         </div>
                     </div>
+                    <!-- multibar butterfly — BinnedSeries with series_directions -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multibar (butterfly)</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-butterfly"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-butterfly','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-butterfly','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-butterfly','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-butterfly',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
                     <!-- multiline — BinnedSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -1033,6 +1052,7 @@
     (function initTypeCharts() {
       var defs = [
         { id: 'tc-multibar',    source: artificial,          initialView: 'yesterday' },
+        { id: 'tc-butterfly',   source: artificialButterfly, initialView: 'yesterday' },
         { id: 'tc-multiline-b', source: artificialMultiline, initialView: 'yesterday' },
         { id: 'tc-multipoint-b',source: artificialMultipoint,initialView: 'yesterday' },
         { id: 'tc-multiline-p', source: artificialPointLine, initialView: 'yesterday' },
