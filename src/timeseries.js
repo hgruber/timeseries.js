@@ -1927,7 +1927,12 @@ export default function TimeSeries(options) {
       c.font = yFont();
       c.textAlign = "right";
       c.textBaseline = "middle";
-      ygrid.forEach(function (item) { c.fillText(String(item.label), margin.left - 4, Y(item.y)); });
+      ygrid.forEach(function (item) {
+        // Skip labels whose tick value falls outside the visible y-range
+        // (e.g. the topmost tick rounded up past ymax).
+        if (item.y < ymin || item.y > ymax) return;
+        c.fillText(String(item.label), margin.left - 4, Y(item.y));
+      });
       if (_yLabel) {
         // Sit a full font_height above the top grid line so the topmost
         // (center-aligned) tick label has clearance below the y-axis label.
