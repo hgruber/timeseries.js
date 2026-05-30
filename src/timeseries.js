@@ -1368,6 +1368,11 @@ export default function TimeSeries(options) {
           // below zero for butterfly plots.
           var vpUpMax = 0, vpDownMax = 0;
           var dirs = plot.series_directions;
+          // Stacked plots (multibar) sum series per slot for the y-extent;
+          // un-stacked plots (multiline, multipoint) plot each series
+          // independently, so each slot contributes its largest single series
+          // value (and most-negative) instead.
+          var stacked = plot.type === 'multibar';
           if (plot.data) {
             for (var sk in plot.data) {
               var slotTime = (plot.interval_start + +sk * plot.interval) * 1000;
@@ -1375,8 +1380,13 @@ export default function TimeSeries(options) {
                 var upSum = 0, downSum = 0;
                 var slot = plot.data[sk];
                 for (var key in slot) {
-                  if (dirs && dirs[key] === 'down') downSum += slot[key];
-                  else                              upSum   += slot[key];
+                  var val = slot[key];
+                  if (stacked) {
+                    if (dirs && dirs[key] === 'down') downSum += val;
+                    else                              upSum   += val;
+                  } else if (val >= 0) {
+                    if (val > upSum)   upSum   = val;
+                  } else if (-val > downSum) downSum = -val;
                 }
                 if (upSum   > vpUpMax)   vpUpMax   = upSum;
                 if (downSum > vpDownMax) vpDownMax = downSum;
@@ -1999,6 +2009,17 @@ export default function TimeSeries(options) {
   this.previewNow = function () { follow_animated(0); };
   this.stop     = function () { doStop(); };
   this.clearAll = function () { data = []; plotAll(); };
+  // Remove every plot block for which pred(plot) is true, then redraw.
+  // Lets a host app that shows one logical series at a time evict stale
+  // blocks of a different type/measure that pushData intentionally keeps
+  // (pushData only trims overlapping blocks of the *same* type, so it can
+  // overlay e.g. bars + lines).
+  this.dropData = function (pred) {
+    var changed = false;
+    for (var i = 0; i < data.length; i++)
+      if (data[i] && pred(data[i])) { data[i] = null; changed = true; }
+    if (changed) plotAll();
+  };
   this.getData = function () { return data; };
   this.getActiveData = function () { return activePlot.map(i => data[i]).filter(Boolean); };
   this.getRenderBounds = function () {

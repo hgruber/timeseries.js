@@ -165,21 +165,21 @@ function multiline(plot, rctx) {
   } else {
     var start = plot.interval_start * 1000;
     var step = plot.interval * 1000;
-    for (const v of Object.entries(plot.data[0])) {
-      var i = v[0];
-      var x = X(start);
-      var y = Y(plot.data[0][i]);
+    // Slots in chronological order — do not assume slot 0 exists (it may be
+    // empty for an arbitrary time window).
+    var slots = Object.keys(plot.data).map(Number).sort((a, b) => a - b);
+    // Series ids = union across all slots (sparse slots may omit some series).
+    var ids = {};
+    for (const s of slots) for (const k in plot.data[s]) ids[k] = 1;
+    for (const i in ids) {
+      var started = false;
       c.beginPath();
-      c.moveTo(x, y);
-      for (const [t, value] of Object.entries(plot.data)) {
-        x = X(start + t * step);
-        if (
-          x >= margin.left &&
-          x <= margin.left + plotWidth &&
-          value[i] != undefined
-        ) {
-          c.lineTo(x, Y(value[i]));
-        }
+      for (const t of slots) {
+        var val = plot.data[t][i];
+        if (val === undefined) { started = false; continue; }
+        var x = X(start + t * step);
+        if (!started) { c.moveTo(x, Y(val)); started = true; }
+        else c.lineTo(x, Y(val));
       }
       c.strokeStyle = seriesColor(i, 0.8);
       c.stroke();
