@@ -21,7 +21,7 @@
   "devDependencies": {
     "esbuild": "^0.24.0"
   },
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "https://github.com/hgruber/timeseries.js.git"
