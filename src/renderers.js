@@ -14,13 +14,67 @@ export function registerRenderer(plugin) {
 }
 
 /**
- * Draw all active plots using their registered renderers.
+ * Merge several binned plot blocks that share the global slot grid into one
+ * synthetic plot. Each block keys its slots relative to its own
+ * `interval_start` (a multiple of `interval`); rebasing every slot onto the
+ * group's earliest `interval_start` yields a single continuous `data` map so a
+ * line/area renderer draws across fetch-block margins instead of leaving a
+ * one-slot hole at each boundary. Color/label metadata is taken from the
+ * blocks (series_colors merged, first non-empty name/percentiles win).
+ */
+function coalesceBlocks(group, data) {
+  if (group.length === 1) return data[group[0]];
+  var base = data[group[0]];
+  var interval = base.interval;
+  var baseStart = Infinity;
+  for (const i of group) if (data[i].interval_start < baseStart) baseStart = data[i].interval_start;
+  var merged = {
+    type: base.type,
+    category: base.category,
+    interval: interval,
+    interval_start: baseStart,
+    percentiles: base.percentiles,
+    data: {},
+  };
+  var colors = null;
+  var name = base.name;
+  for (const i of group) {
+    var blk = data[i];
+    if (blk.percentiles && !merged.percentiles) merged.percentiles = blk.percentiles;
+    if (blk.series_colors) colors = Object.assign(colors || {}, blk.series_colors);
+    if (name == null) name = blk.name;
+    var shift = Math.round((blk.interval_start - baseStart) / interval);
+    for (var s in blk.data) merged.data[+s + shift] = blk.data[s];
+  }
+  if (colors) merged.series_colors = colors;
+  if (name != null) merged.name = name;
+  return merged;
+}
+
+/**
+ * Draw all active plots using their registered renderers. A renderer may set
+ * `coalesce(plot) -> key`; active blocks of the same type sharing that key are
+ * merged (see coalesceBlocks) and drawn once, so connected renderers stay
+ * continuous across the separate fetch blocks stored in `data`.
  */
 export function plotData(activePlot, data, rctx) {
+  var done = null;
   for (const i of activePlot) {
+    if (done && done.has(i)) continue;
     const plugin = registry.get(data[i].type);
-    if (plugin) plugin.draw(data[i], rctx);
-    else console.warn('TimeSeries: unknown plot type', data[i].type);
+    if (!plugin) { console.warn('TimeSeries: unknown plot type', data[i].type); continue; }
+    if (plugin.coalesce) {
+      var key = plugin.coalesce(data[i]);
+      var group = [];
+      for (const j of activePlot)
+        if (data[j].type === data[i].type && plugin.coalesce(data[j]) === key) {
+          group.push(j);
+          (done || (done = new Set())).add(j);
+        }
+      plugin.draw(coalesceBlocks(group, data), rctx);
+    } else {
+      plugin.draw(data[i], rctx);
+    }
   }
 }
 
@@ -287,4 +341,10 @@ registerRenderer({ type: 'multibar',   draw: multibar,   highlight: highlight_mu
 registerRenderer({ type: 'multiline',  draw: multiline });
 registerRenderer({ type: 'multipoint', draw: multipoint });
 registerRenderer({ type: 'scatter',    draw: scatter });
-registerRenderer({ type: 'quantile-bands', draw: quantilebands });
+// Coalesce abutting quantile-bands fetch blocks (same source + interval) so the
+// fan lines and shaded bands run continuously across block margins.
+registerRenderer({
+  type: 'quantile-bands',
+  draw: quantilebands,
+  coalesce: function (plot) { return (plot.name || '') + '|' + plot.interval; },
+});
