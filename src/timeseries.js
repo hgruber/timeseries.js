@@ -484,7 +484,9 @@ export default function TimeSeries(options) {
           ee = (data[i].interval_start + data[i].interval * (dms + 1)) * 1000;
         }
         if (newStart < ee && newEnd > es) {
-          if (data[i].type === 'multibar' && data[i].interval === plot.interval
+          var concatable = (data[i].type === 'multibar'
+                            || data[i].type === 'quantile-bands');
+          if (concatable && data[i].interval === plot.interval
               && data[i].category !== 'point' && plot.category !== 'point') {
             // Concatenate: trim old block's slots inside the new block's
             // range only. Slots past newEnd belong to a different plot
@@ -496,17 +498,30 @@ export default function TimeSeries(options) {
               var slotMs = slotTime * 1000;
               if (slotMs >= newStart && slotMs < newEnd) delete data[i].data[s];
             }
-            // Recalculate old block's metadata
+            // Recalculate old block's metadata. quantile-bands store an array
+            // of percentile values per series (extent = min/max array entry);
+            // multibar stacks series (extent = per-slot stacked total).
             data[i].count = Object.keys(data[i].data).length;
             if (data[i].count === 0) {
               data[i].min = 0; data[i].max = 0;
             } else {
               var mn = Infinity, mx = -Infinity;
+              var banded = data[i].type === 'quantile-bands';
               for (var s in data[i].data) {
-                var total = 0;
-                for (var series in data[i].data[s]) total += data[i].data[s][series];
-                if (total < mn) mn = total;
-                if (total > mx) mx = total;
+                if (banded) {
+                  for (var series in data[i].data[s]) {
+                    var arr = data[i].data[s][series];
+                    for (var qi = 0; qi < arr.length; qi++) {
+                      if (arr[qi] < mn) mn = arr[qi];
+                      if (arr[qi] > mx) mx = arr[qi];
+                    }
+                  }
+                } else {
+                  var total = 0;
+                  for (var series in data[i].data[s]) total += data[i].data[s][series];
+                  if (total < mn) mn = total;
+                  if (total > mx) mx = total;
+                }
               }
               data[i].min = mn; data[i].max = mx;
             }
@@ -1294,6 +1309,9 @@ export default function TimeSeries(options) {
     // multibar identification
     for (const i of activePlot) {
       if (!data[i] || data[i].category === 'point') continue;
+      // quantile-bands store an array per series, not a stackable scalar;
+      // they have no per-bar hit target, so skip hit-testing them.
+      if (data[i].type === 'quantile-bands') continue;
       if (
         data[i].interval_start * 1000 <= t &&
         t <= data[i].interval_end * 1000
@@ -1371,8 +1389,11 @@ export default function TimeSeries(options) {
           // Stacked plots (multibar) sum series per slot for the y-extent;
           // un-stacked plots (multiline, multipoint) plot each series
           // independently, so each slot contributes its largest single series
-          // value (and most-negative) instead.
+          // value (and most-negative) instead. quantile-bands store an array
+          // of percentile values per series; the extent is the largest /
+          // most-negative array entry across the slot's series.
           var stacked = plot.type === 'multibar';
+          var banded  = plot.type === 'quantile-bands';
           if (plot.data) {
             for (var sk in plot.data) {
               var slotTime = (plot.interval_start + +sk * plot.interval) * 1000;
@@ -1381,7 +1402,13 @@ export default function TimeSeries(options) {
                 var slot = plot.data[sk];
                 for (var key in slot) {
                   var val = slot[key];
-                  if (stacked) {
+                  if (banded) {
+                    for (var qi = 0; qi < val.length; qi++) {
+                      var qv = val[qi];
+                      if (qv >= 0) { if (qv > upSum) upSum = qv; }
+                      else if (-qv > downSum) downSum = -qv;
+                    }
+                  } else if (stacked) {
                     if (dirs && dirs[key] === 'down') downSum += val;
                     else                              upSum   += val;
                   } else if (val >= 0) {

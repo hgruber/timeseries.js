@@ -208,8 +208,83 @@ function scatter(plot, rctx) {
   }
 }
 
+// quantile-bands — binned only. Each slot holds, per series, an array of
+// percentile values aligned to plot.percentiles (ascending). Lines connect
+// slot centers; the area between adjacent percentiles is filled in the series
+// color at a fixed per-band alpha (most opaque around the median, fainter in
+// the tails). Single series (key '(all)') or multiple binned series.
+
+// Fixed alpha tiers by band position: segments adjacent to the median get the
+// highest alpha, halving outward. medianIdx is in percentile-index space.
+function bandAlpha(j, npct) {
+  var medianIdx = (npct - 1) / 2;
+  var dist = Math.abs((j + 0.5) - medianIdx);   // 0.5 for innermost segments
+  var tier = Math.round(dist - 0.5);            // 0, 1, 2, ... outward
+  return Math.max(0.06, 0.25 * Math.pow(0.5, tier));
+}
+
+function quantilebands(plot, rctx) {
+  var { c, X, Y } = rctx;
+  var pct = plot.percentiles || [];
+  var npct = pct.length;
+  if (npct < 2) return;
+  if (plot.category === 'point') return;        // binned series only
+  var start = plot.interval_start * 1000;
+  var step = plot.interval * 1000;
+  var half = step / 2;
+  var slots = Object.keys(plot.data).map(Number).sort(function (a, b) { return a - b; });
+  // Series ids = union across all slots (sparse slots may omit some series).
+  var ids = {};
+  for (var s = 0; s < slots.length; s++)
+    for (var k in plot.data[slots[s]]) ids[k] = 1;
+  var medianIdx = Math.floor((npct - 1) / 2);   // which line to draw bold
+
+  for (var id in ids) {
+    // Fills: one polygon per band segment, broken on slot gaps so disjoint
+    // runs don't bridge across missing data.
+    for (var j = 0; j < npct - 1; j++) {
+      c.fillStyle = resolveColor(plot, id, bandAlpha(j, npct));
+      var run = [];
+      for (var si = 0; si <= slots.length; si++) {
+        var v = si < slots.length ? plot.data[slots[si]][id] : undefined;
+        if (v === undefined) {
+          if (run.length >= 2) {
+            c.beginPath();
+            for (var r = 0; r < run.length; r++)
+              (r === 0 ? c.moveTo : c.lineTo).call(c, run[r].x, Y(run[r].v[j]));
+            for (var r2 = run.length - 1; r2 >= 0; r2--)
+              c.lineTo(run[r2].x, Y(run[r2].v[j + 1]));
+            c.closePath();
+            c.fill();
+          }
+          run = [];
+          continue;
+        }
+        run.push({ x: X(start + slots[si] * step + half), v: v });
+      }
+    }
+    // Lines: one polyline per percentile, gap-aware. Median bold and opaque.
+    for (var jl = 0; jl < npct; jl++) {
+      c.lineWidth = (jl === medianIdx) ? 2 : 1;
+      c.strokeStyle = resolveColor(plot, id, (jl === medianIdx) ? 0.9 : 0.55);
+      var started = false;
+      c.beginPath();
+      for (var sl = 0; sl < slots.length; sl++) {
+        var vv = plot.data[slots[sl]][id];
+        if (vv === undefined) { started = false; continue; }
+        var x = X(start + slots[sl] * step + half);
+        if (!started) { c.moveTo(x, Y(vv[jl])); started = true; }
+        else c.lineTo(x, Y(vv[jl]));
+      }
+      c.stroke();
+    }
+  }
+  c.lineWidth = 1;
+}
+
 // Register built-in renderers
 registerRenderer({ type: 'multibar',   draw: multibar,   highlight: highlight_multibar });
 registerRenderer({ type: 'multiline',  draw: multiline });
 registerRenderer({ type: 'multipoint', draw: multipoint });
 registerRenderer({ type: 'scatter',    draw: scatter });
+registerRenderer({ type: 'quantile-bands', draw: quantilebands });

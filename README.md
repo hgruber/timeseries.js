@@ -19,7 +19,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Extended navigation** — month/year navigation, calendar weeks (ISO 8601), plus date helpers for day/week intervals
 - **Plugin architecture** — register custom renderers and data sources without modifying library code
 - **Customizable colors** — 4 built-in color schemas to match your theme
-- **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), scatter points (`multipoint`)
+- **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`)
 - **Built-in data sources** — Zabbix JSON-RPC API, static/generated data
 
 ---
@@ -188,7 +188,7 @@ for the JSON-RPC adapter, or any plugin you register). For the
 ```js
 {
   'source-type': 'artificial',  // which source plugin loads it
-  type: 'multibar',             // renderer: 'multibar' | 'multiline' | 'multipoint'
+  type: 'multibar',             // renderer: 'multibar' | 'multiline' | 'multipoint' | 'scatter' | 'quantile-bands'
   name: 'transactions',         // label shown in the legend
   interval_start: number,       // Unix seconds (left edge of the data)
   interval_end: number,         // Unix seconds (right edge)
@@ -203,6 +203,67 @@ for the JSON-RPC adapter, or any plugin you register). For the
 `data` is sparse: only slots with values need keys, and each slot is a
 `{ seriesId: value }` map. Series keys are stable across slots and drive
 both the stacking order and the legend.
+
+### Point series
+
+The shape above is a *binned* series — values pre-aggregated into fixed
+`interval`-wide slots. The alternative is a **point series**, where every
+data point carries its own timestamp. Set `category: 'point'` and supply
+`data` as an **array** of `{ t, values }` points (`t` in Unix
+milliseconds), with an optional `series` array naming and ordering the
+series for the legend:
+
+```js
+{
+  'source-type': 'artificial',
+  type: 'scatter',                  // 'scatter' | 'multiline' | 'multipoint'
+  category: 'point',
+  name: 'latency samples',
+  tmin: number, tmax: number,       // Unix ms — data extent
+  min: number, max: number,
+  series: [                         // optional; otherwise inferred from data[0]
+    { id: 'a', name: 'Series A' },
+    { id: 'b', name: 'Series B' },
+  ],
+  data: [
+    { t: 1717200000000, values: { a: 12, b: 7 } },
+    { t: 1717200060000, values: { a: 15, b: 9 } },
+    // …
+  ]
+}
+```
+
+`scatter` (a filled circle per point) is **point-only**. `multiline` and
+`multipoint` render either form — binned slots or `category: 'point'`
+arrays. Large point series are automatically thinned for drawing by the
+LTTB downsampling pass.
+
+### Quantile bands
+
+The `quantile-bands` renderer draws a percentile fan per series rather than a
+single value: each slot's `value` is an **array of percentile values** (one
+line per percentile, with the area between adjacent percentiles shaded), and
+the plot carries a `percentiles` array giving the ascending percentile ladder
+those entries align to. Lines connect slot centers; the band fill is most
+opaque around the median and fades toward the tails. The median line is drawn
+bold. Binned data only (no `category: 'point'`), and the series have no
+per-bar hit target, so click/hover data callbacks do not fire for them.
+
+```js
+{
+  'source-type': 'artificial',
+  type: 'quantile-bands',
+  name: 'latency',
+  interval_start: number,
+  interval_end: number,
+  interval: number,
+  count: number,
+  min: number, max: number,           // smallest / largest percentile value
+  percentiles: [5, 25, 50, 75, 95],   // ascending ladder; median is drawn bold
+  // each slot's value is an array aligned to `percentiles`
+  data: { [slotIndex]: { [seriesId]: [p5, p25, p50, p75, p95] } }
+}
+```
 
 ---
 
