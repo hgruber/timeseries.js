@@ -60,7 +60,7 @@ test('the centre of every drawn bar hits that same event', async () => {
   const { ts, canvas } = buildInstance(plot);
   await setView(ts, T0, T0 + 12 * H);
 
-  let hovered = null;
+  let hovered;   // reset per iteration below
   ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
 
   const rctx = makeRctx(ts, plot.laneCount);

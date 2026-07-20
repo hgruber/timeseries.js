@@ -71,7 +71,7 @@ export function parseICSDate(value, tzid) {
   if (tzid) {
     try {
       return { ms: zonedToEpoch(y, mo, d, h, mi, s, tzid), allDay: false };
-    } catch (e) {
+    } catch {
       // Unknown TZID (e.g. a legacy Exchange zone name): fall through to
       // floating-local rather than dropping the event.
     }

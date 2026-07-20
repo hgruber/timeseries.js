@@ -19,9 +19,9 @@ const S = 1000, M = 60000, H = 3600000, D = 86400000;
 const observesDST =
   new Date(2026, 0, 1).getTimezoneOffset() !== new Date(2026, 6, 1).getTimezoneOffset();
 
-// Northern-hemisphere EU transitions for 2026: 29 Mar (23h day), 25 Oct (25h day).
+// Northern-hemisphere EU transition for 2026: 29 Mar is a 23-hour day. Zones
+// that observe DST on another date (e.g. the southern hemisphere) skip these.
 const springForward = new Date(2026, 2, 29);
-const fallBack = new Date(2026, 9, 25);
 const isShortDay = d =>
   (new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1) - d) / H === 23;
 const dstHere = observesDST && isShortDay(springForward);

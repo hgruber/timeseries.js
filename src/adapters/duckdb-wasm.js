@@ -51,13 +51,11 @@ registerSource({
   type: 'duckdb-wasm',
   init(source, callbacks) {
     var id = null;
-    var dbPromise = null;
     var connPromise = null;
 
     function getConn() {
       if (connPromise) return connPromise;
       var dbp = source.db ? Promise.resolve(source.db) : source.dbFactory();
-      dbPromise = dbp;
       connPromise = dbp.then(db => db.connect());
       return connPromise;
     }

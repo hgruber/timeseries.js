@@ -453,4 +453,4 @@ always stripe-highlighted via `dayWeekend`, independent of this map.)
 
 ## License
 
-GPL-3.0
+MIT — see [LICENSE](LICENSE).

@@ -197,7 +197,7 @@ function multipoint(plot, rctx) {
 }
 
 function multiline(plot, rctx) {
-  var { c, X, Y, margin, plotWidth } = rctx;
+  var { c, X, Y } = rctx;
   c.lineWidth = 1.5;
   if (plot.category === 'point') {
     var seriesIds = plot.series ? plot.series.map(s => s.id) : Object.keys(plot.data[0].values);

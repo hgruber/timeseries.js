@@ -13,7 +13,6 @@ function jpZabbix(options) {
 	var rpcid = 0;
 	var authid = null;
 	var apiversion = null;
-	var errormsg = null;
 	var server = this;
 
 
@@ -114,7 +113,6 @@ function jpZabbix(options) {
 		rpcid = 0;
 		authid = null;
 		apiversion = null;
-		errormsg = null;
 
 		return server.getApiVersion().then(server.login)
 	}

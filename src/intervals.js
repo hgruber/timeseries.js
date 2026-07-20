@@ -93,13 +93,23 @@ export function intervalLength(a) {
   return length;
 }
 
+// ISO 8601 week number (weeks start on Monday; week 1 is the one containing
+// the first Thursday of the year).
+//
+// Straight from that definition: step to the Thursday of `date`'s week, and
+// count how many whole weeks separate it from 1 January of *that* Thursday's
+// year. Working in UTC keeps the day arithmetic free of DST hour shifts.
 export function getWeek(date) {
-  // https://stackoverflow.com/questions/6117814/get-week-of-year-in-javascript-like-in-php
   var d = new Date(
     Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()),
   );
-  var dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  var yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  // getUTCDay(): Sun=0 … Sat=6. Map Sunday to 7 so Monday=1 … Sunday=7, then
+  // move to Thursday (day 4) of the same week.
+  var isoDay = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - isoDay);
+  // That Thursday's year is the ISO week-numbering year, which is why late
+  // December can land in week 1 and early January in week 52/53.
+  var jan1 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  var daysSinceJan1 = (d - jan1) / 86400000;
+  return Math.floor(daysSinceJan1 / 7) + 1;
 }

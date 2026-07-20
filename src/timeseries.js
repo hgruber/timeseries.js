@@ -5,7 +5,9 @@
 //////////////////////////////////////////////////////
 // settings                                         //
 //////////////////////////////////////////////////////
-import { intervalSubtract, intervalInvert, intervalIntersect, intervalAdd, intervalLength, getWeek } from './intervals.js';
+// Only getWeek is used here; the interval-arithmetic helpers in intervals.js
+// are a standalone utility module, imported by consumers directly.
+import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
@@ -290,7 +292,6 @@ export default function TimeSeries(options) {
   var plotWidth = canvas.width - margin.left - margin.right;
   var plotHeight = canvas.height - margin.top - margin.bottom;
   var now = Date.now();
-  var timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   var follow_timers = 0;
   var follow_stopped = false;
   var follow_fraction = 1.0;   // 0 = now at left edge, 1 = now at right edge
@@ -310,6 +311,16 @@ export default function TimeSeries(options) {
   var viewportChangeHandlers = [];
   var viewportChangePending = null;
   var activePlot;
+  // Indices in data[] whose plot has been dropped and can be handed out again.
+  // Plot ids are array indices and sources hold on to them (replaceData/
+  // removeData), so slots are recycled, never compacted — compacting would
+  // silently repoint every id a source still holds.
+  var freeSlots = [];
+  function releaseSlot(i) {
+    if (!data[i]) return;          // already free — don't list it twice
+    data[i] = null;
+    freeSlots.push(i);
+  }
   var rctx = null; // render context, updated on each plotAll() call
   var renderInterval = null; // when set via setRenderInterval(), prepare_grid renders only blocks at this interval
   var _currentGroup = null;  // name of the viewport-sync group this instance belongs to
@@ -337,7 +348,6 @@ export default function TimeSeries(options) {
   var part1000 = [1, 5, 10, 50, 100, 500];
   var part60 = [1, 5, 15, 30];
   var part24 = [1, 2, 4, 12];
-  var part10 = [1, 2, 5];
 
   var animation = {};
 
@@ -439,7 +449,7 @@ export default function TimeSeries(options) {
     font_width  = _fm.width;
     dtl = 3 * font_height;
 
-    for (const [key, holiday] of Object.entries(holidays)) {
+    for (const holiday of Object.values(holidays)) {
       holiday_pixels[holiday] = c.measureText(holiday).width;
     }
 
@@ -468,37 +478,58 @@ export default function TimeSeries(options) {
 
   recomputeFonts();
 
-  var easterYears = {}; // store dates for every year
-  var hL = {}; // store all holidays here
+  // Memoised Easter dates ("D.M" per year) and holiday lookups
+  // ("D.M.YYYY" → name | false, negative hits included).
+  //
+  // Both are bounded. They key on the dates actually asked for, so panning
+  // across centuries at day resolution would otherwise accumulate an entry per
+  // day for the whole journey and never release any. The visible window is at
+  // most a few hundred days, so dropping the whole cache on overflow costs one
+  // frame's worth of recomputation — far cheaper than tracking LRU order.
+  var HL_MAX = 4000;          // ≫ any single viewport
+  var EASTER_MAX = 500;
+  var easterYears = {};
+  var easterCount = 0;
+  var hL = {};
+  var hLCount = 0;
+
+  function cacheHoliday(key, value) {
+    if (hLCount >= HL_MAX) { hL = {}; hLCount = 0; }
+    hL[key] = value;
+    hLCount++;
+    return value;
+  }
 
   function isHoliday(date) {
     var Y = date.getFullYear();
     var d = date.getDate() + "." + (date.getMonth() + 1);
     var di = d + "." + Y;
-    if (hL.hasOwnProperty(di)) return hL[di];
-    var EasterDate;
-    if (!easterYears.hasOwnProperty(Y.toString())) {
+    if (Object.prototype.hasOwnProperty.call(hL, di)) return hL[di];
+    if (!Object.prototype.hasOwnProperty.call(easterYears, Y.toString())) {
+      if (easterCount >= EASTER_MAX) { easterYears = {}; easterCount = 0; }
       easterYears[Y] = Easter(Y);
+      easterCount++;
     }
     var a = easterYears[Y].split(".");
     for (var day in holidays) {
       if (d == day) {
-        hL[di] = holidays[day];
-        return holidays[day];
+        return cacheHoliday(di, holidays[day]);
       } else if (day[0] == "-" || day[0] == "+") {
         var checkDay = new Date(Y, a[1] - 1, a[0]);
         checkDay.setDate(checkDay.getDate() + Number(day));
         checkDay = checkDay.getDate() + "." + (checkDay.getMonth() + 1);
         if (d == checkDay) {
-          hL[di] = holidays[day];
-          return holidays[day];
+          return cacheHoliday(di, holidays[day]);
         }
       }
     }
-    hL[di] = false;
-    return false;
+    return cacheHoliday(di, false);
   }
 
+  // NOTE: currently unused. Formats a duration as "2d 3h" / "5m 30s"; kept
+  // because it is finished and useful (e.g. for a span tooltip), but nothing
+  // calls it today. Delete it or wire it up.
+  // eslint-disable-next-line no-unused-vars
   function period(delta) {
     var days = Math.floor(delta / 86400000);
     delta -= days * 86400000;
@@ -557,12 +588,17 @@ export default function TimeSeries(options) {
           newEnd = (plot.interval_start + plot.interval * (ms + 1)) * 1000;
         }
       }
-      // Push new data first so there's never a gap between old and new
-      var id = data.length;
-      data.push(plot);
-      // Then trim or remove old overlapping blocks
-      for (var i = 0; i < id; i++) {
-        if (!data[i] || data[i].type !== plot.type) continue;
+      // Store new data first so there's never a gap between old and new.
+      // Reuse a freed slot rather than always appending: a polling source
+      // pushes on every fetch and the superseded blocks are nulled out, so
+      // appending unconditionally would grow data[] — and the per-frame scan
+      // over it in prepare_grid — without bound across a long session.
+      var id = freeSlots.length ? freeSlots.pop() : data.length;
+      data[id] = plot;
+      // Then trim or remove old overlapping blocks. Scans every slot, not just
+      // those below `id`, because a recycled id is not the highest index.
+      for (var i = 0; i < data.length; i++) {
+        if (i === id || !data[i] || data[i].type !== plot.type) continue;
         // Different interval: keep both — rendering selects the best
         // interval for the current zoom level in prepare_grid.
         if (data[i].interval !== undefined && plot.interval !== undefined
@@ -599,7 +635,12 @@ export default function TimeSeries(options) {
             // multibar stacks series (extent = per-slot stacked total).
             data[i].count = Object.keys(data[i].data).length;
             if (data[i].count === 0) {
-              data[i].min = 0; data[i].max = 0;
+              // Every slot this block held was inside the new block's range,
+              // so it is now an empty husk. Release it instead of leaving it
+              // in data[] forever — this is the case a polling source hits on
+              // every single fetch.
+              releaseSlot(i);
+              continue;
             } else {
               var mn = Infinity, mx = -Infinity;
               var banded = data[i].type === 'quantile-bands';
@@ -622,14 +663,14 @@ export default function TimeSeries(options) {
               data[i].min = mn; data[i].max = mx;
             }
           } else {
-            data[i] = null;
+            releaseSlot(i);
           }
         }
       }
       return id;
     },
     replaceData(id, plot) { data[id] = plot; },
-    removeData(id) { data[id] = null; },
+    removeData(id) { releaseSlot(id); },
     requestRedraw() { plotAll(); },
     getViewport() { return { tmin, tmax, ppms }; },
     onViewportChange(fn) { viewportChangeHandlers.push(fn); },
@@ -1771,7 +1812,6 @@ export default function TimeSeries(options) {
     grid[3] = [];
     part = time_part(part24, f.h, dvtl);
     partl = time_part(part24, f.h, dtl);
-    var ds = f.h * part;
     if (part)
       for (var t = Math.floor(tmin / f.h) * f.h; t <= tmax; t += f.h) {
         var d = new Date(t);
@@ -2114,6 +2154,10 @@ export default function TimeSeries(options) {
     c.fillStyle = settings.colors.text;
   }
 
+  // NOTE: currently unused — and the sole consumer of settings.colors.future,
+  // which every theme still defines. The "fog of future" overlay is therefore
+  // dead: either call this from plotAll() or drop both it and the colour.
+  // eslint-disable-next-line no-unused-vars
   function fog_of_future() {
     if (now >= tmax) return;
     var x;
@@ -2159,7 +2203,7 @@ export default function TimeSeries(options) {
   this.followNow  = function () { follow_animated(100); };
   this.previewNow = function () { follow_animated(0); };
   this.stop     = function () { doStop(); };
-  this.clearAll = function () { data = []; plotAll(); };
+  this.clearAll = function () { data = []; freeSlots = []; plotAll(); };
   // Force a repaint. The same thing sources get as requestRedraw(), exposed
   // for hosts that mutate a plot object they pushed (e.g. re-packing a span
   // plot after a layout change).
@@ -2172,7 +2216,7 @@ export default function TimeSeries(options) {
   this.dropData = function (pred) {
     var changed = false;
     for (var i = 0; i < data.length; i++)
-      if (data[i] && pred(data[i])) { data[i] = null; changed = true; }
+      if (data[i] && pred(data[i])) { releaseSlot(i); changed = true; }
     if (changed) plotAll();
   };
   this.getData = function () { return data; };

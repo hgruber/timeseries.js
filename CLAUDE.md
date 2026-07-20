@@ -15,7 +15,26 @@ npm run build:min    # minified build → dist/timeseries.min.js
 npm run watch        # rebuild on file changes
 npm run serve        # python3 static server on :8080
 npm test             # run test/*.test.mjs with node's built-in test runner
+npm run lint         # eslint; must stay at 0 errors
+npm run lint:strict  # same, but warnings fail too — for working through the backlog
 ```
+
+### Linting
+
+`eslint.config.mjs` is deliberately narrow: it catches real defects (implicit globals,
+unused bindings, unreachable code) and leaves style alone. **`no-var` is not enabled** —
+the source uses `var` throughout, and converting wholesale would be a 300-finding diff
+with real risk (`var` is function-scoped, `let` is block-scoped) for no behavioural gain.
+
+`npm run lint` is green at 0 errors, so a *new* error stands out. The ~85 warnings are a
+standing backlog, not noise to ignore: ~45 `eqeqeq` (loose `==`), ~31 `no-redeclare`
+(the same `var` declared repeatedly inside one function — harmless under `var`, a trap
+if that block is ever converted to `let`), ~9 `no-shadow`.
+
+Two finished-but-unwired functions carry an explicit `eslint-disable-next-line` plus a
+NOTE explaining the choice: `period()` (duration formatter) and `fog_of_future()` (which
+is the only consumer of `settings.colors.future`, defined by every theme). Either wire
+them up or delete them — don't let them rot silently.
 
 **Dev without building**: `demo/caldav.html` uses `<script type="module">` and imports
 directly from `src/`, so it needs no build step. `demo/index.html` does **not** — it loads
@@ -60,7 +79,8 @@ week/day presets for every weekday — Sunday being the case `(d.getDay() || 7)`
 for), `test/pan.test.mjs` (pan snapping incl. DST transitions), `test/hover.test.mjs`
 (the `onHoverData` contract the demo tooltip is built on), `test/options.test.mjs`
 (option merging, statics, `zoom()` duration), `test/intervals.test.mjs` and
-`test/lttb.test.mjs` (both previously untested pure modules).
+`test/lttb.test.mjs` (both previously untested pure modules), `test/memory.test.mjs`
+(bounded growth of `data[]` under a polling source).
 
 **Time zones**: the DST cases in `test/pan.test.mjs` self-skip where the local zone has
 no DST. Run both `TZ=Europe/Berlin npm test` and `TZ=UTC npm test` after touching date
@@ -101,6 +121,22 @@ The entire library is a single closure function `TimeSeries(options)`. All inter
 The draw loop (`plotAll()`) runs on every interaction: builds `rctx`, calls `prepare_grid()`, then draws background → watermark → y-axis → data → frame → time indicator.
 
 **Time axis levels**: `label_level` (0 = month/day, 1 = year/month) controls which formats `grid_level_label` selects. Easter-based holidays computed from the `holidays` settings object.
+
+**`data[]` slot lifecycle**: a plot id *is* its index in `data[]`, and sources keep that id
+across calls (`replaceData`/`removeData`). The array is therefore **never compacted** —
+that would silently repoint every id a source still holds. Instead, freed indices go on a
+`freeSlots` list and are handed out again by the next `pushData`. Always release through
+`releaseSlot(i)`, never by assigning `data[i] = null` directly, or the slot leaks.
+
+This matters for polling sources: they push on every fetch, and `pushData` trims the
+superseded block by deleting its slots. That used to leave an empty husk in `data[]`
+forever — and worse, those husks stayed in `activePlot` and were re-rendered every frame
+(1000 fetches → 1000 "active" blocks). A block trimmed down to `count === 0` is now
+released. `test/memory.test.mjs` guards this.
+
+The `hL` (holiday lookup) and `easterYears` caches are bounded by `HL_MAX`/`EASTER_MAX`
+and dropped wholesale on overflow; they key on dates actually requested, so panning across
+centuries would otherwise accumulate an entry per day and never release it.
 
 ### Plugin interfaces
 

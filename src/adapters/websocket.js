@@ -57,7 +57,7 @@ registerSource({
 
     ws.onmessage = function (e) {
       var msg;
-      try { msg = JSON.parse(e.data); } catch (_) { return; }
+      try { msg = JSON.parse(e.data); } catch { return; }
       var pt = source.transform(msg);
       if (!pt || pt.t == null) return;
 
