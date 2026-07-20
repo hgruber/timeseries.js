@@ -19,8 +19,8 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Extended navigation** — month/year navigation, calendar weeks (ISO 8601), plus date helpers for day/week intervals
 - **Plugin architecture** — register custom renderers and data sources without modifying library code
 - **Customizable colors** — 4 built-in color schemas to match your theme
-- **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`)
-- **Built-in data sources** — Zabbix JSON-RPC API, static/generated data
+- **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`), calendar/Gantt spans (`gantt`)
+- **Built-in data sources** — Zabbix JSON-RPC API, CalDAV calendars, static/generated data
 
 ---
 
@@ -72,6 +72,10 @@ npm run serve   # static server on :8080
 # open http://localhost:8080/demo/index.html
 ```
 
+`demo/caldav.html` shows the `gantt` renderer and the `caldav` source; with no
+server configured it parses the static fixtures in `demo/fixtures/` instead,
+so it works with no infrastructure.
+
 ---
 
 ## Building
@@ -82,6 +86,7 @@ npm run build        # bundle → dist/timeseries.js
 npm run build:min    # minified → dist/timeseries.min.js
 npm run watch        # rebuild on file changes
 npm run serve        # static server on :8080
+npm test             # run the test suite (node's built-in test runner)
 ```
 
 ---
@@ -135,6 +140,7 @@ ts.getActiveData();            // only those intersecting the viewport
 ts.getViewport();              // { tmin, tmax, ppms }  (tmin/tmax in ms)
 ts.getRenderBounds();          // visible value range actually drawn
 ts.getPlotArea();              // { margin, plotWidth, plotHeight }
+ts.redraw();                   // force a repaint, e.g. after mutating a pushed plot in place
 ```
 
 ### Runtime setters & callbacks
@@ -182,8 +188,9 @@ TimeSeries.registerSource({
 
 Each entry in `sources` is handed to the data-source plugin named by its
 `source-type` key (`'artificial'` for static/pre-binned data, `'zabbix'`
-for the JSON-RPC adapter, or any plugin you register). For the
-`artificial` source the object *is* the plot and is rendered as-is:
+for the JSON-RPC adapter, `'caldav'` for calendar events, or any plugin you
+register). For the `artificial` source the object *is* the plot and is
+rendered as-is:
 
 ```js
 {
@@ -264,6 +271,53 @@ per-bar hit target, so click/hover data callbacks do not fire for them.
   data: { [slotIndex]: { [seriesId]: [p5, p25, p50, p75, p95] } }
 }
 ```
+
+### Calendar spans (Gantt) and CalDAV
+
+For data with arbitrary start/end pairs — calendar events, jobs, outages —
+where bar width should mean duration rather than a slot on a shared grid, use
+`category: 'span'` with the `gantt` renderer. Events are laid out into rows
+either grouped by lane (`layout: 'calendar'`, one block of rows per calendar)
+or greedy-packed into a single band (`layout: 'packed'`, minimizing total
+rows):
+
+```js
+{
+  type: 'gantt', category: 'span',
+  tmin: number, tmax: number,          // Unix ms — window this block covers
+  layout: 'calendar',                  // or 'packed'
+  lanes: [{ id: 'work', label: 'Work', color: '#2d6a9f' }],
+  data: [
+    { id: 'e1', lane: 'work', start: 1717200000000, end: 1717203600000,
+      label: 'Standup', location: 'Room A' },
+    // …
+  ],
+}
+```
+
+The built-in `caldav` source fetches VEVENTs from a CalDAV server and hands
+them to the `gantt` renderer as this shape, refetching only when panning
+leaves the fetched (padded) window:
+
+```js
+{
+  'source-type': 'caldav',
+  url: 'https://dav.example.org/',
+  username: 'me', password: '…',      // or 'auth-token' for bearer auth
+  // calendars: [href, …],            // omit to auto-discover
+  layout: 'calendar',                  // or 'packed'
+  padding: 0.5,                        // extra window fetched either side
+}
+```
+
+Recurring events are expanded **server-side** (`<C:expand>` in the CalDAV
+REPORT) — the bundled parser deliberately does not implement RRULE. Servers
+that ignore `expand` return the master event only, which still renders as a
+single bar. Cross-origin servers need to allow the `PROPFIND`/`REPORT`
+methods and the `Authorization` header in their CORS response, or you can set
+`proxy` to front the server through a same-origin forwarder. See
+`demo/caldav.html` for a working example (it falls back to parsing the static
+fixtures in `demo/fixtures/` when no server is configured).
 
 ---
 

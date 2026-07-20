@@ -10,6 +10,7 @@
 //   onViewportChange(fn)             register fn(tmin,tmax,ppms) called after pan/zoom settles
 
 import jpZabbix from './jpZabbix.js';
+import CalDAV from './caldav.js';
 
 const registry = new Map();
 
@@ -115,5 +116,136 @@ registerSource({
       .setAuth(source["auth-token"])
       .then(authSuccess, (e) => { console.warn("zabbix_failure", e); });
     source.server = server;
+  }
+});
+
+// ── Built-in: caldav ─────────────────────────────────────────────────────────
+//
+// Fetches VEVENTs overlapping the viewport and hands them to the `gantt`
+// renderer as a `category: 'span'` plot. Config keys:
+//
+//   url, username, password, auth-token, proxy   → see caldav.js
+//   calendars   optional [href | {href,label,color}]; omitted → discover()
+//   layout      'calendar' (default) | 'packed'
+//   padding     extra window fetched either side, as a fraction of the
+//               viewport width (default 0.5)
+//
+// After init, `source.client` is the CalDAV client and `source.setLayout(l)`
+// switches layout without a refetch.
+
+// Fetch a window wider than the viewport so ordinary panning is served from
+// what we already have.
+function caldavWindow(viewport, padding) {
+  var span = viewport.tmax - viewport.tmin;
+  var pad = span * padding;
+  return { from: viewport.tmin - pad, to: viewport.tmax + pad };
+}
+
+function caldavPlot(results, from, to, layout) {
+  var lanes = [];
+  var events = [];
+  for (var res of results) {
+    if (res.error) console.warn('caldav_failure', res.calendar.href, res.error);
+    lanes.push({
+      id: res.calendar.href,
+      label: res.calendar.label || res.calendar.displayName || res.calendar.href,
+      color: res.calendar.color,
+    });
+    for (var ev of res.events)
+      events.push({
+        // Expanded recurrences all carry the master UID, so the start time is
+        // what makes an instance identifiable.
+        id: (ev.uid || '') + '@' + ev.start,
+        lane: res.calendar.href,
+        start: ev.start,
+        end: ev.end,
+        label: ev.summary,
+        allDay: ev.allDay,
+        location: ev.location,
+        status: ev.status,
+      });
+  }
+  return {
+    type: 'gantt',
+    category: 'span',
+    tmin: from,
+    tmax: to,
+    layout: layout,
+    lanes: lanes,
+    data: events,
+  };
+}
+
+registerSource({
+  type: 'caldav',
+  init(source, callbacks) {
+    var client = new CalDAV({
+      url: source['url'],
+      username: source['username'],
+      password: source['password'],
+      token: source['auth-token'],
+      proxy: source['proxy'],
+      timeout: source['timeout'],
+    });
+    source.client = client;
+
+    var layout = source['layout'] === 'packed' ? 'packed' : 'calendar';
+    var padding = source['padding'] != null ? source['padding'] : 0.5;
+    var calendars = null;
+    var plotId = null;
+    var current = null;   // the plot object currently in the chart
+    var fetched = null;   // window currently held, in ms
+    var seq = 0;          // guards against out-of-order responses
+
+    function fetchWindow(viewport) {
+      var win = caldavWindow(viewport, padding);
+      // Already covered — panning inside the padded window costs nothing.
+      if (fetched && win.from >= fetched.from && win.to <= fetched.to) return;
+      var mine = ++seq;
+      client.queryAll(calendars, win.from, win.to).then(function (results) {
+        // A newer request has already been issued; this answer is for a window
+        // the user has panned away from.
+        if (mine !== seq) return;
+        fetched = win;
+        current = caldavPlot(results, win.from, win.to, layout);
+        if (plotId === null) plotId = callbacks.pushData(current);
+        else callbacks.replaceData(plotId, current);
+        callbacks.requestRedraw();
+      }, function (e) {
+        if (mine === seq) console.warn('caldav_failure', e);
+      });
+    }
+
+    function start(list) {
+      calendars = list;
+      if (!calendars.length) {
+        console.warn('caldav: no calendars found at', source['url']);
+        return;
+      }
+      fetchWindow(callbacks.getViewport());
+      callbacks.onViewportChange(function () {
+        fetchWindow(callbacks.getViewport());
+      });
+    }
+
+    if (source['calendars'] && source['calendars'].length) {
+      start(source['calendars'].map(function (cal) {
+        return typeof cal === 'string' ? { href: cal, label: cal } : cal;
+      }));
+    } else {
+      client.discover().then(start, function (e) {
+        console.warn('caldav_failure', e);
+      });
+    }
+
+    source.setLayout = function (next) {
+      layout = next === 'packed' ? 'packed' : 'calendar';
+      if (!current) return;
+      // Row assignment is derived state — clearing the stamp is enough for
+      // prepare_grid to repack on the next frame. No refetch needed.
+      current.layout = layout;
+      current._laidOut = null;
+      callbacks.requestRedraw();
+    };
   }
 });

@@ -16,7 +16,8 @@
     "build":     "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js",
     "build:min": "esbuild src/timeseries.js --bundle --minify --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.min.js",
     "watch":     "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js --watch",
-    "serve":     "python3 -m http.server 8080"
+    "serve":     "python3 -m http.server 8080",
+    "test":      "node --test test/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.24.0"

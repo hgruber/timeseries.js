@@ -8,6 +8,7 @@
 import { intervalSubtract, intervalInvert, intervalIntersect, intervalAdd, intervalLength, getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
+import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
 
 // ── Viewport group registry ───────────────────────────────────────────────────
@@ -442,7 +443,7 @@ export default function TimeSeries(options) {
   initSources(settings.sources, {
     pushData(plot) {
       var newStart, newEnd;
-      if (plot.category === 'point') {
+      if (plot.category === 'point' || plot.category === 'span') {
         newStart = plot.tmin;
         newEnd = plot.tmax;
       } else {
@@ -474,7 +475,7 @@ export default function TimeSeries(options) {
           continue;
         }
         var es, ee;
-        if (data[i].category === 'point') {
+        if (data[i].category === 'point' || data[i].category === 'span') {
           es = data[i].tmin;
           ee = data[i].tmax;
         } else {
@@ -1038,7 +1039,10 @@ export default function TimeSeries(options) {
       now = animation.endT;
       done = true;
     }
-    t = easeInOutExpo(
+    // `var` matters: without it this is an implicit global, which is silently
+    // tolerated in the IIFE bundle but throws in strict mode — i.e. whenever
+    // the library is loaded as an ES module, as the demos do.
+    var t = easeInOutExpo(
       (now - animation.startT) / (animation.endT - animation.startT),
     );
     tmin = animation.start.tmin * (1 - t) + animation.end.tmin * t;
@@ -1306,9 +1310,29 @@ export default function TimeSeries(options) {
   function get_element(x, y) {
     var t = new Date(rT(x));
     var py = rY(y);
+    // span identification — mirrors barRect() in gantt.js: row r covers the
+    // value band [laneCount - r - 1, laneCount - r). Later events win, matching
+    // the draw order (last painted is on top).
+    for (const i of activePlot) {
+      if (!data[i] || data[i].category !== 'span') continue;
+      var sp = data[i];
+      if (!sp.data || !sp.laneCount) continue;
+      var row = Math.floor(sp.laneCount - py);
+      if (row < 0 || row >= sp.laneCount) continue;
+      for (var e = sp.data.length - 1; e >= 0; e--) {
+        var ev = sp.data[e];
+        if (ev._row !== row) continue;
+        // Widen zero-length events to the 2px minimum the renderer draws.
+        var evEnd = Math.max(ev.end, ev.start + 2 * mspp);
+        if (ev.start <= +t && +t <= evEnd)
+          // key must be non-null for the hover/click path to fire; events
+          // without an explicit id fall back to their index.
+          return { plot: i, n: e, key: ev.id != null ? ev.id : String(e), value: ev };
+      }
+    }
     // multibar identification
     for (const i of activePlot) {
-      if (!data[i] || data[i].category === 'point') continue;
+      if (!data[i] || data[i].category === 'point' || data[i].category === 'span') continue;
       // quantile-bands store an array per series, not a stackable scalar;
       // they have no per-bar hit target, so skip hit-testing them.
       if (data[i].type === 'quantile-bands') continue;
@@ -1363,7 +1387,14 @@ export default function TimeSeries(options) {
       data.forEach((plot, i) => {
         if (!plot) return;
         var ptmin, ptmax;
-        if (plot.category === 'point') {
+        if (plot.category === 'span') {
+          // Rows and the vertical extent come from the packing, which the
+          // renderer would otherwise not compute until draw time — the y-axis
+          // needs it now.
+          layoutSpans(plot);
+          ptmin = plot.tmin;
+          ptmax = plot.tmax;
+        } else if (plot.category === 'point') {
           ptmin = plot.tmin;
           ptmax = plot.tmax;
         } else {
@@ -1378,6 +1409,13 @@ export default function TimeSeries(options) {
         var pp = plotpercentage(ptmin, ptmax);
         if (pp > 0) {
           activePlot.push(i);
+          if (plot.category === 'span') {
+            // Span plots occupy a fixed row space of 0…laneCount regardless of
+            // what is on screen, so the viewport scan below does not apply.
+            ymax_array.push([i, plot.laneCount, pp]);
+            ymin_array.push([i, 0, pp]);
+            return;
+          }
           // Compute ymax from slots visible in the current viewport,
           // not from the data block's precomputed max (which covers
           // the entire block including off-screen bars).
@@ -1496,36 +1534,62 @@ export default function TimeSeries(options) {
     ymin = -_downMax;
 
     ygrid = [];
+    // A span plot labels its axis with lane names at row centres, not numeric
+    // ticks — row indices carry no quantity worth printing. Only honoured when
+    // it is the sole active plot, since the shared axis cannot mean two things
+    // at once.
+    var _spanTicks = null;
+    if (activePlot.length === 1 && data[activePlot[0]]
+        && data[activePlot[0]].category === 'span')
+      _spanTicks = data[activePlot[0]].yticks || [];
+
     if (ymax > ymin) {
       ppv = plotHeight / (ymax - ymin);
       vpp = 1 / ppv;
-      var s = vpp * font_height;
-      var step = Math.pow(10, Math.ceil(Math.log10(s)));
-      //if (s / step <= 0.2) step = 0.2 * step;
-      if (s / step <= 0.5) step = 0.5 * step;
-      // Iterate by integer count, not `i += step`, to avoid accumulated FP
-      // error producing labels like "0.15000000000000002" for step=0.05.
-      // parseFloat(toFixed(d)) trims any single-multiplication residue too.
-      var decimals = Math.max(0, -Math.floor(Math.log10(step)));
-      var labelEvery = step > vpp * 2 * font_height ? 1 : 2;
-      var n = Math.round(ymax / step);
-      for (var k = 0; k <= n; k++) {
-        var v = parseFloat((k * step).toFixed(decimals));
-        ygrid.push({
-          label: k % labelEvery == 0 ? _yFmt(v) : "",
-          y: v,
-        });
-      }
-      // Negative ticks for butterfly plots; ymin < 0 only when at least
-      // one active plot has down-stacked series.
-      if (ymin < 0) {
-        var nmin = Math.round(-ymin / step);
-        for (var k = 1; k <= nmin; k++) {
-          var v = parseFloat((-k * step).toFixed(decimals));
+      if (_spanTicks) {
+        // Lane blocks vary in height, so thin the labels by actual pixel
+        // spacing rather than by index; the lane separators drawn by the
+        // renderer still delimit the ones left unlabelled.
+        var _lastY = -Infinity;
+        for (var ti = 0; ti < _spanTicks.length; ti++) {
+          var _ty = Y(_spanTicks[ti].y);
+          var _fits = _ty - _lastY >= font_height;
+          if (_fits) _lastY = _ty;
+          ygrid.push({
+            label: _fits ? _spanTicks[ti].label : "",
+            y: _spanTicks[ti].y,
+            noline: true,
+          });
+        }
+      } else {
+        var s = vpp * font_height;
+        var step = Math.pow(10, Math.ceil(Math.log10(s)));
+        //if (s / step <= 0.2) step = 0.2 * step;
+        if (s / step <= 0.5) step = 0.5 * step;
+        // Iterate by integer count, not `i += step`, to avoid accumulated FP
+        // error producing labels like "0.15000000000000002" for step=0.05.
+        // parseFloat(toFixed(d)) trims any single-multiplication residue too.
+        var decimals = Math.max(0, -Math.floor(Math.log10(step)));
+        var labelEvery = step > vpp * 2 * font_height ? 1 : 2;
+        var n = Math.round(ymax / step);
+        for (var k = 0; k <= n; k++) {
+          var v = parseFloat((k * step).toFixed(decimals));
           ygrid.push({
             label: k % labelEvery == 0 ? _yFmt(v) : "",
             y: v,
           });
+        }
+        // Negative ticks for butterfly plots; ymin < 0 only when at least
+        // one active plot has down-stacked series.
+        if (ymin < 0) {
+          var nmin = Math.round(-ymin / step);
+          for (var k = 1; k <= nmin; k++) {
+            var v = parseFloat((-k * step).toFixed(decimals));
+            ygrid.push({
+              label: k % labelEvery == 0 ? _yFmt(v) : "",
+              y: v,
+            });
+          }
         }
       }
     }
@@ -1975,6 +2039,9 @@ export default function TimeSeries(options) {
     c.globalAlpha = ygrid_alpha;
     c.strokeStyle = settings.colors.gridLineY;
     ygrid.forEach(function (item) {
+      // Span ticks sit at lane centres, where a grid line would cut straight
+      // through the bars it labels.
+      if (item.noline) return;
       var y = Y(item.y);
       c.beginPath();
       c.moveTo(margin.left, y);
@@ -2041,6 +2108,10 @@ export default function TimeSeries(options) {
   this.previewNow = function () { follow_animated(0); };
   this.stop     = function () { doStop(); };
   this.clearAll = function () { data = []; plotAll(); };
+  // Force a repaint. The same thing sources get as requestRedraw(), exposed
+  // for hosts that mutate a plot object they pushed (e.g. re-packing a span
+  // plot after a layout change).
+  this.redraw = function () { plotAll(); };
   // Remove every plot block for which pred(plot) is true, then redraw.
   // Lets a host app that shows one logical series at a time evict stale
   // blocks of a different type/measure that pushData intentionally keeps
