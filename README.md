@@ -105,6 +105,7 @@ ts.thisYear()    ts.lastYear()    ts.nextYear()
 ts.last24()      ts.next24()
 
 ts.zoom(tmin, tmax, animationMs)   // explicit window; tmin/tmax in Unix ms
+                                   // animationMs optional: omit for zoomDuration, 0 = no animation
 ts.zoomWeek(year, week)            // ISO 8601 week
 ts.zoomMonth(year, month)          // month is 1-12
 ts.zoomYear(year)
@@ -147,6 +148,8 @@ ts.redraw();                   // force a repaint, e.g. after mutating a pushed 
 
 ```js
 ts.setColors(TimeSeries.themes.dark);   // swap palette (merges, then redraws)
+ts.getColors();                         // current palette (a copy)
+ts.getHolidays();                       // current holiday map (a copy)
 ts.setYAxisLabel('req/s');
 ts.setWatermark(urlOrImage);            // string URL or HTMLImageElement; null clears
 ts.setRenderInterval(ms);               // force a fixed redraw cadence; null = on demand
@@ -408,9 +411,10 @@ holiday name when there's room. `holidays` is a flat map of **date key →
 display name**. Two key forms are supported:
 
 - **Fixed dates** — `"day.month"` (day first, the German convention).
-  Numeric literals work for most dates, but **quote any October date** (and
-  any month ending in a zero): the literal `3.10` is the number `3.1`
-  (= 1 March), so write `"3.10"`. Quoting is always safe.
+  **Always quote the key.** An unquoted `3.10` is the *number* `3.1`, which
+  reads back as 3 January — the October date is lost silently, with no error.
+  The same applies to any month ending in a zero. The built-in German set
+  quotes every key for this reason.
 - **Easter-relative dates** — a string offset in days from Easter Sunday,
   prefixed with `+` or `-`. Easter itself is `"+0"`. The date is computed
   per displayed year (Gauss/Butcher computus), so these track the moving

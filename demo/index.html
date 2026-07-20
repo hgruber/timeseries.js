@@ -78,9 +78,27 @@
 
     /* ── Canvas wrapper ──────────────────────────────────────── */
     .canvas-wrap {
+      position: relative;   /* anchor for #tooltip */
       padding: 8px;
       border-bottom: 1px solid #e4edf8;
     }
+
+    #tooltip {
+      position: absolute;
+      pointer-events: none;   /* must not steal the hover it is reacting to */
+      display: none;
+      background: rgba(26, 46, 69, 0.94);
+      color: #fff;
+      font-size: 0.75rem;
+      padding: 0.4rem 0.6rem;
+      border-radius: 6px;
+      line-height: 1.4;
+      white-space: nowrap;
+      z-index: 2;
+    }
+
+    #tooltip .tt-series { font-weight: 700; }
+    #tooltip .tt-time { opacity: 0.75; }
 
     #timeseries {
       display: block;
@@ -294,6 +312,11 @@
         0 0 0 1px rgba(80,120,180,0.18);
     }
     body.theme-dark .canvas-wrap    { border-bottom-color: #2a3348; }
+    body.theme-dark #tooltip {
+      background: rgba(42, 52, 72, 0.96);
+      border: 1px solid #3a4a68;
+      color: #e8f0f8;
+    }
     body.theme-dark #timeseries     { background: #0f1420; }
     body.theme-dark .controls {
       background: linear-gradient(180deg, #1e2438 0%, #181d2e 100%);
@@ -336,6 +359,12 @@
       box-shadow: 0 0 0 2px #000000;
     }
     body.theme-highContrast .canvas-wrap    { border-bottom-color: #000000; }
+    body.theme-highContrast #tooltip {
+      background: #ffffff;
+      border: 2px solid #000000;
+      color: #000000;
+      border-radius: 0;
+    }
     body.theme-highContrast #timeseries     { background: #ffffff; }
     body.theme-highContrast .controls       { background: #eeeeee; }
     body.theme-highContrast .control-group {
@@ -369,6 +398,10 @@
         0 0 0 1px rgba(160,100,30,0.15);
     }
     body.theme-warm .canvas-wrap    { border-bottom-color: #e8d0a8; }
+    body.theme-warm #tooltip {
+      background: rgba(74, 51, 34, 0.95);
+      color: #fdf6ec;
+    }
     body.theme-warm #timeseries     { background: #fffef8; }
     body.theme-warm .controls {
       background: linear-gradient(180deg, #fdf3e3 0%, #f8ecda 100%);
@@ -673,6 +706,7 @@
             <div class="chart-card">
                 <div class="canvas-wrap">
                     <canvas id="timeseries"></canvas>
+                    <div id="tooltip"></div>
                 </div>
                 <div class="controls">
                     <!-- Day navigation -->
@@ -690,8 +724,8 @@
                     <!-- Rolling 24 h -->
                     <div class="control-group">
                         <span class="group-label">24 h</span>
-                        <button class="btn-ghost" onclick="ts.last24()" title="Previous 24 hours">
-                            <i class="arrow">&#8249;</i> Last 24 h
+                        <button class="btn-ghost" onclick="ts.pan(-1)" title="Shift back one window">
+                            <i class="arrow">&#8249;</i> Back
                         </button>
                         <button class="btn-secondary" onclick="ts.last24()">Rolling 24 h</button>
                         <button class="btn-ghost" onclick="ts.next24()" title="Next 24 hours">
@@ -1119,6 +1153,56 @@
       var colorObj = TimeSeries.themes[name];
       Object.values(typeCharts).forEach(function (tc) { tc.setColors(colorObj); });
     };
+
+    // ── Tooltip ──────────────────────────────────────────────────────────────
+    // onHoverData fires with (null, null, null, null) whenever nothing is hit,
+    // which is the signal to hide again.
+    (function initTooltip() {
+      var tooltip = document.getElementById('tooltip');
+      var wrap = tooltip.parentNode;
+      var lastX = 0, lastY = 0;
+
+      wrap.addEventListener('mousemove', function (e) {
+        var r = wrap.getBoundingClientRect();
+        lastX = e.clientX - r.left;
+        lastY = e.clientY - r.top;
+      });
+
+      var fmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+
+      // Built via textContent rather than innerHTML: series ids come from the
+      // data source (Zabbix item names, calendar summaries) and are not ours.
+      function row(cls, text) {
+        var el = document.createElement('div');
+        if (cls) el.className = cls;
+        el.textContent = text;
+        return el;
+      }
+
+      ts.onHoverDataCallback(function (plot, n, key, value) {
+        if (plot == null || key == null) { tooltip.style.display = 'none'; return; }
+
+        tooltip.replaceChildren();
+        tooltip.appendChild(row('tt-series', String(key)));
+        tooltip.appendChild(row('', typeof value === 'number'
+          ? TimeSeries.siFormat(value)
+          : String(value)));
+
+        // Binned plots put slot n at interval_start + n * interval (seconds).
+        if (typeof plot.interval_start === 'number' && typeof plot.interval === 'number')
+          tooltip.appendChild(row('tt-time',
+            fmt.format(new Date((plot.interval_start + n * plot.interval) * 1000))));
+
+        // Measure before positioning so we can flip near the right/bottom edge.
+        tooltip.style.display = 'block';
+        var tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
+        var x = lastX + 14, y = lastY + 14;
+        if (x + tw > wrap.clientWidth)  x = Math.max(0, lastX - 14 - tw);
+        if (y + th > wrap.clientHeight) y = Math.max(0, lastY - 14 - th);
+        tooltip.style.left = x + 'px';
+        tooltip.style.top  = y + 'px';
+      });
+    })();
         </script>
     </body>
 </html>

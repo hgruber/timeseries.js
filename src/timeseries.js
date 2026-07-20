@@ -51,6 +51,132 @@ function _groupStopFollow(name, sender) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── Pure date helpers ─────────────────────────────────────────────────────────
+// Neither touches instance state, so they live at module scope (one copy for all
+// instances) and are exported to be testable on their own.
+
+// Gauss's Easter algorithm. Returns Easter Sunday as "D.M" (1-based month),
+// which is the key format isHoliday() compares against.
+export function Easter(Y) {
+  var C = Math.floor(Y / 100);
+  var N = Y - 19 * Math.floor(Y / 19);
+  var K = Math.floor((C - 17) / 25);
+  var I = C - Math.floor(C / 4) - Math.floor((C - K) / 3) + 19 * N + 15;
+  I = I - 30 * Math.floor(I / 30);
+  I =
+    I -
+    Math.floor(I / 28) *
+      (1 -
+        Math.floor(I / 28) *
+          Math.floor(29 / (I + 1)) *
+          Math.floor((21 - N) / 11));
+  var J = Y + Math.floor(Y / 4) + I + 2 - C + Math.floor(C / 4);
+  J = J - 7 * Math.floor(J / 7);
+  var L = I - J;
+  var M = 3 + Math.floor((L + 40) / 44);
+  var D = L + 28 - 31 * Math.floor(M / 4);
+  return D + "." + M;
+}
+
+// Local-time Date for the Monday of ISO week `week` in `year`.
+export function isoWeekStart(year, week) {
+  var jan4 = new Date(year, 0, 4);
+  var dayOfWeek = (jan4.getDay() + 6) % 7; // Mon=0 … Sun=6
+  return new Date(year, 0, 4 - dayOfWeek + (week - 1) * 7);
+}
+
+// ── Default palette ───────────────────────────────────────────────────────────
+// Single source of truth: the constructor's `settings.colors` starts as a copy
+// of this, and TimeSeries.themes.light *is* this object. Editing either used to
+// mean editing both by hand.
+var DEFAULT_COLORS = {
+  frameBg:     '#f0f6ff',                    // margin / axis area background
+  text:        '#1a2e45',                    // all text and plot border
+  plotBg:      '#ffffff',                    // plot area background
+  gridLine:    'rgba(100,100,100,0.35)',      // vertical time grid lines
+  gridLineY:   'rgba(150,150,150,0.55)',      // horizontal y-axis lines
+  weekNumber:  '#999999',                    // week-number label
+  nowLine:     'rgba(210,0,0,0.65)',          // the now indicator line
+  future:      'rgba(150,150,150,0.28)',      // fog-of-future overlay
+  stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
+  stripSecond: ['rgba(255,255,215,0.55)', 'rgba(255,255,165,0.55)'],
+  stripMinute: ['rgba(215,255,215,0.55)', 'rgba(165,240,165,0.55)'],
+  stripHour:   ['rgba(215,215,255,0.55)', 'rgba(165,165,240,0.55)'],
+  dayDefault:  'rgba(190,190,190,0.45)',      // regular weekday stripe
+  dayWeekend:  'rgba(255,155,155,0.50)',      // weekend / holiday stripe
+  dayOdd:      'rgba(215,215,215,0.42)',      // alternate weekday stripe
+  yearOdd:     'rgba(255,255,255,0.40)',      // alternating year stripes
+  yearEven:    'rgba(232,232,232,0.40)',
+  monthOdd:    'rgba(85,148,200,0.48)',       // alternating month stripes
+  monthEven:   'rgba(232,232,232,0.42)',
+};
+
+// Default y-axis formatter: SI prefixes (k/M/G/T).
+export function siFormat(v) {
+  if (v === 0) return "0";
+  var abs = Math.abs(v);
+  if (abs >= 1e12)  return (v / 1e12).toFixed(1).replace(/\.0$/, '')  + 'T';
+  if (abs >= 1e9)   return (v / 1e9).toFixed(1).replace(/\.0$/, '')   + 'G';
+  if (abs >= 1e6)   return (v / 1e6).toFixed(1).replace(/\.0$/, '')   + 'M';
+  if (abs >= 1e3)   return (v / 1e3).toFixed(1).replace(/\.0$/, '')   + 'k';
+  return String(v);
+}
+
+// ── Pan snapping ──────────────────────────────────────────────────────────────
+// Used by ts.pan(): both viewport edges snap to the nearest local-time calendar
+// boundary for the most meaningful unit at the current zoom level.
+// panFloor/panAdd use local Date methods and are therefore DST-correct. panDiff
+// counts day/week steps from a fixed-ms division, which is off by up to an hour
+// across a DST change — Math.round absorbs that, so the step count still comes
+// out right (see test/pan.test.mjs).
+
+export function panSnapUnit(span) {
+  var s = 1000, m = 60000, h = 3600000, d = 86400000;
+  if (span <  90 * s)        return 'second';
+  if (span <  90 * m)        return 'minute';
+  if (span <  36 * h)        return 'hour';
+  if (span <  14 * d)        return 'day';
+  if (span <  60 * d)        return 'week';
+  if (span < 2 * 365.25 * d) return 'month';
+  return 'year';
+}
+
+export function panFloor(ms, unit) {
+  var d = new Date(ms);
+  if      (unit === 'year')   { d.setMonth(0, 1);  d.setHours(0, 0, 0, 0); }
+  else if (unit === 'month')  { d.setDate(1);       d.setHours(0, 0, 0, 0); }
+  else if (unit === 'week')   { d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); }
+  else if (unit === 'day')    { d.setHours(0, 0, 0, 0); }
+  else if (unit === 'hour')   { d.setMinutes(0, 0, 0); }
+  else if (unit === 'minute') { d.setSeconds(0, 0); }
+  else                        { d.setMilliseconds(0); }  // second
+  return d.getTime();
+}
+
+export function panAdd(ms, unit, n) {
+  var d = new Date(ms);
+  if      (unit === 'year')   d.setFullYear(d.getFullYear() + n);
+  else if (unit === 'month')  d.setMonth(d.getMonth() + n);
+  else if (unit === 'week')   d.setDate(d.getDate() + n * 7);
+  else if (unit === 'day')    d.setDate(d.getDate() + n);
+  else if (unit === 'hour')   d.setHours(d.getHours() + n);
+  else if (unit === 'minute') d.setMinutes(d.getMinutes() + n);
+  else                        d.setSeconds(d.getSeconds() + n);
+  return d.getTime();
+}
+
+export function panDiff(lo, hi, unit) {
+  if (unit === 'second') return Math.round((hi - lo) / 1000);
+  if (unit === 'minute') return Math.round((hi - lo) / 60000);
+  if (unit === 'hour')   return Math.round((hi - lo) / 3600000);
+  if (unit === 'day')    return Math.round((hi - lo) / 86400000);
+  if (unit === 'week')   return Math.round((hi - lo) / 604800000);
+  var a = new Date(lo), b = new Date(hi);
+  if (unit === 'month')
+    return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  return b.getFullYear() - a.getFullYear();
+}
+
 export default function TimeSeries(options) {
   var settings = {
     canvas: "timeseries",
@@ -61,42 +187,30 @@ export default function TimeSeries(options) {
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
     yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
     yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
-    colors: {
-      frameBg:     '#f0f6ff',                    // margin / axis area background
-      text:        '#1a2e45',                    // all text and plot border
-      plotBg:      '#ffffff',                    // plot area background
-      gridLine:    'rgba(100,100,100,0.35)',      // vertical time grid lines
-      gridLineY:   'rgba(150,150,150,0.55)',      // horizontal y-axis lines
-      weekNumber:  '#999999',                    // week-number label
-      nowLine:     'rgba(210,0,0,0.65)',          // the now indicator line
-      future:      'rgba(150,150,150,0.28)',      // fog-of-future overlay
-      stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
-      stripSecond: ['rgba(255,255,215,0.55)', 'rgba(255,255,165,0.55)'],
-      stripMinute: ['rgba(215,255,215,0.55)', 'rgba(165,240,165,0.55)'],
-      stripHour:   ['rgba(215,215,255,0.55)', 'rgba(165,165,240,0.55)'],
-      dayDefault:  'rgba(190,190,190,0.45)',      // regular weekday stripe
-      dayWeekend:  'rgba(255,155,155,0.50)',      // weekend / holiday stripe
-      dayOdd:      'rgba(215,215,215,0.42)',      // alternate weekday stripe
-      yearOdd:     'rgba(255,255,255,0.40)',      // alternating year stripes
-      yearEven:    'rgba(232,232,232,0.40)',
-      monthOdd:    'rgba(85,148,200,0.48)',       // alternating month stripes
-      monthEven:   'rgba(232,232,232,0.42)',
-    },
+    // Copied so that a per-instance override never writes through to the shared
+    // DEFAULT_COLORS object.
+    colors: Object.assign({}, DEFAULT_COLORS),
+    // Keys are strings, always quoted. Two forms:
+    //   "D.M"  — fixed date, 1-based month, no leading zeros ("3.10" = 3 October)
+    //   "+N"/"-N" — N days relative to Easter Sunday ("-2" = Good Friday)
+    // Quoting matters: an unquoted 1.10 is the *number* 1.1 and would silently
+    // become New Year's Day. Replace this object wholesale to use another
+    // country's holidays — unlike `colors`, it is not merged with the defaults.
     holidays: {
-      1.1: "Neujahr",
-      1.5: "Maifeiertag",
-      "-2": "Karfreitag",
-      "+0": "Ostersonntag",
-      "+1": "Ostermontag",
-      "+39": "Himmelfahrt",
-      "+49": "Pfingstsonntag",
-      "+50": "Pfingstmontag",
-      "+60": "Fronleichnahm",
+      "1.1":  "Neujahr",
+      "1.5":  "Maifeiertag",
+      "-2":   "Karfreitag",
+      "+0":   "Ostersonntag",
+      "+1":   "Ostermontag",
+      "+39":  "Himmelfahrt",
+      "+49":  "Pfingstsonntag",
+      "+50":  "Pfingstmontag",
+      "+60":  "Fronleichnam",
       "3.10": "Tag der Einheit",
-      24.12: "Heilig Abend",
-      25.12: "1. Weihnachtstag",
-      26.12: "2. Weihnachtstag",
-      31.12: "Sylvester",
+      "24.12": "Heilig Abend",
+      "25.12": "1. Weihnachtstag",
+      "26.12": "2. Weihnachtstag",
+      "31.12": "Silvester",
     },
     watermark: null,          // URL string or HTMLImageElement drawn behind all chart content
     watermarkWidth: 0.63,    // fraction of plot width
@@ -104,7 +218,15 @@ export default function TimeSeries(options) {
   };
   if (options) {
     for (const [key, value] of Object.entries(options)) {
-      settings[key] = value;
+      // `colors` is a palette where every key must stay defined — a partial
+      // override would leave the rest undefined and reach the canvas as an
+      // invalid fillStyle, so merge it key-by-key (same as setColors() does).
+      // `holidays` is deliberately NOT merged: it is a list, and replacing it
+      // wholesale is how a caller swaps the German defaults for another set.
+      if (key === 'colors' && value && typeof value === 'object')
+        Object.assign(settings.colors, value);
+      else
+        settings[key] = value;
     }
   }
   var canvas = document.getElementById(settings.canvas);
@@ -304,16 +426,6 @@ export default function TimeSeries(options) {
   ////////////////////////////////////
 
   // SI prefix formatter: 1500 → "1.5k", 1200000 → "1.2M", 0.5 → "0.5"
-  function siFormat(v) {
-    if (v === 0) return "0";
-    var abs = Math.abs(v);
-    if (abs >= 1e12)  return (v / 1e12).toFixed(1).replace(/\.0$/, '')  + 'T';
-    if (abs >= 1e9)   return (v / 1e9).toFixed(1).replace(/\.0$/, '')   + 'G';
-    if (abs >= 1e6)   return (v / 1e6).toFixed(1).replace(/\.0$/, '')   + 'M';
-    if (abs >= 1e3)   return (v / 1e3).toFixed(1).replace(/\.0$/, '')   + 'k';
-    return String(v);
-  }
-
   var _yFmt = settings.yAxisFormat || siFormat;
   var _yLabel = settings.yAxisLabel || '';
 
@@ -355,27 +467,6 @@ export default function TimeSeries(options) {
   }
 
   recomputeFonts();
-
-  function Easter(Y) {
-    var C = Math.floor(Y / 100);
-    var N = Y - 19 * Math.floor(Y / 19);
-    var K = Math.floor((C - 17) / 25);
-    var I = C - Math.floor(C / 4) - Math.floor((C - K) / 3) + 19 * N + 15;
-    I = I - 30 * Math.floor(I / 30);
-    I =
-      I -
-      Math.floor(I / 28) *
-        (1 -
-          Math.floor(I / 28) *
-            Math.floor(29 / (I + 1)) *
-            Math.floor((21 - N) / 11));
-    var J = Y + Math.floor(Y / 4) + I + 2 - C + Math.floor(C / 4);
-    J = J - 7 * Math.floor(J / 7);
-    var L = I - J;
-    var M = 3 + Math.floor((L + 40) / 44);
-    var D = L + 28 - 31 * Math.floor(M / 4);
-    return D + "." + M;
-  }
 
   var easterYears = {}; // store dates for every year
   var hL = {}; // store all holidays here
@@ -816,11 +907,14 @@ export default function TimeSeries(options) {
     }
   }
 
+  // `time` overrides the animation duration in ms for this one transition;
+  // omit it for the configured zoomDuration, pass 0 to jump without animating.
   function zoom(target_tmin, target_tmax, time) {
     var r = clampRange(target_tmin, target_tmax);
     if (tmin == r[0] && tmax == r[1]) return;
+    var dur = typeof time === 'number' && time >= 0 ? time : zoom_onclick_time;
     animation.startT = +Date.now() - 20;
-    animation.endT = animation.startT + zoom_onclick_time;
+    animation.endT = animation.startT + dur;
     animation.start = {
       tmin: tmin,
       tmax: tmax,
@@ -947,11 +1041,7 @@ export default function TimeSeries(options) {
   };
 
   // ── Calendar-week navigation (ISO 8601, Monday start) ────────────────────
-  function isoWeekStart(year, week) {
-    var jan4 = new Date(year, 0, 4);
-    var dayOfWeek = (jan4.getDay() + 6) % 7; // Mon=0 … Sun=6
-    return new Date(year, 0, 4 - dayOfWeek + (week - 1) * 7);
-  }
+  // isoWeekStart() lives at module scope — see top of file.
   this.zoomWeek = function (year, week) {
     doStop();
     var start = isoWeekStart(year, week);
@@ -961,52 +1051,7 @@ export default function TimeSeries(options) {
   };
 
   // ── Viewport pan: one "screen" left (dir=-1) or right (dir=+1) ───────────
-  // Both edges snap to the nearest local-time calendar boundary for the most
-  // meaningful unit at the current zoom level (second … year, incl. ISO week).
-  // DST-safe: all arithmetic uses local Date methods, not fixed-ms offsets.
-  function panSnapUnit(span) {
-    var s = 1000, m = 60000, h = 3600000, d = 86400000;
-    if (span <  90 * s)        return 'second';
-    if (span <  90 * m)        return 'minute';
-    if (span <  36 * h)        return 'hour';
-    if (span <  14 * d)        return 'day';
-    if (span <  60 * d)        return 'week';
-    if (span < 2 * 365.25 * d) return 'month';
-    return 'year';
-  }
-  function panFloor(ms, unit) {
-    var d = new Date(ms);
-    if      (unit === 'year')   { d.setMonth(0, 1);  d.setHours(0, 0, 0, 0); }
-    else if (unit === 'month')  { d.setDate(1);       d.setHours(0, 0, 0, 0); }
-    else if (unit === 'week')   { d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7); }
-    else if (unit === 'day')    { d.setHours(0, 0, 0, 0); }
-    else if (unit === 'hour')   { d.setMinutes(0, 0, 0); }
-    else if (unit === 'minute') { d.setSeconds(0, 0); }
-    else                        { d.setMilliseconds(0); }  // second
-    return d.getTime();
-  }
-  function panAdd(ms, unit, n) {
-    var d = new Date(ms);
-    if      (unit === 'year')   d.setFullYear(d.getFullYear() + n);
-    else if (unit === 'month')  d.setMonth(d.getMonth() + n);
-    else if (unit === 'week')   d.setDate(d.getDate() + n * 7);
-    else if (unit === 'day')    d.setDate(d.getDate() + n);
-    else if (unit === 'hour')   d.setHours(d.getHours() + n);
-    else if (unit === 'minute') d.setMinutes(d.getMinutes() + n);
-    else                        d.setSeconds(d.getSeconds() + n);
-    return d.getTime();
-  }
-  function panDiff(lo, hi, unit) {
-    if (unit === 'second') return Math.round((hi - lo) / 1000);
-    if (unit === 'minute') return Math.round((hi - lo) / 60000);
-    if (unit === 'hour')   return Math.round((hi - lo) / 3600000);
-    if (unit === 'day')    return Math.round((hi - lo) / 86400000);
-    if (unit === 'week')   return Math.round((hi - lo) / 604800000);
-    var a = new Date(lo), b = new Date(hi);
-    if (unit === 'month')
-      return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
-    return b.getFullYear() - a.getFullYear();
-  }
+  // panSnapUnit/panFloor/panAdd/panDiff live at module scope — see top of file.
   this.pan = function (dir) {
     doStop();
     var inFlight = animation.endT && Date.now() < animation.endT;
@@ -1046,9 +1091,12 @@ export default function TimeSeries(options) {
     // `var` matters: without it this is an implicit global, which is silently
     // tolerated in the IIFE bundle but throws in strict mode — i.e. whenever
     // the library is loaded as an ES module, as the demos do.
-    var t = easeInOutExpo(
-      (now - animation.startT) / (animation.endT - animation.startT),
-    );
+    // A zero-length animation (zoom(…, 0)) would divide by zero here and put
+    // NaN into tmin/tmax — treat it as already finished.
+    var span = animation.endT - animation.startT;
+    var t = span > 0
+      ? easeInOutExpo((now - animation.startT) / span)
+      : 1;
     tmin = animation.start.tmin * (1 - t) + animation.end.tmin * t;
     tmax = animation.start.tmax * (1 - t) + animation.end.tmax * t;
     if (!done) setTimeout(animate, 10);
@@ -2150,6 +2198,10 @@ export default function TimeSeries(options) {
     plotAll();
   };
 
+  // Copies, so callers cannot mutate the live settings behind the chart's back.
+  this.getColors = function () { return Object.assign({}, settings.colors); };
+  this.getHolidays = function () { return Object.assign({}, settings.holidays); };
+
   this.setRenderInterval = function (iv) {
     renderInterval = (iv == null) ? null : +iv;
     plotAll();
@@ -2175,11 +2227,6 @@ export default function TimeSeries(options) {
 
   this.onClickDataCallback = onClickDataCallback;
   this.onHoverDataCallback = onHoverDataCallback;
-  TimeSeries.registerRenderer = registerRenderer;
-  TimeSeries.registerSource = registerSource;
-  TimeSeries.seriesColor = seriesColor;
-  TimeSeries.lttb = lttb;
-  TimeSeries.siFormat = siFormat;
 
   if (settings.watermark) this.setWatermark(settings.watermark);
   plotAll();
@@ -2187,34 +2234,25 @@ export default function TimeSeries(options) {
   if (settings.initialView) setTimeout(function () { self[settings.initialView](); }, 0);
 }
 
+// ── Statics ───────────────────────────────────────────────────────────────────
+// Module scope, not inside the constructor: consumers of the IIFE build call
+// TimeSeries.registerSource(...) *before* creating their first chart, and these
+// used to only exist once an instance had been constructed.
+TimeSeries.registerRenderer = registerRenderer;
+TimeSeries.registerSource = registerSource;
+TimeSeries.seriesColor = seriesColor;
+TimeSeries.lttb = lttb;
+TimeSeries.siFormat = siFormat;
+
 // ── Named colour themes ───────────────────────────────────────────────────────
 // Each theme is a complete colors object suitable for new TimeSeries({ colors: … })
 // or ts.setColors(TimeSeries.themes.dark).
 
 TimeSeries.themes = {
 
-  // ── Default (light blue) — matches built-in defaults ─────────────────────
-  light: {
-    frameBg:     '#f0f6ff',
-    text:        '#1a2e45',
-    plotBg:      '#ffffff',
-    gridLine:    'rgba(100,100,100,0.35)',
-    gridLineY:   'rgba(150,150,150,0.55)',
-    weekNumber:  '#999999',
-    nowLine:     'rgba(210,0,0,0.65)',
-    future:      'rgba(150,150,150,0.28)',
-    stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
-    stripSecond: ['rgba(255,255,215,0.55)', 'rgba(255,255,165,0.55)'],
-    stripMinute: ['rgba(215,255,215,0.55)', 'rgba(165,240,165,0.55)'],
-    stripHour:   ['rgba(215,215,255,0.55)', 'rgba(165,165,240,0.55)'],
-    dayDefault:  'rgba(190,190,190,0.45)',
-    dayWeekend:  'rgba(255,155,155,0.50)',
-    dayOdd:      'rgba(215,215,215,0.42)',
-    yearOdd:     'rgba(255,255,255,0.40)',
-    yearEven:    'rgba(232,232,232,0.40)',
-    monthOdd:    'rgba(85,148,200,0.48)',
-    monthEven:   'rgba(232,232,232,0.42)',
-  },
+  // ── Default (light blue) ─────────────────────────────────────────────────
+  // Not a copy of the built-in defaults — literally the same object.
+  light: DEFAULT_COLORS,
 
   // ── Dark ─────────────────────────────────────────────────────────────────
   dark: {

@@ -79,11 +79,11 @@ export function makeCanvas(id, width = 1000, height = 400) {
 export const sleep = ms => new Promise(r => _origSetTimeout(r, ms));
 
 /**
- * Apply a viewport and wait for the zoom animation to settle.
+ * Apply a viewport and wait for it to settle.
  *
- * zoom() ignores its duration argument and always animates over
- * zoom_onclick_time, so reading the viewport synchronously afterwards would
- * catch it mid-flight.
+ * The 0 is zoom()'s duration argument: skip the animation and jump straight to
+ * the target. The sleep still covers the redraw and the viewport-change
+ * callback that follow it.
  */
 export async function setView(ts, tmin, tmax) {
   ts.zoom(tmin, tmax, 0);

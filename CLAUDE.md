@@ -17,7 +17,11 @@ npm run serve        # python3 static server on :8080
 npm test             # run test/*.test.mjs with node's built-in test runner
 ```
 
-**Dev without building**: Open `demo/index.html` via the static server. It uses `<script type="module">` and imports directly from `src/` — no build step needed for development.
+**Dev without building**: `demo/caldav.html` uses `<script type="module">` and imports
+directly from `src/`, so it needs no build step. `demo/index.html` does **not** — it loads
+the IIFE bundle via `<script src="../dist/timeseries.js">`, so changes to `src/` only show
+up there after `npm run build` (or with `npm run watch` running). `dist/` is gitignored;
+the Pages deploy in `.github/workflows/deploy.yml` builds it in CI.
 
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
 
@@ -50,7 +54,22 @@ Coverage: `test/caldav.test.mjs` (iCalendar parsing, DST-aware TZID resolution),
 `test/gantt.test.mjs` (row packing, `layoutSpans`), `test/gantt-hittest.test.mjs`
 (confirms `barRect()` in `gantt.js` and `get_element()` in `timeseries.js` agree — the
 two are hand-kept in sync rather than sharing code), `test/binned-regression.test.mjs`
-(guards the pre-existing multibar path against the `category: 'span'` changes).
+(guards the pre-existing multibar path against the `category: 'span'` changes),
+`test/dates.test.mjs` (`Easter` against published dates, `isoWeekStart`, and the
+week/day presets for every weekday — Sunday being the case `(d.getDay() || 7)` exists
+for), `test/pan.test.mjs` (pan snapping incl. DST transitions), `test/hover.test.mjs`
+(the `onHoverData` contract the demo tooltip is built on), `test/options.test.mjs`
+(option merging, statics, `zoom()` duration), `test/intervals.test.mjs` and
+`test/lttb.test.mjs` (both previously untested pure modules).
+
+**Time zones**: the DST cases in `test/pan.test.mjs` self-skip where the local zone has
+no DST. Run both `TZ=Europe/Berlin npm test` and `TZ=UTC npm test` after touching date
+arithmetic.
+
+**Date-dependent tests**: the presets read "now" via `Date.now()`. `test/dates.test.mjs`
+pins it around each call and restores it before awaiting — that also makes the pending
+zoom animation's end time lie in the past, so the next frame snaps straight to the
+target instead of needing the full `zoomDuration`.
 
 ## Architecture
 
@@ -168,4 +187,26 @@ infrastructure.
 
 ### Public API (TimeSeries instance)
 
-`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`
+`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`
+
+`ts.zoom()`'s third argument overrides the animation duration for that one transition;
+`0` jumps without animating. Omit it for the configured `zoomDuration`.
+
+### Module-level exports
+
+Besides the default export, `src/timeseries.js` exports the pure date/format helpers so
+they can be tested and reused without constructing a chart: `Easter(year)`,
+`isoWeekStart(year, week)`, `siFormat(v)`, and the pan-snapping set `panSnapUnit(span)`,
+`panFloor(ms, unit)`, `panAdd(ms, unit, n)`, `panDiff(lo, hi, unit)`.
+
+The statics `TimeSeries.registerRenderer` / `registerSource` / `seriesColor` / `lttb` /
+`siFormat` / `themes` live at module scope, so the IIFE build can call them **before**
+the first `new TimeSeries(...)`.
+
+### Option merging
+
+`colors` is merged key-by-key with the defaults, so a partial override keeps the rest of
+the palette (an undefined colour would reach the canvas as an invalid `fillStyle`).
+Everything else, **including `holidays`**, replaces the default wholesale — that is how a
+caller swaps the German holiday set for another country's. `TimeSeries.themes.light` is
+the same object as the built-in default palette, not a copy of it.
