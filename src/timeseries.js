@@ -135,6 +135,10 @@ export default function TimeSeries(options) {
   var fm = c.measureText("22:22");
   var font_height = 1.4 * fm.actualBoundingBoxAscent + 4;
   var font_width  = fm.width;
+  // The rotated time labels are drawn 4px *below* the plot edge (see drawAxis) and run
+  // downwards from there, so margin.bottom must reserve font_width plus that offset —
+  // keep this in sync with the literal 4 in drawAxis; the extra 2px is breathing room.
+  var LABEL_GAP = 6;
 
   // Read the canvas container's CSS padding to use as the outer whitespace.
   // Set padding on .canvas-wrap in CSS to control the space around the chart.
@@ -152,7 +156,7 @@ export default function TimeSeries(options) {
   var margin = {
     top:    2 * font_height + basePad.top,    // 2 label rows + css padding
     right:  basePad.right,                    // css padding only
-    bottom: font_width + basePad.bottom,      // time labels + css padding (animated)
+    bottom: font_width + LABEL_GAP + basePad.bottom,  // time labels + css padding (animated)
     left:   basePad.left,                    // y-axis + css padding (set by prepare_grid)
   };
 
@@ -1851,7 +1855,7 @@ export default function TimeSeries(options) {
     for (var tli = 0; tli < 4 && !has_time_labels; tli++)
       if (grid[tli]) for (var tlj = 0; tlj < grid[tli].length && !has_time_labels; tlj++)
         if (grid[tli][tlj].label) has_time_labels = true;
-    var margin_bottom_new = (has_time_labels ? font_width : 0) + basePad.bottom;
+    var margin_bottom_new = (has_time_labels ? font_width + LABEL_GAP : 0) + basePad.bottom;
     if (!margin_bottom_initialized) {
       margin.bottom = margin_bottom_new;
       margin_bottom_anim = { from: margin_bottom_new, to: margin_bottom_new, startT: 0, dur: 0 };
@@ -2007,7 +2011,7 @@ export default function TimeSeries(options) {
           vertical_label(
             item.tm,
             X(item.tm),
-            canvas.height - margin.bottom + 4,
+            canvas.height - margin.bottom + 4,   // offset accounted for by LABEL_GAP
           );
       });
     if (label_level_alpha < 1) drawAxisLabels(label_level_prev, 1 - label_level_alpha);

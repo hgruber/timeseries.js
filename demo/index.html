@@ -39,6 +39,26 @@
       color: #5a7a9a;
     }
 
+    header nav {
+      margin-left: auto;
+      display: flex;
+      gap: 1rem;
+    }
+
+    header nav a {
+      font-size: 0.85rem;
+      color: #2d6a9f;
+      text-decoration: none;
+      padding: 0.3rem 0.7rem;
+      border-radius: 8px;
+      border: 1px solid rgba(45, 106, 159, 0.25);
+      white-space: nowrap;
+    }
+
+    header nav a:hover {
+      background: rgba(45, 106, 159, 0.10);
+    }
+
     /* ── Main card ───────────────────────────────────────────── */
     main {
       max-width: 1300px;
@@ -261,6 +281,11 @@
     body.theme-dark header h1       { color: #c8d8e8; }
     body.theme-dark header h1 span  { color: #5594c8; }
     body.theme-dark header p        { color: #5a7a9a; }
+    body.theme-dark header nav a {
+      color: #6aabdf;
+      border-color: #2a3a54;
+    }
+    body.theme-dark header nav a:hover { background: rgba(90,148,200,0.15); color: #9acce8; }
     body.theme-dark .chart-card {
       background: #1a1f2e;
       box-shadow:
@@ -301,6 +326,11 @@
     body.theme-highContrast header h1       { color: #000000; }
     body.theme-highContrast header h1 span  { color: #0050c8; }
     body.theme-highContrast header p        { color: #333333; }
+    body.theme-highContrast header nav a {
+      color: #0050c8;
+      border: 2px solid #000000;
+    }
+    body.theme-highContrast header nav a:hover { background: #eeeeee; }
     body.theme-highContrast .chart-card {
       background: #ffffff;
       box-shadow: 0 0 0 2px #000000;
@@ -635,6 +665,9 @@
                 timeseries<span>.js</span>
             </h1>
             <p>Interactive canvas-based time series visualization</p>
+            <nav>
+                <a href="caldav.html">Calendar demo &rarr;</a>
+            </nav>
         </header>
         <main>
             <div class="chart-card">
