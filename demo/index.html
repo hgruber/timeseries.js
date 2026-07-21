@@ -83,7 +83,7 @@
       border-bottom: 1px solid #e4edf8;
     }
 
-    #tooltip {
+    #tooltip, .tooltip {
       position: absolute;
       pointer-events: none;   /* must not steal the hover it is reacting to */
       display: none;
@@ -97,8 +97,58 @@
       z-index: 2;
     }
 
-    #tooltip .tt-series { font-weight: 700; }
-    #tooltip .tt-time { opacity: 0.75; }
+    #tooltip .tt-series, .tooltip .tt-series { font-weight: 700; }
+    #tooltip .tt-time, .tooltip .tt-time { opacity: 0.75; }
+
+    /* ── Series legend (overlay, not painted into the canvas) ─────────────── */
+    #legend {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      max-height: calc(100% - 32px);
+      overflow-y: auto;
+      padding: 0.4rem;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.88);
+      border: 1px solid rgba(45, 106, 159, 0.18);
+      font-size: 0.75rem;
+      backdrop-filter: blur(2px);
+    }
+
+    #legend[hidden] { display: none; }
+
+    .legend-entry {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.15rem 0.3rem;
+      border: 0;
+      border-radius: 5px;
+      background: none;
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .legend-entry:hover { background: rgba(45, 106, 159, 0.10); }
+
+    /* Switched-off series stay readable but visibly inactive. */
+    .legend-entry[aria-pressed="false"] { opacity: 0.45; }
+    .legend-entry[aria-pressed="false"] .legend-swatch { background: transparent !important; }
+
+    .legend-swatch {
+      width: 10px;
+      height: 10px;
+      flex: 0 0 auto;
+      border-radius: 2px;
+      border: 1px solid currentColor;
+    }
 
     #timeseries {
       display: block;
@@ -312,7 +362,13 @@
         0 0 0 1px rgba(80,120,180,0.18);
     }
     body.theme-dark .canvas-wrap    { border-bottom-color: #2a3348; }
-    body.theme-dark #tooltip {
+    body.theme-dark #legend {
+      background: rgba(26, 31, 46, 0.92);
+      border-color: #2a3a54;
+      color: #c8d8e8;
+    }
+    body.theme-dark .legend-entry:hover { background: rgba(90,148,200,0.18); }
+    body.theme-dark #tooltip, body.theme-dark .tooltip {
       background: rgba(42, 52, 72, 0.96);
       border: 1px solid #3a4a68;
       color: #e8f0f8;
@@ -359,7 +415,14 @@
       box-shadow: 0 0 0 2px #000000;
     }
     body.theme-highContrast .canvas-wrap    { border-bottom-color: #000000; }
-    body.theme-highContrast #tooltip {
+    body.theme-highContrast #legend {
+      background: #ffffff;
+      border: 2px solid #000000;
+      border-radius: 0;
+      color: #000000;
+    }
+    body.theme-highContrast .legend-entry:hover { background: #eeeeee; }
+    body.theme-highContrast #tooltip, body.theme-highContrast .tooltip {
       background: #ffffff;
       border: 2px solid #000000;
       color: #000000;
@@ -398,7 +461,13 @@
         0 0 0 1px rgba(160,100,30,0.15);
     }
     body.theme-warm .canvas-wrap    { border-bottom-color: #e8d0a8; }
-    body.theme-warm #tooltip {
+    body.theme-warm #legend {
+      background: rgba(253, 246, 236, 0.92);
+      border-color: #e8d0a8;
+      color: #4a3322;
+    }
+    body.theme-warm .legend-entry:hover { background: rgba(160,110,60,0.12); }
+    body.theme-warm #tooltip, body.theme-warm .tooltip {
       background: rgba(74, 51, 34, 0.95);
       color: #fdf6ec;
     }
@@ -518,6 +587,7 @@
     }
 
     .type-card .canvas-wrap {
+      position: relative;   /* anchor for the per-card tooltip */
       padding: 6px;
       border-bottom: 1px solid #e4edf8;
     }
@@ -707,6 +777,7 @@
                 <div class="canvas-wrap">
                     <canvas id="timeseries"></canvas>
                     <div id="tooltip"></div>
+                    <div id="legend" role="group" aria-label="Series"></div>
                 </div>
                 <div class="controls">
                     <!-- Day navigation -->
@@ -788,6 +859,16 @@
                         <button class="btn-ghost"
                                 onclick="stepSelect('sel-week',+1)"
                                 title="Next week">&#8250;</button>
+                    </div>
+                    <div class="divider"></div>
+                    <!-- Legend -->
+                    <div class="control-group">
+                        <span class="group-label">Legend</span>
+                        <button class="btn-ghost"
+                                id="btn-legend"
+                                aria-pressed="true"
+                                onclick="toggleLegend()"
+                                title="Show or hide the series legend">Series</button>
                     </div>
                     <div class="divider"></div>
                     <!-- Theme -->
@@ -1154,12 +1235,69 @@
       Object.values(typeCharts).forEach(function (tc) { tc.setColors(colorObj); });
     };
 
+    // ── Series legend ────────────────────────────────────────────────────────
+    // A DOM overlay rather than something painted into the canvas: it stays
+    // selectable and clickable, and the library deliberately provides only the
+    // data (ts.getSeries) — building the markup is the page's job.
+    var legendEl = document.getElementById('legend');
+
+    function renderLegend() {
+      var series = ts.getSeries();
+      legendEl.replaceChildren();
+      if (!series.length) return;
+
+      series.forEach(function (s) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'legend-entry';
+        // aria-pressed carries the state for assistive tech and drives the
+        // dimmed styling, so there is one source of truth.
+        btn.setAttribute('aria-pressed', String(!s.hidden));
+
+        var swatch = document.createElement('span');
+        swatch.className = 'legend-swatch';
+        swatch.style.background = s.color;
+        swatch.style.color = s.color;      // border picks this up via currentColor
+        btn.appendChild(swatch);
+
+        var label = document.createElement('span');
+        // textContent, not innerHTML: series ids come from the data source.
+        label.textContent = s.label;
+        btn.appendChild(label);
+
+        btn.title = (s.hidden ? 'Show ' : 'Hide ') + s.label;
+        btn.onclick = function () { ts.toggleSeries(s.id); };
+        legendEl.appendChild(btn);
+      });
+    }
+
+    // Redraw the legend whenever the hidden set changes...
+    ts.onSeriesChange(renderLegend);
+    // ...and once data has arrived, since onSeriesChange does not fire for new
+    // series appearing. The demo source loads synchronously enough that a
+    // single deferred call suffices; a live source would call this itself.
+    setTimeout(renderLegend, 0);
+
+    function toggleLegend() {
+      var btn = document.getElementById('btn-legend');
+      var show = legendEl.hasAttribute('hidden');
+      if (show) legendEl.removeAttribute('hidden');
+      else legendEl.setAttribute('hidden', '');
+      btn.setAttribute('aria-pressed', String(show));
+    }
+
     // ── Tooltip ──────────────────────────────────────────────────────────────
     // onHoverData fires with (null, null, null, null) whenever nothing is hit,
     // which is the signal to hide again.
-    (function initTooltip() {
-      var tooltip = document.getElementById('tooltip');
-      var wrap = tooltip.parentNode;
+    // Attaches a tooltip to one chart. `tooltip` may be an existing element or
+    // is created inside the wrap — the type-gallery cards get one each so the
+    // point-series hit test is visible there too (the main chart is multibar).
+    function initTooltip(chart, wrap, tooltip) {
+      if (!tooltip) {
+        tooltip = document.createElement('div');
+        tooltip.className = 'tooltip';
+        wrap.appendChild(tooltip);
+      }
       var lastX = 0, lastY = 0;
 
       wrap.addEventListener('mousemove', function (e) {
@@ -1179,7 +1317,7 @@
         return el;
       }
 
-      ts.onHoverDataCallback(function (plot, n, key, value) {
+      chart.onHoverDataCallback(function (plot, n, key, value) {
         if (plot == null || key == null) { tooltip.style.display = 'none'; return; }
 
         tooltip.replaceChildren();
@@ -1188,10 +1326,17 @@
           ? TimeSeries.siFormat(value)
           : String(value)));
 
-        // Binned plots put slot n at interval_start + n * interval (seconds).
-        if (typeof plot.interval_start === 'number' && typeof plot.interval === 'number')
-          tooltip.appendChild(row('tt-time',
-            fmt.format(new Date((plot.interval_start + n * plot.interval) * 1000))));
+        // Two ways to recover the time of a hit: point plots carry it on the
+        // sample itself, binned plots put slot n at
+        // interval_start + n * interval (both in seconds).
+        var tMs = null;
+        if (plot.category === 'point') {
+          if (plot.data && plot.data[n]) tMs = plot.data[n].t;
+        } else if (typeof plot.interval_start === 'number'
+                   && typeof plot.interval === 'number') {
+          tMs = (plot.interval_start + n * plot.interval) * 1000;
+        }
+        if (tMs != null) tooltip.appendChild(row('tt-time', fmt.format(new Date(tMs))));
 
         // Measure before positioning so we can flip near the right/bottom edge.
         tooltip.style.display = 'block';
@@ -1202,7 +1347,18 @@
         tooltip.style.left = x + 'px';
         tooltip.style.top  = y + 'px';
       });
-    })();
+    }
+
+    // Main chart uses the markup-provided #tooltip.
+    initTooltip(ts, document.getElementById('tooltip').parentNode,
+                document.getElementById('tooltip'));
+
+    // Every gallery card gets its own. tc-scatter and tc-multiline-p are point
+    // series, so this is where the point hit test is actually visible.
+    Object.keys(typeCharts).forEach(function (id) {
+      var canvas = document.getElementById(id);
+      if (canvas) initTooltip(typeCharts[id], canvas.parentNode, null);
+    });
         </script>
     </body>
 </html>

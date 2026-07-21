@@ -106,11 +106,65 @@ export function seriesColor(i, t) {
   return 'hsla(' + hue.toFixed(1) + ',65%,50%,' + t + ')';
 }
 
+/**
+ * Half-size in pixels of the marker each point renderer draws. Shared with the
+ * hit test in `get_element` (src/timeseries.js) so that what you can hover is
+ * what you can see — the gantt renderer keeps `barRect()` in step the same way.
+ *
+ * multiline draws no marker at all; its entry is the tolerance for grabbing a
+ * vertex of the line. Anything not listed falls back to `default`.
+ *
+ * Only valid while no renderer downsamples internally: the hit test walks
+ * plot.data directly, so drawn points must equal stored points. (A source may
+ * apply TimeSeries.lttb before pushing — that is fine, the reduced array is
+ * then what both draw and hit-test see.)
+ */
+export const POINT_RADIUS = {
+  multipoint: 2,
+  scatter: 3,
+  multiline: 4,
+  default: 3,
+};
+
+/**
+ * Series ids present in a plot, in a stable order.
+ *
+ * Every renderer used to work this out for itself, three different ways — and
+ * the point renderers disagreed with the binned ones about what a series is
+ * even keyed by. One implementation, so the legend, the hit test and the
+ * renderers cannot drift apart.
+ *
+ * - point:  plot.series metadata if present, else the union of `values` keys
+ *           across the whole array (later points may introduce a series).
+ * - binned: the union of keys across all slots (sparse slots omit series).
+ * - span:   lanes, which is what a span plot's "series" means.
+ */
+export function plotSeriesIds(plot) {
+  if (!plot || !plot.data) return [];
+  var ids = [];
+  var seen = Object.create(null);
+  var add = k => { if (!seen[k]) { seen[k] = 1; ids.push(k); } };
+
+  if (plot.category === 'span') {
+    for (const lane of plot.lanes || []) add(String(lane.id));
+    return ids;
+  }
+  if (plot.category === 'point') {
+    if (plot.series) for (const s of plot.series) add(String(s.id));
+    else for (const pt of plot.data) for (const k in pt.values) add(k);
+    return ids;
+  }
+  for (const s in plot.data) for (const k in plot.data[s]) add(k);
+  return ids;
+}
+
 // Per-plot color override: a `plot.series_colors` map ({ [seriesKey]: cssColor })
 // wins over the auto-hashed color. Hex values get an alpha byte appended so
 // stacked bars match the auto-color translucency; named/hsla/rgba colors pass
 // through untouched.
-function resolveColor(plot, i, t) {
+//
+// Exported because the legend has to reproduce exactly what was painted.
+export function resolveColor(plot, i, t) {
   var override = plot.series_colors && plot.series_colors[i];
   if (!override) return seriesColor(i, t);
   if (override[0] === '#' && override.length === 7) {
@@ -144,7 +198,7 @@ function highlight_multibar(plot, n, item, rctx) {
 }
 
 function multibar(plot, rctx) {
-  var { c, X, Y, ppms, ppv, margin, plotWidth } = rctx;
+  var { c, X, Y, ppms, ppv, margin, plotWidth, hidden } = rctx;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   var barWidth = ppms * step;
@@ -155,6 +209,9 @@ function multibar(plot, rctx) {
     var x = X(start + t * step);
     if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
       for (const [i, bar] of Object.entries(bars)) {
+        // Skipped entirely, not drawn transparent: a hidden series must not
+        // occupy stack height either, or the visible bars float off the axis.
+        if (hidden && hidden.has(i)) continue;
         c.fillStyle = resolveColor(plot, i, 0.8);
         if (dirs && dirs[i] === 'down') {
           c.fillRect(x, Y(-heightDown), barWidth, ppv * bar);
@@ -168,15 +225,16 @@ function multibar(plot, rctx) {
 }
 
 function multipoint(plot, rctx) {
-  var { c, X, Y, margin, plotWidth } = rctx;
+  var { c, X, Y, margin, plotWidth, hidden } = rctx;
+  var r = POINT_RADIUS.multipoint;
   if (plot.category === 'point') {
     for (const pt of plot.data) {
       var x = X(pt.t);
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(pt.values)) {
-          c.fillStyle = seriesColor(i, 0.8);
-          c.fillRect(x - 2, Y(v) - 2, 4, 4);
-          c.fill();
+          if (v == null || (hidden && hidden.has(i))) continue;
+          c.fillStyle = resolveColor(plot, i, 0.8);
+          c.fillRect(x - r, Y(v) - r, 2 * r, 2 * r);
         }
       }
     }
@@ -187,9 +245,9 @@ function multipoint(plot, rctx) {
       var x = X(start + t * step);
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(value)) {
-          c.fillStyle = seriesColor(i, 0.8);
-          c.fillRect(x - 2, Y(v) - 2, 4, 4);
-          c.fill();
+          if (hidden && hidden.has(i)) continue;
+          c.fillStyle = resolveColor(plot, i, 0.8);
+          c.fillRect(x - r, Y(v) - r, 2 * r, 2 * r);
         }
       }
     }
@@ -197,12 +255,11 @@ function multipoint(plot, rctx) {
 }
 
 function multiline(plot, rctx) {
-  var { c, X, Y } = rctx;
+  var { c, X, Y, hidden } = rctx;
   c.lineWidth = 1.5;
   if (plot.category === 'point') {
-    var seriesIds = plot.series ? plot.series.map(s => s.id) : Object.keys(plot.data[0].values);
-    var si = 0;
-    for (const sid of seriesIds) {
+    for (const sid of plotSeriesIds(plot)) {
+      if (hidden && hidden.has(sid)) continue;
       var started = false;
       c.beginPath();
       for (const pt of plot.data) {
@@ -212,9 +269,8 @@ function multiline(plot, rctx) {
         if (!started) { c.moveTo(x, Y(v)); started = true; }
         else c.lineTo(x, Y(v));
       }
-      c.strokeStyle = seriesColor(si, 0.8);
+      c.strokeStyle = resolveColor(plot, sid, 0.8);
       c.stroke();
-      si++;
     }
   } else {
     var start = plot.interval_start * 1000;
@@ -223,9 +279,8 @@ function multiline(plot, rctx) {
     // empty for an arbitrary time window).
     var slots = Object.keys(plot.data).map(Number).sort((a, b) => a - b);
     // Series ids = union across all slots (sparse slots may omit some series).
-    var ids = {};
-    for (const s of slots) for (const k in plot.data[s]) ids[k] = 1;
-    for (const i in ids) {
+    for (const i of plotSeriesIds(plot)) {
+      if (hidden && hidden.has(i)) continue;
       var started = false;
       c.beginPath();
       for (const t of slots) {
@@ -235,7 +290,7 @@ function multiline(plot, rctx) {
         if (!started) { c.moveTo(x, Y(val)); started = true; }
         else c.lineTo(x, Y(val));
       }
-      c.strokeStyle = seriesColor(i, 0.8);
+      c.strokeStyle = resolveColor(plot, i, 0.8);
       c.stroke();
     }
   }
@@ -244,21 +299,20 @@ function multiline(plot, rctx) {
 
 // scatter — PointSeries only: draws a filled circle per data point per series
 function scatter(plot, rctx) {
-  var { c, X, Y, margin, plotWidth } = rctx;
-  var seriesIds = plot.series ? plot.series.map(s => s.id) : Object.keys(plot.data[0].values);
-  var si = 0;
-  for (const sid of seriesIds) {
-    c.fillStyle = seriesColor(si, 0.75);
+  var { c, X, Y, margin, plotWidth, hidden } = rctx;
+  var r = POINT_RADIUS.scatter;
+  for (const sid of plotSeriesIds(plot)) {
+    if (hidden && hidden.has(sid)) continue;
+    c.fillStyle = resolveColor(plot, sid, 0.75);
     for (const pt of plot.data) {
       var v = pt.values[sid];
       if (v == null) continue;
       var x = X(pt.t);
       if (x < margin.left || x > margin.left + plotWidth) continue;
       c.beginPath();
-      c.arc(x, Y(v), 3, 0, 2 * Math.PI);
+      c.arc(x, Y(v), r, 0, 2 * Math.PI);
       c.fill();
     }
-    si++;
   }
 }
 
@@ -278,7 +332,7 @@ function bandAlpha(j, npct) {
 }
 
 function quantilebands(plot, rctx) {
-  var { c, X, Y } = rctx;
+  var { c, X, Y, hidden } = rctx;
   var pct = plot.percentiles || [];
   var npct = pct.length;
   if (npct < 2) return;
@@ -287,13 +341,10 @@ function quantilebands(plot, rctx) {
   var step = plot.interval * 1000;
   var half = step / 2;
   var slots = Object.keys(plot.data).map(Number).sort(function (a, b) { return a - b; });
-  // Series ids = union across all slots (sparse slots may omit some series).
-  var ids = {};
-  for (var s = 0; s < slots.length; s++)
-    for (var k in plot.data[slots[s]]) ids[k] = 1;
   var medianIdx = Math.floor((npct - 1) / 2);   // which line to draw bold
 
-  for (var id in ids) {
+  for (const id of plotSeriesIds(plot)) {
+    if (hidden && hidden.has(id)) continue;
     // Fills: one polygon per band segment, broken on slot gaps so disjoint
     // runs don't bridge across missing data.
     for (var j = 0; j < npct - 1; j++) {

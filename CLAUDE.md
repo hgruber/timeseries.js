@@ -80,7 +80,21 @@ for), `test/pan.test.mjs` (pan snapping incl. DST transitions), `test/hover.test
 (the `onHoverData` contract the demo tooltip is built on), `test/options.test.mjs`
 (option merging, statics, `zoom()` duration), `test/intervals.test.mjs` and
 `test/lttb.test.mjs` (both previously untested pure modules), `test/memory.test.mjs`
-(bounded growth of `data[]` under a polling source).
+(bounded growth of `data[]` under a polling source), `test/series.test.mjs`
+(series enumeration, visibility, y-axis rescaling, point hit test),
+`test/keyboard.test.mjs` (focusability, arrow-key paging), `test/offset.test.mjs`
+(hit testing survives the canvas moving in the viewport — see below).
+
+**Pointer coordinates**: mouse/touch events carry viewport-relative `clientX/clientY`.
+`refreshOffset()` re-reads `canvas.getBoundingClientRect()` at the start of every pointer
+handler, because the canvas can move (scrolling, layout shifts) without resizing, so the
+ResizeObserver would not catch it. Do not reintroduce a cached offset — a stale one makes
+every hit test silently miss (no tooltip, no cursor change, no click), worst on a scrolled
+page. `test/offset.test.mjs` simulates the move by swapping `getBoundingClientRect`.
+
+Tests pinning viewport windows must use **local** midnight (`new Date(y, m, d)`), not
+`Date.UTC` — `panFloor`/`panAdd` work in local time, so a UTC-pinned window sits mid-day
+in most zones and the first pan legitimately widens it to the surrounding boundaries.
 
 **Time zones**: the DST cases in `test/pan.test.mjs` self-skip where the local zone has
 no DST. Run both `TZ=Europe/Berlin npm test` and `TZ=UTC npm test` after touching date
@@ -223,7 +237,47 @@ infrastructure.
 
 ### Public API (TimeSeries instance)
 
-`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`
+`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`, `ts.getSeries()`, `ts.setSeriesHidden(id, bool)`, `ts.toggleSeries(id)`, `ts.showAllSeries()`, `ts.onSeriesChange(fn)`
+
+### Series visibility and legends
+
+The library provides the *data* for a legend and never builds DOM for it:
+`ts.getSeries()` returns `[{ id, label, color, hidden }]` for the series across all
+active plots, `color` being exactly what was painted (including any
+`plot.series_colors` override). The caller renders it — `demo/index.html` builds a
+positioned `<div>` overlay; see `renderLegend()` there.
+
+Hiding is instance-wide by series id, not per plot: an id names the same measurement in
+every block a source pushes, and hiding it in one block only would flicker as blocks
+scroll past. The hidden set reaches renderers through `rctx.hidden` (a `Set`), and
+`prepare_grid` excludes hidden series from the y-extent — otherwise hiding the tallest
+series would leave the rest squashed against the axis.
+
+`plotSeriesIds(plot)` in `src/renderers.js` is the one place that knows how to enumerate
+a plot's series (point / binned / span). Renderers, `getSeries()` and the hit test all
+call it rather than re-deriving it.
+
+**Series colours are keyed by series id everywhere.** `multiline`(point) and `scatter`
+used to colour by ordinal index instead, which meant hiding one series recoloured all the
+ones after it. If you add a renderer, use `resolveColor(plot, seriesId, alpha)`.
+
+### Keyboard
+
+`keyboard: true` (default) makes the canvas focusable (`tabindex=0`, `role=application`,
+an `aria-label` unless the page set one) and binds left/right arrows to `pan(∓1)` — one
+screenful, snapped to the calendar unit that fits the current zoom. Handlers sit on the
+canvas, not the document, so a page with several charts only moves the focused one. Set
+`keyboard: false` to opt out entirely.
+
+### Point hit testing
+
+`POINT_RADIUS` in `src/renderers.js` is the marker half-size per renderer type, shared
+between drawing and the hit test in `get_element` — the same "keep these in step"
+arrangement as `barRect()` in `gantt.js`. Point plots are hit-tested in *pixel* space
+(nearest marker within its radius), unlike bars, which tile the plot area and can be
+found arithmetically. Valid only while no renderer downsamples internally; a source
+applying `lttb` before pushing is fine, since both draw and hit test then see the
+reduced array.
 
 `ts.zoom()`'s third argument overrides the animation duration for that one transition;
 `0` jumps without animating. Omit it for the configured `zoomDuration`.

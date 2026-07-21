@@ -8,7 +8,8 @@
 // Only getWeek is used here; the interval-arithmetic helpers in intervals.js
 // are a standalone utility module, imported by consumers directly.
 import { getWeek } from './intervals.js';
-import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor } from './renderers.js';
+import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
+         plotSeriesIds, resolveColor, POINT_RADIUS } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
@@ -187,6 +188,7 @@ export default function TimeSeries(options) {
     zoomDuration: 500,     // animation duration in ms for zoom transitions
     zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
+    keyboard: true,        // arrow-key navigation; also makes the canvas focusable
     yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
     yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
     // Copied so that a per-instance override never writes through to the shared
@@ -242,11 +244,17 @@ export default function TimeSeries(options) {
 
   canvas.width = canvas.clientWidth;
   canvas.height = canvas.clientHeight;
-  var BB = canvas.getBoundingClientRect();
-  var offset = {
-    x: BB.left,
-    y: BB.top,
-  };
+  // clientX/clientY are viewport-relative, so mapping them to canvas
+  // coordinates needs the canvas's *current* position. Scrolling moves the
+  // canvas without resizing it, so the ResizeObserver never fires — refresh
+  // this at the start of every pointer handler instead of trusting a cache.
+  var offset = { x: 0, y: 0 };
+  function refreshOffset() {
+    var r = canvas.getBoundingClientRect();
+    offset.x = r.left;
+    offset.y = r.top;
+  }
+  refreshOffset();
   var style = window.getComputedStyle(canvas);
   var _baseFontSize = parseFloat(style.fontSize) || 13;
   var _fontL = style.font;
@@ -311,6 +319,16 @@ export default function TimeSeries(options) {
   var viewportChangeHandlers = [];
   var viewportChangePending = null;
   var activePlot;
+  // Series ids the user has switched off, e.g. via a legend. Instance-wide
+  // rather than per-plot: an id identifies the same measurement in every block
+  // a source pushes, and hiding it in one block but not the next would flicker
+  // as blocks scroll in and out. Handed to renderers through rctx.hidden and
+  // honoured by the y-axis extent, so hiding a tall series rescales the axis.
+  var hiddenSeries = new Set();
+  var seriesChangeHandlers = [];
+  function notifySeriesChange() {
+    for (const f of seriesChangeHandlers) f();
+  }
   // Indices in data[] whose plot has been dropped and can be handed out again.
   // Plot ids are array indices and sources hold on to them (replaceData/
   // removeData), so slots are recycled, never compacted — compacting would
@@ -1159,7 +1177,7 @@ export default function TimeSeries(options) {
     now = Date.now();
     c.clearRect(0, 0, canvas.width, canvas.height);
     prepare_grid(); // must run before rctx is built: recalculates ppms, ppv, ppv, mspp
-    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight };
+    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight, hidden: hiddenSeries };
     background();
     watermark();
     yAxis();
@@ -1182,9 +1200,7 @@ export default function TimeSeries(options) {
     margin.right = basePad.right;
     plotWidth  = canvas.width  - margin.left - margin.right;
     plotHeight = canvas.height - margin.top  - margin.bottom;
-    var BB = canvas.getBoundingClientRect();
-    offset.x = BB.left;
-    offset.y = BB.top;
+    refreshOffset();
     plotAll();
     // Notify viewport-change listeners — plotWidth changed so ppms changed
     // even though tmin/tmax did not. Throttled at 300 ms inside scheduleViewportChange.
@@ -1193,6 +1209,7 @@ export default function TimeSeries(options) {
   _resizeObserver.observe(canvas.parentElement || canvas);
 
   canvas.onmousedown = function (e) {
+    refreshOffset();
     doStop();
     var item = mouse_position(e);
     if (item.level) {
@@ -1211,6 +1228,7 @@ export default function TimeSeries(options) {
   };
 
   canvas.onmousemove = function (e) {
+    refreshOffset();
     if (startDragX != 0) {
       canvas.style.cursor = 'grabbing';
       var move = ((startDragX - e.clientX) / plotWidth) * (tmax - tmin);
@@ -1256,6 +1274,7 @@ export default function TimeSeries(options) {
 
   canvas.ontouchstart = function (e) {
     e.preventDefault();
+    refreshOffset();
     if (e.touches.length === 1) {
       if (follow_timers > 0 && !follow_stopped) return; // pan not allowed while following
       doStop();
@@ -1287,6 +1306,7 @@ export default function TimeSeries(options) {
 
   canvas.ontouchmove = function (e) {
     e.preventDefault();
+    refreshOffset();
     if (!touchState) return;
     if (e.touches.length === 1 && touchState.type === 'pan') {
       var move = ((touchState.x0 - e.touches[0].clientX) / plotWidth) * (touchState.tmax0 - touchState.tmin0);
@@ -1312,8 +1332,34 @@ export default function TimeSeries(options) {
     touchState = null;
   };
 
+  // ── Keyboard navigation ───────────────────────────────────────────────────
+  // A <canvas> is not focusable by default, so opt it into the tab order and
+  // describe it — without this the chart is unusable without a mouse. Handlers
+  // hang off the canvas rather than the document so that a page with several
+  // charts (the demo has seven) only moves the focused one.
+  if (settings.keyboard) {
+    if (!canvas.hasAttribute || !canvas.hasAttribute('tabindex')) canvas.tabIndex = 0;
+    if (canvas.setAttribute && !canvas.getAttribute('role')) {
+      canvas.setAttribute('role', 'application');
+      if (!canvas.getAttribute('aria-label'))
+        canvas.setAttribute('aria-label',
+          'Time series chart. Use left and right arrow keys to page through time.');
+    }
+
+    canvas.onkeydown = function (e) {
+      // Left/right page by one screenful, snapped to whichever calendar unit
+      // fits the current zoom (see panSnapUnit) — same behaviour as ts.pan(),
+      // so a keyboard user lands on the same boundaries as a clicking one.
+      if (e.key === 'ArrowLeft')       self.pan(-1);
+      else if (e.key === 'ArrowRight') self.pan(1);
+      else return;                     // leave every other key to the browser
+      e.preventDefault();              // ... but don't let the page scroll
+    };
+  }
+
   canvas.onwheel = function (e) {
     e.preventDefault();
+    refreshOffset();
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
     // When following, reposition to the actual current now before zooming.
@@ -1455,6 +1501,35 @@ export default function TimeSeries(options) {
         }
       }
     }
+    // point identification — unlike bars, which tile the plot area and can be
+    // hit by arithmetic alone, point markers are sparse, so this works in
+    // pixel space and picks the nearest one within the marker's own radius.
+    // POINT_RADIUS is the same table the renderers draw from (renderers.js),
+    // so what is hoverable is what is visible.
+    for (const i of activePlot) {
+      if (!data[i] || data[i].category !== 'point' || !data[i].data) continue;
+      var pplot = data[i];
+      var pr = POINT_RADIUS[pplot.type] || POINT_RADIUS.default;
+      var grab = pr + 2;               // a little forgiveness for the mouse
+      var bestD2 = grab * grab, best = null;
+      for (var pi = 0; pi < pplot.data.length; pi++) {
+        var ppt = pplot.data[pi];
+        var dx = X(ppt.t) - x;
+        if (dx * dx > bestD2) continue;
+        for (var psid in ppt.values) {
+          if (hiddenSeries.has(psid)) continue;   // hidden means unhittable
+          var pval = ppt.values[psid];
+          if (pval == null) continue;
+          var dy = Y(pval) - y;
+          var d2 = dx * dx + dy * dy;
+          if (d2 <= bestD2) {
+            bestD2 = d2;
+            best = { plot: i, n: pi, key: psid, value: pval };
+          }
+        }
+      }
+      if (best) return best;
+    }
     return { t: t, y: py };
   }
 
@@ -1525,13 +1600,33 @@ export default function TimeSeries(options) {
           // most-negative array entry across the slot's series.
           var stacked = plot.type === 'multibar';
           var banded  = plot.type === 'quantile-bands';
-          if (plot.data) {
+          if (plot.category === 'point') {
+            // Point series carry {t, values} and no slot grid, so the binned
+            // scan below cannot address them (it would compute NaN slot times
+            // from an undefined interval_start and silently fall through to
+            // plot.max). Scan the points in the viewport directly — which also
+            // lets a hidden series drop out of the extent.
+            for (const pt of plot.data) {
+              if (pt.t < tmin || pt.t > tmax) continue;
+              for (var pk in pt.values) {
+                if (hiddenSeries.has(pk)) continue;
+                var pv = pt.values[pk];
+                if (pv == null) continue;
+                if (pv >= 0) { if (pv > vpUpMax) vpUpMax = pv; }
+                else if (-pv > vpDownMax) vpDownMax = -pv;
+              }
+            }
+          } else if (plot.data) {
             for (var sk in plot.data) {
               var slotTime = (plot.interval_start + +sk * plot.interval) * 1000;
               if (slotTime + plot.interval * 1000 > tmin && slotTime < tmax) {
                 var upSum = 0, downSum = 0;
                 var slot = plot.data[sk];
                 for (var key in slot) {
+                  // A hidden series is not drawn, so it must not stretch the
+                  // axis either — otherwise hiding the tallest series leaves
+                  // the rest squashed against the bottom.
+                  if (hiddenSeries.has(key)) continue;
                   var val = slot[key];
                   if (banded) {
                     for (var qi = 0; qi < val.length; qi++) {
@@ -2245,6 +2340,58 @@ export default function TimeSeries(options) {
   // Copies, so callers cannot mutate the live settings behind the chart's back.
   this.getColors = function () { return Object.assign({}, settings.colors); };
   this.getHolidays = function () { return Object.assign({}, settings.holidays); };
+
+  // ── Series visibility ─────────────────────────────────────────────────────
+  // Enough for a caller to build a legend: the series currently on screen,
+  // each with the colour it was actually painted in and whether it is hidden.
+  // The library deliberately does not build any DOM itself.
+  //
+  // Ids are collected across all active plots, so two blocks sharing a series
+  // yield one entry. `label` prefers point-series metadata (plot.series[].name)
+  // and falls back to the raw id.
+  this.getSeries = function () {
+    var out = [];
+    var seen = Object.create(null);
+    for (const plot of this.getActiveData()) {
+      var names = Object.create(null);
+      if (plot.series)
+        for (const s of plot.series) names[String(s.id)] = s.name || s.label;
+      for (const id of plotSeriesIds(plot)) {
+        if (seen[id]) continue;
+        seen[id] = 1;
+        out.push({
+          id: id,
+          label: names[id] || id,
+          color: resolveColor(plot, id, 1),
+          hidden: hiddenSeries.has(id),
+        });
+      }
+    }
+    return out;
+  };
+
+  this.setSeriesHidden = function (id, hide) {
+    var key = String(id);
+    var was = hiddenSeries.has(key);
+    if (hide) hiddenSeries.add(key); else hiddenSeries.delete(key);
+    if (was !== hiddenSeries.has(key)) { plotAll(); notifySeriesChange(); }
+  };
+
+  this.toggleSeries = function (id) {
+    this.setSeriesHidden(id, !hiddenSeries.has(String(id)));
+  };
+
+  this.showAllSeries = function () {
+    if (!hiddenSeries.size) return;
+    hiddenSeries.clear();
+    plotAll();
+    notifySeriesChange();
+  };
+
+  // Fires after the hidden set changes. Note it does NOT fire when new data
+  // arrives with previously unseen series — poll getSeries() after pushing, or
+  // call it from your own source's callback.
+  this.onSeriesChange = function (f) { seriesChangeHandlers.push(f); };
 
   this.setRenderInterval = function (iv) {
     renderInterval = (iv == null) ? null : +iv;

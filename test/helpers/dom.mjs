@@ -61,12 +61,20 @@ export function installDOM() {
  * refuses to attach twice to the same element.
  */
 export function makeCanvas(id, width = 1000, height = 400) {
+  // `attrs` plus the get/set/has trio is enough for the keyboard setup path,
+  // which sets tabindex/role/aria-label — without them the library's guards
+  // would skip that code entirely and it would go untested.
+  const attrs = new Map();
   const canvas = {
     clientWidth: width, clientHeight: height, width, height,
     style: {}, parentElement: null,
+    attrs,
     getBoundingClientRect: () => ({
       left: 0, top: 0, width, height, right: width, bottom: height,
     }),
+    setAttribute: (k, v) => { attrs.set(k, String(v)); },
+    getAttribute: k => (attrs.has(k) ? attrs.get(k) : null),
+    hasAttribute: k => attrs.has(k),
   };
   canvas.getContext = () => makeContext(canvas);
   canvases.set(id, canvas);

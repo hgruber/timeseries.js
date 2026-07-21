@@ -158,6 +158,37 @@ ts.onClickDataCallback((plot, slot, item) => { … });
 ts.onHoverDataCallback((plot, slot, item) => { … });
 ```
 
+### Series visibility (building a legend)
+
+The library supplies the data; it never creates DOM for a legend, so the markup and
+styling stay yours.
+
+```js
+ts.getSeries();
+// → [{ id: 'cpu', label: 'cpu', color: 'hsla(…)', hidden: false }, … ]
+
+ts.setSeriesHidden('cpu', true);   // hide one series and redraw
+ts.toggleSeries('cpu');
+ts.showAllSeries();
+ts.onSeriesChange(() => renderLegend());   // fires when the hidden set changes
+```
+
+`color` is exactly what was painted, including any `series_colors` override, so a swatch
+matches the chart. Hiding is by series id across every plot in the instance, and a hidden
+series drops out of the y-axis extent as well — hide the tallest one and the axis
+rescales to what is left. `demo/index.html` has a worked example (`renderLegend`).
+
+Note `onSeriesChange` does **not** fire when incoming data introduces a new series; call
+`getSeries()` again after pushing data if that matters.
+
+### Keyboard
+
+With `keyboard: true` (the default) the canvas joins the tab order and gets an
+`aria-label`, and the left/right arrow keys page through time by one screenful, snapped
+to whichever calendar unit suits the current zoom — the same movement as `ts.pan(∓1)`.
+Handlers are bound to the canvas, so on a page with several charts only the focused one
+moves. Pass `keyboard: false` to leave the element untouched.
+
 ---
 
 ## Plugin interfaces
@@ -357,6 +388,7 @@ const ts = new TimeSeries({
 | `zoomDuration` | number (ms) | `500` | Click/`zoom()` transition length. |
 | `zoomFactor` | number | `0.1` | Mouse-wheel zoom step. |
 | `autoFollow` | boolean | `false` | Begin rolling automatically once the viewport's right edge reaches the present. |
+| `keyboard` | boolean | `true` | Make the canvas focusable and bind arrow-key paging. |
 | `yAxisFormat` | function | SI format | `(value) => string` for y-axis tick labels. |
 | `yAxisLabel` | string | `''` | Unit caption above the axis. |
 | `colors` | object | light theme | Full palette object (not a name) — see below. |
