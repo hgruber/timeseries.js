@@ -37,6 +37,7 @@ jobs:
           mkdir -p _site
           cp -r demo/ _site/demo/
           cp -r dist/ _site/dist/
+          cp -r src/ _site/src/   # caldav.html imports src/ directly as ES modules
 
       - uses: actions/configure-pages@v5
 

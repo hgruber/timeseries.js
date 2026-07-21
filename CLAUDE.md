@@ -44,7 +44,10 @@ them up or delete them — don't let them rot silently.
 directly from `src/`, so it needs no build step. `demo/index.html` does **not** — it loads
 the IIFE bundle via `<script src="../dist/timeseries.js">`, so changes to `src/` only show
 up there after `npm run build` (or with `npm run watch` running). `dist/` is gitignored;
-the Pages deploy in `.github/workflows/deploy.yml` builds it in CI.
+the Pages deploy in `.github/workflows/deploy.yml` builds it in CI. Because `caldav.html`
+imports `src/` directly even in production, that workflow also copies `src/` into the
+deploy folder alongside `demo/` and `dist/` — otherwise the live `caldav.html` 404s on its
+`../src/*.js` imports.
 
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
 
