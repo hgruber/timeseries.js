@@ -482,7 +482,7 @@ export default function TimeSeries(options) {
     }
 
     labels.month_pixels = new Array(labels.month.length).fill(0);
-    for (var i = 0; i < 12; i++) {
+    for (i = 0; i < 12; i++) {
       labels.month.forEach((format, j) => {
         var l = c.measureText(
           new Date((i * 30 + 5) * f.d).toLocaleString(nls, format),
@@ -519,24 +519,24 @@ export default function TimeSeries(options) {
   }
 
   function isHoliday(date) {
-    var Y = date.getFullYear();
+    var year = date.getFullYear();
     var d = date.getDate() + "." + (date.getMonth() + 1);
-    var di = d + "." + Y;
+    var di = d + "." + year;
     if (Object.prototype.hasOwnProperty.call(hL, di)) return hL[di];
-    if (!Object.prototype.hasOwnProperty.call(easterYears, Y.toString())) {
+    if (!Object.prototype.hasOwnProperty.call(easterYears, year.toString())) {
       if (easterCount >= EASTER_MAX) { easterYears = {}; easterCount = 0; }
-      easterYears[Y] = Easter(Y);
+      easterYears[year] = Easter(year);
       easterCount++;
     }
-    var a = easterYears[Y].split(".");
+    var a = easterYears[year].split(".");
     for (var day in holidays) {
-      if (d == day) {
+      if (d === day) {
         return cacheHoliday(di, holidays[day]);
-      } else if (day[0] == "-" || day[0] == "+") {
-        var checkDay = new Date(Y, a[1] - 1, a[0]);
+      } else if (day[0] === "-" || day[0] === "+") {
+        var checkDay = new Date(year, a[1] - 1, a[0]);
         checkDay.setDate(checkDay.getDate() + Number(day));
         checkDay = checkDay.getDate() + "." + (checkDay.getMonth() + 1);
-        if (d == checkDay) {
+        if (d === checkDay) {
           return cacheHoliday(di, holidays[day]);
         }
       }
@@ -629,7 +629,7 @@ export default function TimeSeries(options) {
           ee = data[i].tmax;
         } else {
           var dms = 0;
-          for (var k in data[i].data) { var n = +k; if (n > dms) dms = n; }
+          for (k in data[i].data) { n = +k; if (n > dms) dms = n; }
           es = data[i].interval_start * 1000;
           ee = (data[i].interval_start + data[i].interval * (dms + 1)) * 1000;
         }
@@ -662,7 +662,7 @@ export default function TimeSeries(options) {
             } else {
               var mn = Infinity, mx = -Infinity;
               var banded = data[i].type === 'quantile-bands';
-              for (var s in data[i].data) {
+              for (s in data[i].data) {
                 if (banded) {
                   for (var series in data[i].data[s]) {
                     var arr = data[i].data[s][series];
@@ -673,7 +673,7 @@ export default function TimeSeries(options) {
                   }
                 } else {
                   var total = 0;
-                  for (var series in data[i].data[s]) total += data[i].data[s][series];
+                  for (series in data[i].data[s]) total += data[i].data[s][series];
                   if (total < mn) mn = total;
                   if (total > mx) mx = total;
                 }
@@ -776,7 +776,7 @@ export default function TimeSeries(options) {
         if (newLeader) {
           fs.leader = newLeader;
           newLeader.startFollowAsTick(fs.fraction);
-          for (var h of g) { if (h !== newLeader) h.startFollowNoTick(fs.fraction); }
+          for (h of g) { if (h !== newLeader) h.startFollowNoTick(fs.fraction); }
         }
       }
     }
@@ -791,9 +791,9 @@ export default function TimeSeries(options) {
   // timeseries functions //
   //////////////////////////
 
-  function timer(f, t) {
+  function timer(fn, t) {
     follow_timers++;
-    setTimeout(f, t);
+    setTimeout(fn, t);
     //console.log('Timer ' + follow_timers + ' set for ' + t + ' milliseconds');
   }
 
@@ -851,7 +851,7 @@ export default function TimeSeries(options) {
 
     // Tell all non-leaders (other than this instance) to follow without ticking.
     // Tell the leader (if it is not this instance) to start its tick.
-    for (var h of g) {
+    for (h of g) {
       if (h === _handle) continue;
       if (h === leaderHandle) h.startFollowAsTick(follow_fraction * 100);
       else h.startFollowNoTick(follow_fraction * 100);
@@ -884,13 +884,13 @@ export default function TimeSeries(options) {
 
   // navigate view to specific day, month or year (center current or go to left or right)
   function navigate(item, level, direction) {
-    if (level == 4) {
-      if (direction == "center")
+    if (level === 4) {
+      if (direction === "center")
         zoom(
           +item.tm,
           +new Date(new Date(+item.tm + f.d + 2 * f.h).toDateString()),
         );
-      else if (direction == "left")
+      else if (direction === "left")
         zoom(+new Date(new Date(+item.tm - 2 * f.h).toDateString()), +item.tm);
       else
         zoom(
@@ -899,15 +899,15 @@ export default function TimeSeries(options) {
         );
       return;
     }
-    if (level == 4.5) {
+    if (level === 4.5) {
       zoom(
         +item.tm,
         +new Date(new Date(+item.tm + f.d * 7 + 2 * f.h).toDateString()),
       );
       return;
     }
-    if (level == 5) {
-      if (direction == "center") {
+    if (level === 5) {
+      if (direction === "center") {
         var dm = new Date(+item.tm + f.mon + 2 * f.d);
         zoom(
           +item.tm,
@@ -917,8 +917,8 @@ export default function TimeSeries(options) {
             ),
           ),
         );
-      } else if (direction == "left") {
-        var dm = new Date(+item.tm + -2 * f.d);
+      } else if (direction === "left") {
+        dm = new Date(+item.tm + -2 * f.d);
         zoom(
           +new Date(
             Date.parse(
@@ -928,7 +928,7 @@ export default function TimeSeries(options) {
           +item.tm,
         );
       } else {
-        var dm = new Date(+item.tm + f.mon + 2 * f.d);
+        dm = new Date(+item.tm + f.mon + 2 * f.d);
         var dm2 = new Date(+dm + f.mon + 2 * f.d);
         zoom(
           +new Date(
@@ -945,13 +945,13 @@ export default function TimeSeries(options) {
       }
       return;
     }
-    if (level == 6) {
-      if (direction == "center") {
+    if (level === 6) {
+      if (direction === "center") {
         zoom(
           +item.tm,
           +new Date(Date.parse(item.tm.getFullYear() + 1 + "-1-1 00:00")),
         );
-      } else if (direction == "left") {
+      } else if (direction === "left") {
         zoom(
           +new Date(Date.parse(item.tm.getFullYear() - 1 + "-1-1 00:00")),
           +item.tm,
@@ -970,7 +970,7 @@ export default function TimeSeries(options) {
   // omit it for the configured zoomDuration, pass 0 to jump without animating.
   function zoom(target_tmin, target_tmax, time) {
     var r = clampRange(target_tmin, target_tmax);
-    if (tmin == r[0] && tmax == r[1]) return;
+    if (tmin === r[0] && tmax === r[1]) return;
     var dur = typeof time === 'number' && time >= 0 ? time : zoom_onclick_time;
     animation.startT = +Date.now() - 20;
     animation.endT = animation.startT + dur;
@@ -1229,7 +1229,7 @@ export default function TimeSeries(options) {
 
   canvas.onmousemove = function (e) {
     refreshOffset();
-    if (startDragX != 0) {
+    if (startDragX !== 0) {
       canvas.style.cursor = 'grabbing';
       var move = ((startDragX - e.clientX) / plotWidth) * (tmax - tmin);
       tmin = startTmin + move;
@@ -1400,7 +1400,7 @@ export default function TimeSeries(options) {
     var y = e.clientY - offset.y;
     if (margin.left < x && x < plotWidth + margin.left) {
       if (margin.top < y && y < plotHeight + margin.top) {
-        var weekitems = grid[4].filter((item) => item.tm.getDay() == 1);
+        var weekitems = grid[4].filter((item) => item.tm.getDay() === 1);
         for (var wi of weekitems) {
           if (
             x > wi.x &&
@@ -1419,13 +1419,13 @@ export default function TimeSeries(options) {
         y < margin.top - font_height
       ) {
         // first label row
-        var item = get_grid(x, grid_level_label[0][label_level]);
+        item = get_grid(x, grid_level_label[0][label_level]);
         item.y = margin.top - font_height;
         return item;
       }
       if (margin.top - font_height < y && y < margin.top) {
         // second label row
-        var item = get_grid(x, grid_level_label[1][label_level]);
+        item = get_grid(x, grid_level_label[1][label_level]);
         item.y = margin.top;
         return item;
       }
@@ -1663,7 +1663,7 @@ export default function TimeSeries(options) {
         if (!byType[t][p.interval]) byType[t][p.interval] = [];
         byType[t][p.interval].push(j);
       }
-      for (var t in byType) {
+      for (t in byType) {
         var ivs = byType[t];
         var keys = Object.keys(ivs);
         if (keys.length <= 1) continue;
@@ -1686,7 +1686,7 @@ export default function TimeSeries(options) {
           }
           if (best === null) best = coarsest;
         }
-        for (var k = 0; k < keys.length; k++) {
+        for (k = 0; k < keys.length; k++) {
           if (+keys[k] !== best) {
             for (var m = 0; m < ivs[keys[k]].length; m++)
               activePlot[ivs[keys[k]][m]] = -1;
@@ -1695,7 +1695,7 @@ export default function TimeSeries(options) {
       }
       if (activePlot.indexOf(-1) !== -1) {
         var kept = [];
-        for (var j = 0; j < activePlot.length; j++)
+        for (j = 0; j < activePlot.length; j++)
           if (activePlot[j] !== -1) kept.push(activePlot[j]);
         activePlot = kept;
         ymax_array = ymax_array.filter(function(a) { return activePlot.indexOf(a[0]) !== -1; });
@@ -1708,7 +1708,7 @@ export default function TimeSeries(options) {
     if (ymax_array.length > 1) {
       var s = easeInOutExpo((ymax_array[0][2] / ymax_array[1][2]) * 4);
       ymax = s * ymax_array[0][1] + (1 - s) * ymax_array[1][1];
-    } else if (ymax_array.length == 1) ymax = ymax_array[0][1];
+    } else if (ymax_array.length === 1) ymax = ymax_array[0][1];
     else ymax = 0;
     // Mirror the ymax blend for downward-stack magnitudes; ymin = -blend.
     ymin_array.sort(function (first, second) {
@@ -1718,7 +1718,7 @@ export default function TimeSeries(options) {
     if (ymin_array.length > 1) {
       var sd = easeInOutExpo((ymin_array[0][2] / ymin_array[1][2]) * 4);
       _downMax = sd * ymin_array[0][1] + (1 - sd) * ymin_array[1][1];
-    } else if (ymin_array.length == 1) _downMax = ymin_array[0][1];
+    } else if (ymin_array.length === 1) _downMax = ymin_array[0][1];
     ymin = -_downMax;
 
     ygrid = [];
@@ -1750,7 +1750,7 @@ export default function TimeSeries(options) {
           });
         }
       } else {
-        var s = vpp * font_height;
+        s = vpp * font_height;
         var step = Math.pow(10, Math.ceil(Math.log10(s)));
         //if (s / step <= 0.2) step = 0.2 * step;
         if (s / step <= 0.5) step = 0.5 * step;
@@ -1763,7 +1763,7 @@ export default function TimeSeries(options) {
         for (var k = 0; k <= n; k++) {
           var v = parseFloat((k * step).toFixed(decimals));
           ygrid.push({
-            label: k % labelEvery == 0 ? _yFmt(v) : "",
+            label: k % labelEvery === 0 ? _yFmt(v) : "",
             y: v,
           });
         }
@@ -1771,10 +1771,10 @@ export default function TimeSeries(options) {
         // one active plot has down-stacked series.
         if (ymin < 0) {
           var nmin = Math.round(-ymin / step);
-          for (var k = 1; k <= nmin; k++) {
-            var v = parseFloat((-k * step).toFixed(decimals));
+          for (k = 1; k <= nmin; k++) {
+            v = parseFloat((-k * step).toFixed(decimals));
             ygrid.push({
-              label: k % labelEvery == 0 ? _yFmt(v) : "",
+              label: k % labelEvery === 0 ? _yFmt(v) : "",
               y: v,
             });
           }
@@ -1834,12 +1834,12 @@ export default function TimeSeries(options) {
     grid[0] = [];
     if (part)
       for (var t = Math.floor(tmin); t <= Math.ceil(tmax); t++) {
-        if (t % part == 0) {
+        if (t % part === 0) {
           var d = new Date(t);
           grid[0].push({
             tm: d,
             label:
-              t % partl == 0 && t % 1000 > 0
+              t % partl === 0 && t % 1000 > 0
                 ? ":" +
                   String(d.getSeconds()).padStart(2, "0") +
                   "." +
@@ -1848,7 +1848,7 @@ export default function TimeSeries(options) {
             x: X(t),
             len: part * ppms,
             fill:
-              part == 1
+              part === 1
                 ? t % 2
                   ? settings.colors.stripMs[0]
                   : settings.colors.stripMs[1]
@@ -1862,17 +1862,17 @@ export default function TimeSeries(options) {
     partl = time_part(part60, f.s, dtl);
     grid[1] = [];
     if (part)
-      for (var t = Math.floor(tmin / f.s) * f.s; t <= tmax; t += f.s) {
-        var d = new Date(t);
-        var s = d / 1000;
-        if (s % part == 0)
+      for (t = Math.floor(tmin / f.s) * f.s; t <= tmax; t += f.s) {
+        d = new Date(t);
+        s = d / 1000;
+        if (s % part === 0)
           grid[1].push({
             tm: d,
-            label: s % partl == 0,
+            label: s % partl === 0,
             x: X(t),
             len: part * ppms * f.s,
             fill:
-              part == 1
+              part === 1
                 ? s % 2
                   ? settings.colors.stripSecond[0]
                   : settings.colors.stripSecond[1]
@@ -1885,17 +1885,17 @@ export default function TimeSeries(options) {
     partl = time_part(part60, f.m, dtl);
     grid[2] = [];
     if (part)
-      for (var t = Math.floor(tmin / f.m) * f.m; t <= tmax; t += f.m) {
-        var d = new Date(t);
+      for (t = Math.floor(tmin / f.m) * f.m; t <= tmax; t += f.m) {
+        d = new Date(t);
         var m = d.getMinutes();
-        if (m % part == 0)
+        if (m % part === 0)
           grid[2].push({
             tm: d,
-            label: m % partl == 0,
+            label: m % partl === 0,
             x: X(t),
             len: part * ppms * f.m,
             fill:
-              part == 1
+              part === 1
                 ? m % 2
                   ? settings.colors.stripMinute[0]
                   : settings.colors.stripMinute[1]
@@ -1908,17 +1908,17 @@ export default function TimeSeries(options) {
     part = time_part(part24, f.h, dvtl);
     partl = time_part(part24, f.h, dtl);
     if (part)
-      for (var t = Math.floor(tmin / f.h) * f.h; t <= tmax; t += f.h) {
-        var d = new Date(t);
+      for (t = Math.floor(tmin / f.h) * f.h; t <= tmax; t += f.h) {
+        d = new Date(t);
         var h = d.getHours();
-        if (h % part == 0)
+        if (h % part === 0)
           grid[3].push({
             tm: d,
-            label: h % partl == 0,
+            label: h % partl === 0,
             x: X(t),
             len: part * ppms * f.h,
             fill:
-              part == 1
+              part === 1
                 ? h % 2
                   ? settings.colors.stripHour[0]
                   : settings.colors.stripHour[1]
@@ -1931,7 +1931,7 @@ export default function TimeSeries(options) {
     var space = ppms * f.d;
     if (space > dvtl)
       for (
-        var t = new Date(new Date(tmax).toDateString());
+        t = new Date(new Date(tmax).toDateString());
         t >= tmin - f.d;
         t = new Date(new Date(t - 12 * f.h).toDateString())
       ) {
@@ -1942,8 +1942,8 @@ export default function TimeSeries(options) {
         var len;
         if (l) len = grid[4][l - 1].x - x;
         else len = canvas.width - margin.right - x;
-        var h = isHoliday(t);
-        var bh = h != false;
+        h = isHoliday(t);
+        var bh = h !== false;
         if (h) {
           if (holiday_pixels[h] > len) h = label(t, "day", len);
           else
@@ -1951,7 +1951,7 @@ export default function TimeSeries(options) {
         }
         var wd = t.getDay();
         var fill = settings.colors.dayDefault;
-        if (wd == 0 || wd == 6 || bh) fill = settings.colors.dayWeekend;
+        if (wd === 0 || wd === 6 || bh) fill = settings.colors.dayWeekend;
         else if (wd % 2) fill = settings.colors.dayOdd;
         grid[4].push({
           tm: t,
@@ -1959,14 +1959,14 @@ export default function TimeSeries(options) {
           x: x,
           len: len,
           fill: fill,
-          cw: wd == 1 ? getWeek(t) : "",
+          cw: wd === 1 ? getWeek(t) : "",
           browse: t <= tmin && len + x >= canvas.width - margin.right,
         });
       }
 
     // months
     grid[5] = [];
-    var space = ppms * f.d * 31;
+    space = ppms * f.d * 31;
     var dm = dtm;
     if (space > dvtl) {
       while (true) {
@@ -1995,7 +1995,7 @@ export default function TimeSeries(options) {
     // years
     dm = dtm;
     grid[6] = [];
-    var space = ppms * f.d * 365;
+    space = ppms * f.d * 365;
     if (space > dvtl) {
       for (
         t = new Date(Date.parse(dm.getFullYear() + "-1-1 00:00"));
@@ -2066,8 +2066,8 @@ export default function TimeSeries(options) {
     return ((ymax - y) / (ymax - ymin)) * plotHeight + margin.top;
   }
 
-  function rY(Y) {
-    return ymax - ((Y - margin.top) / plotHeight) * (ymax - ymin);
+  function rY(py) {
+    return ymax - ((py - margin.top) / plotHeight) * (ymax - ymin);
   }
 
   function rotateText(text, x, y) {
@@ -2321,15 +2321,15 @@ export default function TimeSeries(options) {
   };
   this.getViewport = function () { return { tmin: tmin, tmax: tmax, ppms: ppms }; };
   this.getPlotArea = function () { return { margin: margin, plotWidth: plotWidth, plotHeight: plotHeight }; };
-  this.onStop   = function (f) { follow_stop_cb = f; };
-  this.onFollow = function (f) { follow_start_cb = f; };
+  this.onStop   = function (fn) { follow_stop_cb = fn; };
+  this.onFollow = function (fn) { follow_start_cb = fn; };
 
-  function onClickDataCallback(f) {
-    onClickData = f;
+  function onClickDataCallback(fn) {
+    onClickData = fn;
   }
 
-  function onHoverDataCallback(f) {
-    onHoverData = f;
+  function onHoverDataCallback(fn) {
+    onHoverData = fn;
   }
 
   this.setColors = function (obj) {
@@ -2391,15 +2391,15 @@ export default function TimeSeries(options) {
   // Fires after the hidden set changes. Note it does NOT fire when new data
   // arrives with previously unseen series — poll getSeries() after pushing, or
   // call it from your own source's callback.
-  this.onSeriesChange = function (f) { seriesChangeHandlers.push(f); };
+  this.onSeriesChange = function (fn) { seriesChangeHandlers.push(fn); };
 
   this.setRenderInterval = function (iv) {
     renderInterval = (iv == null) ? null : +iv;
     plotAll();
   };
 
-  this.setYAxisLabel = function (label) {
-    _yLabel = label || '';
+  this.setYAxisLabel = function (lbl) {
+    _yLabel = lbl || '';
     plotAll();
   };
 

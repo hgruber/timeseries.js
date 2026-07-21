@@ -41,7 +41,7 @@ function jpZabbix(options) {
 			params: params
 		};
 		
-		if (method != "apiinfo.version") {
+		if (method !== "apiinfo.version") {
 			data["auth"] = authid
 		}
 
@@ -61,7 +61,7 @@ function jpZabbix(options) {
 			req.onload = function() {
 				// This is called even on 404 etc
 				// so check the status
-				if (req.status == 200) {
+				if (req.status === 200) {
 					// Resolve the promise with the response text
 					var zabbixResult = JSON.parse(req.response);
 					//console.log(result, req.status, req.statusText);

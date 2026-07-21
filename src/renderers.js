@@ -186,7 +186,7 @@ function highlight_multibar(plot, n, item, rctx) {
   var x = X(start + n * step);
   for (const [i, bar] of Object.entries(plot.data[n])) {
     var down = dirs && dirs[i] === 'down';
-    if (i == item) {
+    if (i === item) {
       c.fillStyle = resolveColor(plot, i, 0.8);
       if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * bar);
       else      c.fillRect(x, Y(heightUp),    barWidth, -ppv * bar);
@@ -242,7 +242,7 @@ function multipoint(plot, rctx) {
     var start = plot.interval_start * 1000;
     var step = plot.interval * 1000;
     for (const [t, value] of Object.entries(plot.data)) {
-      var x = X(start + t * step);
+      x = X(start + t * step);
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(value)) {
           if (hidden && hidden.has(i)) continue;
@@ -281,12 +281,12 @@ function multiline(plot, rctx) {
     // Series ids = union across all slots (sparse slots may omit some series).
     for (const i of plotSeriesIds(plot)) {
       if (hidden && hidden.has(i)) continue;
-      var started = false;
+      started = false;
       c.beginPath();
       for (const t of slots) {
         var val = plot.data[t][i];
         if (val === undefined) { started = false; continue; }
-        var x = X(start + t * step);
+        x = X(start + t * step);
         if (!started) { c.moveTo(x, Y(val)); started = true; }
         else c.lineTo(x, Y(val));
       }

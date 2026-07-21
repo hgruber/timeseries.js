@@ -16,7 +16,7 @@ npm run watch        # rebuild on file changes
 npm run serve        # python3 static server on :8080
 npm test             # run test/*.test.mjs with node's built-in test runner
 npm run lint         # eslint; must stay at 0 errors
-npm run lint:strict  # same, but warnings fail too — for working through the backlog
+npm run lint:strict  # same, but warnings fail too (--max-warnings 0); currently green
 ```
 
 ### Linting
@@ -26,10 +26,14 @@ unused bindings, unreachable code) and leaves style alone. **`no-var` is not ena
 the source uses `var` throughout, and converting wholesale would be a 300-finding diff
 with real risk (`var` is function-scoped, `let` is block-scoped) for no behavioural gain.
 
-`npm run lint` is green at 0 errors, so a *new* error stands out. The ~85 warnings are a
-standing backlog, not noise to ignore: ~45 `eqeqeq` (loose `==`), ~31 `no-redeclare`
-(the same `var` declared repeatedly inside one function — harmless under `var`, a trap
-if that block is ever converted to `let`), ~9 `no-shadow`.
+`npm run lint` is green at **0 errors and 0 warnings** — `npm run lint:strict`
+(`--max-warnings 0`) also passes. The former backlog (~45 `eqeqeq`, ~31 `no-redeclare`,
+~9 `no-shadow`) has been cleared, so *any* new warning now stands out immediately. Keep it
+that way: prefer `===`/`!==` (use `== null` / `!= null` for the nullish check — `eqeqeq`
+runs in `smart` mode and permits it), declare each `var` once per function (repeated
+`var X` in sequential loops or mutually-exclusive branches was resolved by dropping the
+redundant keyword, since `var` is function-scoped anyway), and don't shadow the outer
+time-units object `f` or the `Y()`/`label()` helpers with a same-named local.
 
 Two finished-but-unwired functions carry an explicit `eslint-disable-next-line` plus a
 NOTE explaining the choice: `period()` (duration formatter) and `fog_of_future()` (which

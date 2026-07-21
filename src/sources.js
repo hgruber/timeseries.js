@@ -69,13 +69,13 @@ function onZabbixData(source, opt, d, callbacks) {
     var idx = Math.floor((item.clock - tmp.interval_start) / tmp.interval);
     tmp.min = Math.min(tmp.min, item.value);
     tmp.max = Math.max(tmp.max, item.value);
-    if (result[idx] == undefined) {
+    if (result[idx] == null) {
       result[idx] = { [item.itemid]: parseFloat(item.value) };
     } else {
       result[idx][item.itemid] = parseFloat(item.value);
     }
   });
-  if (source["plot-type"] == "multibar")
+  if (source["plot-type"] === "multibar")
     for (const i of Object.keys(result)) {
       var sv = sumValues(result[i]);
       if (tmp.max < sv) tmp.max = sv;
@@ -89,7 +89,7 @@ registerSource({
   type: 'zabbix',
   init(source, callbacks) {
     var server;
-    if (source["auth-token"] != undefined) {
+    if (source["auth-token"] != null) {
       server = new jpZabbix({ url: source["url"], auth: source["auth-token"] });
     } else {
       server = new jpZabbix({

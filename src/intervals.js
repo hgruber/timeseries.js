@@ -76,7 +76,7 @@ export function intervalAdd(a, b) {
   var result = dummy.slice();
   for (var i = 1; i < dummy.length; i++) {
     var s = sum(dummy[i - 1], dummy[i]);
-    if (s.length == 1) {
+    if (s.length === 1) {
       result.splice(0, 1);
       result[0] = s[0];
       dummy[i] = s[0];
