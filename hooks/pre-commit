@@ -1,0 +1,7 @@
+#!/bin/sh
+# Auto-bumps the patch version on every commit. Installed into .git/hooks by
+# scripts/install-hooks.sh (wired up via the npm "prepare" script). See
+# CLAUDE.md "Versioning".
+set -e
+node scripts/bump-version.mjs
+git add package.json src/version.js

@@ -13,6 +13,7 @@ import { plotData as _plotData, highlight as _highlight, registerRenderer, serie
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
+import { VERSION } from './version.js';
 
 // ── Viewport group registry ───────────────────────────────────────────────────
 // Maps group name → Set of handles, one per instance.
@@ -1183,6 +1184,7 @@ export default function TimeSeries(options) {
     yAxis();
     _plotData(activePlot, data, rctx);
     frame();
+    versionTag();
     redLine();
     // console.log('plot finished: ' + follow_timers);
     // console.log(grid);
@@ -1238,6 +1240,11 @@ export default function TimeSeries(options) {
       scheduleViewportChange();
       return;
     }
+    if (hitVersionTag(e)) {
+      canvas.style.cursor = 'pointer';
+      if (onHoverData) onHoverData(null, null, null, null);
+      return;
+    }
     var item = mouse_position(e);
     canvas.style.cursor =
       item && item !== 'frame' && (item.level || item.key) ? 'pointer' :
@@ -1257,8 +1264,11 @@ export default function TimeSeries(options) {
 
   canvas.onmouseup = function (e) {
     if (startDragX !== 0) scheduleViewportChange();
-    if (pendingClickItem && Math.abs(e.clientX - startDragX) < 4) {
+    var wasClick = Math.abs(e.clientX - startDragX) < 4;
+    if (pendingClickItem && wasClick) {
       onClickData(data[pendingClickItem.plot], pendingClickItem.n, pendingClickItem.key, pendingClickItem.value);
+    } else if (wasClick && hitVersionTag(e)) {
+      window.open(VERSION_TAG_URL, '_blank', 'noopener,noreferrer');
     }
     pendingClickItem = null;
     startDragX = 0;
@@ -2238,6 +2248,39 @@ export default function TimeSeries(options) {
     c.globalAlpha = 1;
   }
 
+  var VERSION_TAG_URL = 'https://github.com/hgruber/timeseries.js';
+  // Clickable area of the version tag, in canvas-local pixels — set by
+  // versionTag() on every draw, read by hitVersionTag() for cursor/click
+  // handling. The two stay in step because the rect is measured off the
+  // same font/text versionTag() draws with, not duplicated by hand.
+  var versionTagRect = null;
+
+  // Small, unobtrusive build tag in the bottom-left margin corner — sits on
+  // the frameBg painted by frame(), so draw it after frame() has run.
+  function versionTag() {
+    var tag = 'timeseries.js ' + VERSION;
+    c.save();
+    c.font = '8px sans-serif';
+    var w = c.measureText(tag).width;
+    var y1 = canvas.height - 3;
+    versionTagRect = { x0: 3, y0: y1 - 8, x1: 3 + w, y1: y1 };
+    c.globalAlpha = 0.35;
+    c.fillStyle = settings.colors.text;
+    c.textAlign = 'left';
+    c.textBaseline = 'bottom';
+    c.fillText(tag, versionTagRect.x0, y1);
+    c.restore();
+  }
+
+  // A little forgiveness around the measured text box, same rationale as
+  // POINT_RADIUS's mouse "grab" padding elsewhere in this file.
+  function hitVersionTag(e) {
+    if (!versionTagRect) return false;
+    var x = e.clientX - offset.x, y = e.clientY - offset.y;
+    return x >= versionTagRect.x0 - 2 && x <= versionTagRect.x1 + 2 &&
+           y >= versionTagRect.y0 - 2 && y <= versionTagRect.y1 + 2;
+  }
+
   function redLine() {
     var x = X(now);
     c.beginPath();
@@ -2434,6 +2477,7 @@ TimeSeries.registerSource = registerSource;
 TimeSeries.seriesColor = seriesColor;
 TimeSeries.lttb = lttb;
 TimeSeries.siFormat = siFormat;
+TimeSeries.VERSION = VERSION;
 
 // ── Named colour themes ───────────────────────────────────────────────────────
 // Each theme is a complete colors object suitable for new TimeSeries({ colors: … })

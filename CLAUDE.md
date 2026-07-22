@@ -112,6 +112,31 @@ pins it around each call and restores it before awaiting — that also makes the
 zoom animation's end time lie in the past, so the next frame snaps straight to the
 target instead of needing the full `zoomDuration`.
 
+## Versioning
+
+The project is on a fixed `0.8.x` line; the patch number increments by exactly 1 on
+**every** commit — it's a build counter, not a semver signal. `package.json`'s `version`
+is the source of truth; `src/version.js` mirrors it (`export const VERSION`) and is
+bundled as `TimeSeries.VERSION`, and the canvas itself draws a small `timeseries.js
+0.8.N` tag in the bottom-left frame margin (`versionTag()` in `timeseries.js`, drawn
+right after `frame()`) — low-alpha, 8px, unobtrusive by design. It's clickable: hovering
+it swaps the cursor to `pointer` and a click opens the repo
+(`https://github.com/hgruber/timeseries.js`) in a new tab. `versionTag()` measures its
+own text and stores the box in `versionTagRect`; `hitVersionTag()` (used by both
+`onmousemove` for the cursor and `onmouseup` for the click) reads that same rect rather
+than re-deriving it, so hit area and drawn text can't drift apart.
+
+The bump is automatic: `hooks/pre-commit` runs `node scripts/bump-version.mjs`, which
+increments the patch component in `package.json` and rewrites `src/version.js` to
+match, then stages both so the bump rides along with the commit that triggered it.
+`scripts/install-hooks.sh` symlinks `hooks/*` into `.git/hooks/*` and runs
+automatically via the npm `"prepare"` script, so a plain `npm install` wires the hook
+up in a fresh checkout — no extra dependency (no husky). Do not hand-edit the patch
+number in either file; if you need to jump the minor version (e.g. `0.8.x` → `0.9.0`),
+edit `package.json` and `src/version.js` together in that commit and the hook will
+continue incrementing patch from there. `git commit --no-verify` skips the bump like
+any other hook.
+
 ## Architecture
 
 ### Source files (`src/`)

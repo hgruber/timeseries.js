@@ -1,6 +1,6 @@
 {
   "name": "timeseries.js",
-  "version": "0.1.0",
+  "version": "0.8.2",
   "description": "Canvas-based interactive time series visualization",
   "type": "module",
   "main": "dist/timeseries.js",
@@ -16,6 +16,7 @@
     "src/"
   ],
   "scripts": {
+    "prepare": "sh scripts/install-hooks.sh",
     "build": "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js",
     "build:min": "esbuild src/timeseries.js --bundle --minify --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.min.js",
     "watch": "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js --watch",

@@ -51,9 +51,9 @@ export default [
     },
   },
 
-  // Tests run in Node.
+  // Tests and dev scripts run in Node.
   {
-    files: ['test/**/*.mjs'],
+    files: ['test/**/*.mjs', 'scripts/**/*.mjs'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
