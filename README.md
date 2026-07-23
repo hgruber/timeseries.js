@@ -21,6 +21,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Extended navigation** — month/year navigation, calendar weeks (ISO 8601), plus date helpers for day/week intervals
 - **Plugin architecture** — register custom renderers and data sources without modifying library code
 - **Customizable colors** — 4 built-in color schemas to match your theme
+- **Opt-in tooltip** — one call for a themed hover card that follows the palette; override the label, the formatting, or the whole body
 - **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`), calendar/Gantt spans (`gantt`)
 - **Built-in data sources** — Zabbix JSON-RPC API, CalDAV calendars, static/generated data
 
@@ -157,8 +158,55 @@ ts.setWatermark(urlOrImage);            // string URL or HTMLImageElement; null 
 ts.setRenderInterval(ms);               // force a fixed redraw cadence; null = on demand
 
 ts.onClickDataCallback((plot, slot, item) => { … });
-ts.onHoverDataCallback((plot, slot, item) => { … });
+
+// Hover subscribes rather than replaces, and returns an unsubscribe. All four
+// arguments arrive null when nothing is hit — that is the "hide" signal.
+const off = ts.onHoverDataCallback((plot, slot, key, value) => { … });
+off();
+
+ts.onColorsChange(() => { … });   // after setColors; DOM overlays restyle here
+ts.getCanvas();                   // the element, for overlays tracking the pointer
 ```
+
+### Tooltip
+
+The one piece of DOM the library ships. It is opt-in: until `attachTooltip` is called
+nothing is created and nothing is listened to.
+
+```js
+const tip = TimeSeries.attachTooltip(ts);   // that's the whole default setup
+```
+
+Out of the box it renders a colour swatch, the series label, `(value · interval)` and the
+slot timestamp, positioned beside the cursor and flipped away from the viewport edges. It
+takes its colours from the chart palette's `tooltip*` keys, so an existing
+`ts.setColors(TimeSeries.themes.dark)` restyles it too — no CSS required, in any theme.
+
+Override in layers, cheapest first:
+
+```js
+TimeSeries.attachTooltip(ts, {
+  labelFor:    (key, plot, value) => names[key] || key,   // just the label
+  colorFor:    (key, plot) => myColors[key],
+  valueFormat: v => v.toFixed(1) + ' req/s',
+  timeFormat:  (date, ctx) => date.toISOString(),
+  plotTypes:   ['multibar'],        // or a predicate; default is every type
+  colors:      { tooltipBg: '#222' },
+  container:   document.body,
+  className:   'my-tooltip',        // for host CSS
+});
+```
+
+For full control, `formatter(ctx)` replaces the body. `ctx` carries
+`{ plot, n, key, value, label, color, time, interval, colors, defaultContent() }` — call
+`ctx.defaultContent()` to get the standard nodes and build on them instead of starting
+over. Return a `Node`, an array of them, a string (inserted as **text**, so untrusted
+labels are safe), `{ html }` to opt into markup deliberately, or `null` to hide this hit.
+
+The returned controller is `{ el, hide(), refresh(), setOptions(o), destroy() }`;
+`destroy()` removes the element and unsubscribes. Because the hover hook is
+multi-subscriber, your own `onHoverDataCallback` keeps working alongside it.
+`demo/caldav.html` shows a formatter that appends an event location to the default body.
 
 ### Series visibility (building a legend)
 
@@ -437,6 +485,12 @@ Every palette key:
 | `dayDefault` / `dayWeekend` / `dayOdd` | Weekday / weekend+holiday / alternate-day stripes |
 | `yearOdd` / `yearEven` | Alternating year stripes |
 | `monthOdd` / `monthEven` | Alternating month stripes |
+| `tooltipBg` / `tooltipBorder` / `tooltipShadow` | Tooltip card background, border and shadow |
+| `tooltipText` / `tooltipTitle` / `tooltipMuted` | Tooltip value, title row and timestamp colours |
+
+The `tooltip*` keys are the only ones the canvas never reads — they style the optional
+[tooltip overlay](#tooltip), and live in the palette so one `setColors()` call re-themes
+the chart and its overlay together.
 
 ### Holidays
 

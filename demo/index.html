@@ -78,27 +78,14 @@
 
     /* ── Canvas wrapper ──────────────────────────────────────── */
     .canvas-wrap {
-      position: relative;   /* anchor for #tooltip */
+      position: relative;   /* anchor for the legend overlay */
       padding: 8px;
       border-bottom: 1px solid #e4edf8;
     }
 
-    #tooltip, .tooltip {
-      position: absolute;
-      pointer-events: none;   /* must not steal the hover it is reacting to */
-      display: none;
-      background: rgba(26, 46, 69, 0.94);
-      color: #fff;
-      font-size: 0.75rem;
-      padding: 0.4rem 0.6rem;
-      border-radius: 6px;
-      line-height: 1.4;
-      white-space: nowrap;
-      z-index: 2;
-    }
-
-    #tooltip .tt-series, .tooltip .tt-series { font-weight: 700; }
-    #tooltip .tt-time, .tooltip .tt-time { opacity: 0.75; }
+    /* The tooltip is supplied and styled by the library
+       (TimeSeries.attachTooltip); it themes itself from the chart palette, so
+       the demo carries no tooltip CSS. */
 
     /* ── Series legend (overlay, not painted into the canvas) ─────────────── */
     #legend {
@@ -368,11 +355,6 @@
       color: #c8d8e8;
     }
     body.theme-dark .legend-entry:hover { background: rgba(90,148,200,0.18); }
-    body.theme-dark #tooltip, body.theme-dark .tooltip {
-      background: rgba(42, 52, 72, 0.96);
-      border: 1px solid #3a4a68;
-      color: #e8f0f8;
-    }
     body.theme-dark #timeseries     { background: #0f1420; }
     body.theme-dark .controls {
       background: linear-gradient(180deg, #1e2438 0%, #181d2e 100%);
@@ -422,12 +404,6 @@
       color: #000000;
     }
     body.theme-highContrast .legend-entry:hover { background: #eeeeee; }
-    body.theme-highContrast #tooltip, body.theme-highContrast .tooltip {
-      background: #ffffff;
-      border: 2px solid #000000;
-      color: #000000;
-      border-radius: 0;
-    }
     body.theme-highContrast #timeseries     { background: #ffffff; }
     body.theme-highContrast .controls       { background: #eeeeee; }
     body.theme-highContrast .control-group {
@@ -467,10 +443,6 @@
       color: #4a3322;
     }
     body.theme-warm .legend-entry:hover { background: rgba(160,110,60,0.12); }
-    body.theme-warm #tooltip, body.theme-warm .tooltip {
-      background: rgba(74, 51, 34, 0.95);
-      color: #fdf6ec;
-    }
     body.theme-warm #timeseries     { background: #fffef8; }
     body.theme-warm .controls {
       background: linear-gradient(180deg, #fdf3e3 0%, #f8ecda 100%);
@@ -776,7 +748,6 @@
             <div class="chart-card">
                 <div class="canvas-wrap">
                     <canvas id="timeseries"></canvas>
-                    <div id="tooltip"></div>
                     <div id="legend" role="group" aria-label="Series"></div>
                 </div>
                 <div class="controls">
@@ -1287,77 +1258,15 @@
     }
 
     // ── Tooltip ──────────────────────────────────────────────────────────────
-    // onHoverData fires with (null, null, null, null) whenever nothing is hit,
-    // which is the signal to hide again.
-    // Attaches a tooltip to one chart. `tooltip` may be an existing element or
-    // is created inside the wrap — the type-gallery cards get one each so the
-    // point-series hit test is visible there too (the main chart is multibar).
-    function initTooltip(chart, wrap, tooltip) {
-      if (!tooltip) {
-        tooltip = document.createElement('div');
-        tooltip.className = 'tooltip';
-        wrap.appendChild(tooltip);
-      }
-      var lastX = 0, lastY = 0;
+    // The library ships the overlay (TimeSeries.attachTooltip) — the demo just
+    // opts in. It builds its own element, follows the pointer, and re-themes
+    // itself from the palette whenever the theme buttons call ts.setColors().
+    TimeSeries.attachTooltip(ts);
 
-      wrap.addEventListener('mousemove', function (e) {
-        var r = wrap.getBoundingClientRect();
-        lastX = e.clientX - r.left;
-        lastY = e.clientY - r.top;
-      });
-
-      var fmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-
-      // Built via textContent rather than innerHTML: series ids come from the
-      // data source (Zabbix item names, calendar summaries) and are not ours.
-      function row(cls, text) {
-        var el = document.createElement('div');
-        if (cls) el.className = cls;
-        el.textContent = text;
-        return el;
-      }
-
-      chart.onHoverDataCallback(function (plot, n, key, value) {
-        if (plot == null || key == null) { tooltip.style.display = 'none'; return; }
-
-        tooltip.replaceChildren();
-        tooltip.appendChild(row('tt-series', String(key)));
-        tooltip.appendChild(row('', typeof value === 'number'
-          ? TimeSeries.siFormat(value)
-          : String(value)));
-
-        // Two ways to recover the time of a hit: point plots carry it on the
-        // sample itself, binned plots put slot n at
-        // interval_start + n * interval (both in seconds).
-        var tMs = null;
-        if (plot.category === 'point') {
-          if (plot.data && plot.data[n]) tMs = plot.data[n].t;
-        } else if (typeof plot.interval_start === 'number'
-                   && typeof plot.interval === 'number') {
-          tMs = (plot.interval_start + n * plot.interval) * 1000;
-        }
-        if (tMs != null) tooltip.appendChild(row('tt-time', fmt.format(new Date(tMs))));
-
-        // Measure before positioning so we can flip near the right/bottom edge.
-        tooltip.style.display = 'block';
-        var tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
-        var x = lastX + 14, y = lastY + 14;
-        if (x + tw > wrap.clientWidth)  x = Math.max(0, lastX - 14 - tw);
-        if (y + th > wrap.clientHeight) y = Math.max(0, lastY - 14 - th);
-        tooltip.style.left = x + 'px';
-        tooltip.style.top  = y + 'px';
-      });
-    }
-
-    // Main chart uses the markup-provided #tooltip.
-    initTooltip(ts, document.getElementById('tooltip').parentNode,
-                document.getElementById('tooltip'));
-
-    // Every gallery card gets its own. tc-scatter and tc-multiline-p are point
+    // Every gallery card gets one too. tc-scatter and tc-multiline-p are point
     // series, so this is where the point hit test is actually visible.
     Object.keys(typeCharts).forEach(function (id) {
-      var canvas = document.getElementById(id);
-      if (canvas) initTooltip(typeCharts[id], canvas.parentNode, null);
+      TimeSeries.attachTooltip(typeCharts[id]);
     });
         </script>
     </body>

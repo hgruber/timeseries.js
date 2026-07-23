@@ -60,6 +60,14 @@ construct a real `TimeSeries` instance headlessly and dispatch synthetic mouse e
 its actual `canvas.onmousemove` handler — the hit-test tests exercise the real
 `get_element()` path, not a reimplementation of it.
 
+For the tooltip overlay it also stubs `document.createElement`/`document.body` via
+`makeElement()` (className/style, append/remove/replaceChildren, a *recursive*
+`textContent` so a test can assert on rendered text, and a fixed
+`ELEMENT_WIDTH`/`ELEMENT_HEIGHT` box so the edge-flip arithmetic is deterministic),
+plus `window.innerWidth/innerHeight` and `addEventListener`/`removeEventListener`/
+`emit` on the canvas — the library only assigns the `on*` properties, but overlays
+track the pointer with `addEventListener`.
+
 A constructed instance keeps a self-rescheduling `setTimeout` alive forever to advance
 the "now" line (correct for a browser tab, which eventually closes). `installDOM()`
 handles this by overriding the global `setTimeout` so every timer the library schedules
@@ -84,7 +92,10 @@ two are hand-kept in sync rather than sharing code), `test/binned-regression.tes
 `test/dates.test.mjs` (`Easter` against published dates, `isoWeekStart`, and the
 week/day presets for every weekday — Sunday being the case `(d.getDay() || 7)` exists
 for), `test/pan.test.mjs` (pan snapping incl. DST transitions), `test/hover.test.mjs`
-(the `onHoverData` contract the demo tooltip is built on), `test/options.test.mjs`
+(the `onHoverData` contract the tooltip overlay is built on),
+`test/tooltip.test.mjs` (the shipped overlay: inert until attached, default body,
+each override level, palette re-theming, edge flip, `destroy()`, and that an app's
+own hover handler survives alongside it), `test/options.test.mjs`
 (option merging, statics, `zoom()` duration), `test/intervals.test.mjs` and
 `test/lttb.test.mjs` (both previously untested pure modules), `test/memory.test.mjs`
 (bounded growth of `data[]` under a polling source), `test/series.test.mjs`
@@ -144,6 +155,7 @@ any other hook.
 | File | Purpose |
 |---|---|
 | `timeseries.js` | Main constructor. Canvas lifecycle, time axis, grid generation, coordinate math, event handlers, animation, navigation API |
+| `tooltip.js` | `attachTooltip()` — the one shipped DOM overlay, opt-in (see below) |
 | `intervals.js` | Six standalone interval-arithmetic utility functions (no global side effects) |
 | `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline`, `multipoint` |
 | `gantt.js` | `gantt` renderer + `layoutSpans()` row packing for `category: 'span'` plots |
@@ -269,7 +281,48 @@ infrastructure.
 
 ### Public API (TimeSeries instance)
 
-`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`, `ts.getSeries()`, `ts.setSeriesHidden(id, bool)`, `ts.toggleSeries(id)`, `ts.showAllSeries()`, `ts.onSeriesChange(fn)`
+`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`, `ts.getSeries()`, `ts.setSeriesHidden(id, bool)`, `ts.toggleSeries(id)`, `ts.showAllSeries()`, `ts.onSeriesChange(fn)`, `ts.onColorsChange(fn)`, `ts.getCanvas()`
+
+Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.resolveColor(plot, id, alpha)`.
+
+### DOM overlays: the tooltip is the one shipped exception
+
+The core is canvas-only and builds no DOM — see the legend note below, which is the
+rule everything else follows. `src/tooltip.js` is the deliberate exception: the same
+hover box was being re-implemented by every consumer (both demos and the gstar app
+each had their own), so it ships with the library instead. What keeps it from eroding
+the rule:
+
+- **Opt-in.** Nothing exists until `attachTooltip(ts)` is called — no element, no
+  listener, no cost. The library's default behaviour is still DOM-free.
+- **Public hooks only.** It reaches the chart through `onHoverDataCallback`,
+  `onColorsChange`, `getCanvas` and `getColors`, never closure internals. Anything a
+  third-party overlay could not do, it does not do either.
+- **Default plus override.** Zero config gives the full body (swatch, label,
+  `(value · interval)`, timestamp). `labelFor`/`colorFor`/`valueFormat`/`timeFormat`
+  retarget one piece; `formatter(ctx)` replaces the body, with `ctx.defaultContent()`
+  available so an app extends rather than forks. gstar uses exactly that to inject its
+  dimension-name resolution.
+- **Palette-themed.** Colours come from the `tooltip*` keys in `settings.colors` — the
+  only palette keys the canvas never reads. A consumer already calling
+  `ts.setColors(themes.dark)` re-themes the overlay for free.
+
+Three primitives were added to make this work on public API alone, and they matter to
+anything else overlay-shaped:
+
+- **`onHoverDataCallback` subscribes instead of replacing** and returns an unsubscribe.
+  It used to be a single slot (`onHoverData = fn`), which meant the tooltip and an
+  app's own hover handler could not coexist — the second call silently won.
+- **`setColors` now fires `onColorsChange`.** Without it a theme switch repainted the
+  canvas and left every DOM overlay on the old colours; there was no way to observe a
+  palette change at all.
+- **`getCanvas()`** exposes the element, since overlays track the pointer against it and
+  only the core knows which element `settings.canvas` resolved to.
+
+If a legend helper ever lands, it belongs here under the same four constraints — but
+design it against a *real* rich consumer (gstar's legend does viewport-windowed totals,
+selection-not-visibility semantics, and app actions), not against the demo's toy legend,
+or the abstraction will be wrong.
 
 ### Series visibility and legends
 

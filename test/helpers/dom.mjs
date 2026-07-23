@@ -26,12 +26,72 @@ function makeContext(canvas) {
   });
 }
 
+// Fixed box for every stub element, so the tooltip's edge-flip arithmetic is
+// deterministic rather than depending on a real layout engine.
+export const ELEMENT_WIDTH = 120;
+export const ELEMENT_HEIGHT = 34;
+
+/**
+ * A DOM element stub covering the surface the tooltip overlay uses:
+ * className/style, appendChild/removeChild/replaceChildren, textContent
+ * (recursive, so a test can assert on the rendered text) and offsetWidth/Height.
+ */
+export function makeElement(tagName = 'div') {
+  const el = {
+    tagName: tagName.toUpperCase(),
+    className: '',
+    style: {},
+    children: [],
+    parentNode: null,
+    innerHTML: '',
+    offsetWidth: ELEMENT_WIDTH,
+    offsetHeight: ELEMENT_HEIGHT,
+    _text: '',
+    appendChild(child) {
+      child.parentNode = el;
+      el.children.push(child);
+      return child;
+    },
+    removeChild(child) {
+      const i = el.children.indexOf(child);
+      if (i !== -1) el.children.splice(i, 1);
+      child.parentNode = null;
+      return child;
+    },
+    replaceChildren(...next) {
+      for (const c of el.children) c.parentNode = null;
+      el.children = [];
+      el._text = '';
+      el.innerHTML = '';
+      for (const c of next) el.appendChild(c);
+    },
+  };
+  Object.defineProperty(el, 'textContent', {
+    get() {
+      return el.children.length ? el.children.map(c => c.textContent).join('') : el._text;
+    },
+    set(v) {
+      el.children = [];
+      el._text = String(v);
+    },
+  });
+  return el;
+}
+
 /**
  * Install the stubbed globals. Call once, before importing the library.
  */
 export function installDOM() {
-  globalThis.document = { getElementById: id => canvases.get(id) || null };
+  const body = makeElement('body');
+  globalThis.document = {
+    body,
+    getElementById: id => canvases.get(id) || null,
+    createElement: tag => makeElement(tag),
+  };
   globalThis.window = {
+    // Viewport size: the tooltip clamps and flips against these.
+    innerWidth: 1024,
+    innerHeight: 768,
     getComputedStyle: () => ({
       font: '12px sans-serif', fontFamily: 'sans-serif', fontSize: '12px',
       color: '#000', backgroundColor: '#fff',
@@ -65,16 +125,33 @@ export function makeCanvas(id, width = 1000, height = 400) {
   // which sets tabindex/role/aria-label — without them the library's guards
   // would skip that code entirely and it would go untested.
   const attrs = new Map();
+  // addEventListener is what the tooltip overlay tracks the pointer with; the
+  // library itself only assigns the on* properties. `emit` lets a test drive
+  // those listeners directly.
+  const listeners = new Map();
   const canvas = {
     clientWidth: width, clientHeight: height, width, height,
     style: {}, parentElement: null,
-    attrs,
+    attrs, listeners,
     getBoundingClientRect: () => ({
       left: 0, top: 0, width, height, right: width, bottom: height,
     }),
     setAttribute: (k, v) => { attrs.set(k, String(v)); },
     getAttribute: k => (attrs.has(k) ? attrs.get(k) : null),
     hasAttribute: k => attrs.has(k),
+    addEventListener: (type, fn) => {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    removeEventListener: (type, fn) => {
+      const l = listeners.get(type);
+      if (!l) return;
+      const i = l.indexOf(fn);
+      if (i !== -1) l.splice(i, 1);
+    },
+    emit: (type, ev) => {
+      for (const fn of listeners.get(type) || []) fn(ev);
+    },
   };
   canvas.getContext = () => makeContext(canvas);
   canvases.set(id, canvas);

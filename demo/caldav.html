@@ -50,11 +50,8 @@
         border-top: 1px solid rgba(45,106,159,.12); line-height: 1.5;
       }
       code { background: rgba(45,106,159,.08); padding: .1rem .3rem; border-radius: 4px; }
-      #tooltip {
-        position: absolute; pointer-events: none; display: none;
-        background: rgba(26,46,69,.94); color: #fff; font-size: .75rem;
-        padding: .4rem .6rem; border-radius: 6px; max-width: 260px; line-height: 1.4;
-      }
+      /* The tooltip comes from the library (attachTooltip) and styles itself
+         from the chart palette — no tooltip CSS needed here. */
     </style>
   </head>
   <body>
@@ -70,7 +67,6 @@
       <div class="chart-card">
         <div class="canvas-wrap">
           <canvas id="timeseries"></canvas>
-          <div id="tooltip"></div>
         </div>
         <div class="controls">
           <button id="layout-calendar" aria-pressed="true">Lanes per calendar</button>
@@ -102,6 +98,7 @@
       import TimeSeries from '../src/timeseries.js';
       import { registerSource } from '../src/sources.js';
       import { parseICS } from '../src/caldav.js';
+      import { attachTooltip } from '../src/tooltip.js';
 
       // ── Server config ──────────────────────────────────────────────────────
       // Set `url` to switch this page from fixtures to a live CalDAV server.
@@ -217,23 +214,24 @@
       document.getElementById('week').onclick = () => ts.thisWeek();
 
       // ── Tooltip ────────────────────────────────────────────────────────────
-      const tooltip = document.getElementById('tooltip');
-      const wrap = document.querySelector('.canvas-wrap');
-      let lastMouse = { x: 0, y: 0 };
-      wrap.addEventListener('mousemove', e => {
-        const r = wrap.getBoundingClientRect();
-        lastMouse = { x: e.clientX - r.left, y: e.clientY - r.top };
-      });
-
-      const fmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-      ts.onHoverDataCallback((p, n, key, value) => {
-        if (!value || !value.start) { tooltip.style.display = 'none'; return; }
-        tooltip.innerHTML = '<strong>' + (value.label || '(no title)') + '</strong><br>'
-          + fmt.format(new Date(value.start)) + ' → ' + fmt.format(new Date(value.end))
-          + (value.location ? '<br>' + value.location : '');
-        tooltip.style.display = 'block';
-        tooltip.style.left = (lastMouse.x + 14) + 'px';
-        tooltip.style.top = (lastMouse.y + 14) + 'px';
+      // The library's default already renders an event's title and its
+      // start → end range for span plots. Only the location is calendar-
+      // specific, so the formatter appends it to the standard body rather than
+      // replacing it.
+      attachTooltip(ts, {
+        labelFor: (key, plot, value) => (value && value.label) || '(no title)',
+        formatter(ctx) {
+          const nodes = ctx.defaultContent();
+          const loc = ctx.value && ctx.value.location;
+          if (loc) {
+            const el = document.createElement('div');
+            el.textContent = loc;
+            el.style.color = ctx.colors.tooltipMuted;
+            el.style.fontSize = '11px';
+            nodes.push(el);
+          }
+          return nodes;
+        },
       });
     </script>
   </body>

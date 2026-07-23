@@ -13,6 +13,7 @@ import { plotData as _plotData, highlight as _highlight, registerRenderer, serie
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
+import { attachTooltip } from './tooltip.js';
 import { VERSION } from './version.js';
 
 // ── Viewport group registry ───────────────────────────────────────────────────
@@ -113,6 +114,15 @@ var DEFAULT_COLORS = {
   yearEven:    'rgba(232,232,232,0.40)',
   monthOdd:    'rgba(85,148,200,0.48)',       // alternating month stripes
   monthEven:   'rgba(232,232,232,0.42)',
+  // Consumed only by the optional tooltip overlay (src/tooltip.js), not by the
+  // canvas. Kept in the palette so a theme switch restyles chart and overlay
+  // through the one existing ts.setColors() call.
+  tooltipBg:     'rgba(255,255,255,0.92)',
+  tooltipBorder: '#ccc',
+  tooltipShadow: 'rgba(0,0,0,0.15)',
+  tooltipText:   '#222',
+  tooltipTitle:  '#555',
+  tooltipMuted:  '#888',
 };
 
 // Default y-axis formatter: SI prefixes (k/M/G/T).
@@ -330,6 +340,10 @@ export default function TimeSeries(options) {
   function notifySeriesChange() {
     for (const f of seriesChangeHandlers) f();
   }
+  var colorsChangeHandlers = [];
+  function notifyColorsChange() {
+    for (const f of colorsChangeHandlers) f();
+  }
   // Indices in data[] whose plot has been dropped and can be handed out again.
   // Plot ids are array indices and sources hold on to them (replaceData/
   // removeData), so slots are recycled, never compacted — compacting would
@@ -448,7 +462,13 @@ export default function TimeSeries(options) {
   var onClickData = function (plot, n, item) {
     _highlight(plot, n, item, rctx);
   };
-  var onHoverData = null;
+  // Multi-subscriber, like seriesChangeHandlers: the shipped tooltip overlay
+  // registers here, and an app that also wants its own hover logic must not
+  // have to choose between the two. onHoverDataCallback returns an unsubscribe.
+  var hoverDataHandlers = [];
+  function notifyHoverData(plot, n, key, value) {
+    for (const h of hoverDataHandlers) h(plot, n, key, value);
+  }
 
   ////////////////////////////////////
   // helper functions and variables //
@@ -1242,7 +1262,7 @@ export default function TimeSeries(options) {
     }
     if (hitVersionTag(e)) {
       canvas.style.cursor = 'pointer';
-      if (onHoverData) onHoverData(null, null, null, null);
+      notifyHoverData(null, null, null, null);
       return;
     }
     var item = mouse_position(e);
@@ -1250,16 +1270,14 @@ export default function TimeSeries(options) {
       item && item !== 'frame' && (item.level || item.key) ? 'pointer' :
       item && item !== 'frame' ? 'grab' :
       'default';
-    if (onHoverData) {
-      if (item && item !== 'frame' && item.key != null)
-        onHoverData(data[item.plot], item.n, item.key, item.value);
-      else
-        onHoverData(null, null, null, null);
-    }
+    if (item && item !== 'frame' && item.key != null)
+      notifyHoverData(data[item.plot], item.n, item.key, item.value);
+    else
+      notifyHoverData(null, null, null, null);
   };
 
   canvas.onmouseleave = function () {
-    if (onHoverData) onHoverData(null, null, null, null);
+    notifyHoverData(null, null, null, null);
   };
 
   canvas.onmouseup = function (e) {
@@ -2364,6 +2382,9 @@ export default function TimeSeries(options) {
   };
   this.getViewport = function () { return { tmin: tmin, tmax: tmax, ppms: ppms }; };
   this.getPlotArea = function () { return { margin: margin, plotWidth: plotWidth, plotHeight: plotHeight }; };
+  // Overlays need the element to track the pointer against; the core resolves
+  // it from settings.canvas and is the only one that knows which it got.
+  this.getCanvas = function () { return canvas; };
   this.onStop   = function (fn) { follow_stop_cb = fn; };
   this.onFollow = function (fn) { follow_start_cb = fn; };
 
@@ -2371,13 +2392,32 @@ export default function TimeSeries(options) {
     onClickData = fn;
   }
 
+  // Subscribes (does not replace) and hands back an unsubscribe, so an overlay
+  // can detach cleanly. Callback args: (plot, n, key, value), with all four
+  // null meaning "nothing hit" — that is the signal to hide.
   function onHoverDataCallback(fn) {
-    onHoverData = fn;
+    hoverDataHandlers.push(fn);
+    return function () {
+      var i = hoverDataHandlers.indexOf(fn);
+      if (i !== -1) hoverDataHandlers.splice(i, 1);
+    };
   }
 
   this.setColors = function (obj) {
     Object.assign(settings.colors, obj);
     plotAll();
+    notifyColorsChange();
+  };
+
+  // Fires after the palette changes. DOM overlays (the tooltip) restyle from
+  // here — without it a theme switch would repaint the canvas and leave every
+  // overlay on the old colours.
+  this.onColorsChange = function (fn) {
+    colorsChangeHandlers.push(fn);
+    return function () {
+      var i = colorsChangeHandlers.indexOf(fn);
+      if (i !== -1) colorsChangeHandlers.splice(i, 1);
+    };
   };
 
   // Copies, so callers cannot mutate the live settings behind the chart's back.
@@ -2475,6 +2515,10 @@ export default function TimeSeries(options) {
 TimeSeries.registerRenderer = registerRenderer;
 TimeSeries.registerSource = registerSource;
 TimeSeries.seriesColor = seriesColor;
+// Exposed so an overlay can reproduce exactly what a renderer painted for a
+// series, plot.series_colors overrides included.
+TimeSeries.resolveColor = resolveColor;
+TimeSeries.attachTooltip = attachTooltip;
 TimeSeries.lttb = lttb;
 TimeSeries.siFormat = siFormat;
 TimeSeries.VERSION = VERSION;
@@ -2510,6 +2554,12 @@ TimeSeries.themes = {
     yearEven:    'rgba(90,115,150,0.09)',
     monthOdd:    'rgba(42,88,145,0.48)',
     monthEven:   'rgba(55,68,92,0.38)',
+    tooltipBg:     'rgba(30,30,30,0.92)',
+    tooltipBorder: '#555',
+    tooltipShadow: 'rgba(0,0,0,0.4)',
+    tooltipText:   '#ddd',
+    tooltipTitle:  '#ccc',
+    tooltipMuted:  '#888',
   },
 
   // ── High contrast (WCAG-friendly) ────────────────────────────────────────
@@ -2533,6 +2583,12 @@ TimeSeries.themes = {
     yearEven:    'rgba(195,195,195,0.55)',
     monthOdd:    'rgba(0,80,200,0.65)',
     monthEven:   'rgba(195,195,195,0.55)',
+    tooltipBg:     '#ffffff',
+    tooltipBorder: '#000000',
+    tooltipShadow: 'rgba(0,0,0,0.45)',
+    tooltipText:   '#000000',
+    tooltipTitle:  '#000000',
+    tooltipMuted:  '#333333',
   },
 
   // ── Warm (amber / sepia) ─────────────────────────────────────────────────
@@ -2556,5 +2612,11 @@ TimeSeries.themes = {
     yearEven:    'rgba(238,220,192,0.52)',
     monthOdd:    'rgba(175,105,32,0.48)',
     monthEven:   'rgba(238,218,185,0.48)',
+    tooltipBg:     'rgba(253,246,236,0.94)',
+    tooltipBorder: '#d8bc93',
+    tooltipShadow: 'rgba(120,80,30,0.22)',
+    tooltipText:   '#3d2200',
+    tooltipTitle:  '#7a4b12',
+    tooltipMuted:  '#b08040',
   },
 };
