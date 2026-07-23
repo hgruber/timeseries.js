@@ -14,6 +14,7 @@ import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
 import { attachTooltip } from './tooltip.js';
+import { attachLegend } from './legend.js';
 import { VERSION } from './version.js';
 
 // ── Viewport group registry ───────────────────────────────────────────────────
@@ -114,15 +115,22 @@ var DEFAULT_COLORS = {
   yearEven:    'rgba(232,232,232,0.40)',
   monthOdd:    'rgba(85,148,200,0.48)',       // alternating month stripes
   monthEven:   'rgba(232,232,232,0.42)',
-  // Consumed only by the optional tooltip overlay (src/tooltip.js), not by the
-  // canvas. Kept in the palette so a theme switch restyles chart and overlay
-  // through the one existing ts.setColors() call.
+  // Consumed only by the optional overlays (src/tooltip.js, src/legend.js), not
+  // by the canvas. Kept in the palette so a theme switch restyles chart and
+  // overlays through the one existing ts.setColors() call.
   tooltipBg:     'rgba(255,255,255,0.92)',
   tooltipBorder: '#ccc',
   tooltipShadow: 'rgba(0,0,0,0.15)',
   tooltipText:   '#222',
   tooltipTitle:  '#555',
   tooltipMuted:  '#888',
+  legendBg:      'rgba(255,255,255,0.92)',
+  legendBorder:  '#ccc',
+  legendShadow:  'rgba(0,0,0,0.15)',
+  legendText:    '#222',
+  legendTitle:   '#555',
+  legendMuted:   '#888',
+  legendHover:   'rgba(128,128,128,0.15)',
 };
 
 // Default y-axis formatter: SI prefixes (k/M/G/T).
@@ -2528,8 +2536,15 @@ export default function TimeSeries(options) {
 
   // Fires after the hidden set changes. Note it does NOT fire when new data
   // arrives with previously unseen series — poll getSeries() after pushing, or
-  // call it from your own source's callback.
-  this.onSeriesChange = function (fn) { seriesChangeHandlers.push(fn); };
+  // call it from your own source's callback. Returns an unsubscribe closure
+  // (the shipped legend overlay uses it to detach on destroy).
+  this.onSeriesChange = function (fn) {
+    seriesChangeHandlers.push(fn);
+    return function () {
+      var i = seriesChangeHandlers.indexOf(fn);
+      if (i !== -1) seriesChangeHandlers.splice(i, 1);
+    };
+  };
 
   this.setRenderInterval = function (iv) {
     renderInterval = (iv == null) ? null : +iv;
@@ -2574,6 +2589,7 @@ TimeSeries.seriesColor = seriesColor;
 // series, plot.series_colors overrides included.
 TimeSeries.resolveColor = resolveColor;
 TimeSeries.attachTooltip = attachTooltip;
+TimeSeries.attachLegend = attachLegend;
 TimeSeries.lttb = lttb;
 TimeSeries.siFormat = siFormat;
 TimeSeries.VERSION = VERSION;
@@ -2615,6 +2631,13 @@ TimeSeries.themes = {
     tooltipText:   '#ddd',
     tooltipTitle:  '#ccc',
     tooltipMuted:  '#888',
+    legendBg:      'rgba(30,30,30,0.92)',
+    legendBorder:  '#555',
+    legendShadow:  'rgba(0,0,0,0.4)',
+    legendText:    '#ddd',
+    legendTitle:   '#ccc',
+    legendMuted:   '#888',
+    legendHover:   'rgba(255,255,255,0.10)',
   },
 
   // ── High contrast (WCAG-friendly) ────────────────────────────────────────
@@ -2644,6 +2667,13 @@ TimeSeries.themes = {
     tooltipText:   '#000000',
     tooltipTitle:  '#000000',
     tooltipMuted:  '#333333',
+    legendBg:      '#ffffff',
+    legendBorder:  '#000000',
+    legendShadow:  'rgba(0,0,0,0.45)',
+    legendText:    '#000000',
+    legendTitle:   '#000000',
+    legendMuted:   '#333333',
+    legendHover:   '#eeeeee',
   },
 
   // ── Warm (amber / sepia) ─────────────────────────────────────────────────
@@ -2673,5 +2703,12 @@ TimeSeries.themes = {
     tooltipText:   '#3d2200',
     tooltipTitle:  '#7a4b12',
     tooltipMuted:  '#b08040',
+    legendBg:      'rgba(253,246,236,0.94)',
+    legendBorder:  '#d8bc93',
+    legendShadow:  'rgba(120,80,30,0.22)',
+    legendText:    '#3d2200',
+    legendTitle:   '#7a4b12',
+    legendMuted:   '#b08040',
+    legendHover:   'rgba(160,110,60,0.12)',
   },
 };

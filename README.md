@@ -21,7 +21,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Extended navigation** — month/year navigation, calendar weeks (ISO 8601), plus date helpers for day/week intervals
 - **Plugin architecture** — register custom renderers and data sources without modifying library code
 - **Customizable colors** — 4 built-in color schemas to match your theme
-- **Opt-in tooltip** — one call for a themed hover card that follows the palette; override the label, the formatting, or the whole body
+- **Opt-in tooltip & legend** — one call each for a themed hover card and a click-to-toggle series legend that follow the palette; override the label, the formatting, or the whole body
 - **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`), calendar/Gantt spans (`gantt`)
 - **Built-in data sources** — Zabbix JSON-RPC API, CalDAV calendars, static/generated data
 
@@ -208,10 +208,10 @@ The returned controller is `{ el, hide(), refresh(), setOptions(o), destroy() }`
 multi-subscriber, your own `onHoverDataCallback` keeps working alongside it.
 `demo/caldav.html` shows a formatter that appends an event location to the default body.
 
-### Series visibility (building a legend)
+### Series visibility
 
-The library supplies the data; it never creates DOM for a legend, so the markup and
-styling stay yours.
+The core never creates DOM for a legend; it exposes the data so you can build one (or use
+the shipped [`attachLegend`](#legend) below).
 
 ```js
 ts.getSeries();
@@ -220,16 +220,54 @@ ts.getSeries();
 ts.setSeriesHidden('cpu', true);   // hide one series and redraw
 ts.toggleSeries('cpu');
 ts.showAllSeries();
-ts.onSeriesChange(() => renderLegend());   // fires when the hidden set changes
+const off = ts.onSeriesChange(() => renderLegend());   // fires when the hidden set changes; returns an unsubscribe
 ```
 
 `color` is exactly what was painted, including any `series_colors` override, so a swatch
 matches the chart. Hiding is by series id across every plot in the instance, and a hidden
 series drops out of the y-axis extent as well — hide the tallest one and the axis
-rescales to what is left. `demo/index.html` has a worked example (`renderLegend`).
+rescales to what is left.
 
 Note `onSeriesChange` does **not** fire when incoming data introduces a new series; call
 `getSeries()` again after pushing data if that matters.
+
+### Legend
+
+The second opt-in DOM overlay, sibling to the [tooltip](#tooltip): until `attachLegend` is
+called nothing is created. It renders a floating panel with a swatch and label per active
+series; clicking a row toggles that series (dimmed when hidden), and the panel is draggable
+and themed from the palette's `legend*` keys — no CSS required, in any theme.
+
+```js
+const legend = TimeSeries.attachLegend(ts);   // the whole default setup
+legend.refresh();                             // after data first loads (see the note above)
+```
+
+Override in layers, cheapest first:
+
+```js
+TimeSeries.attachLegend(ts, {
+  title:       'Region',                       // optional header
+  labelFor:    (id, series) => names[id] || id,
+  colorFor:    (id, series) => myColors[id],
+  extra:       series => totals[series.id],    // trailing text/Node per row (a total, a count)
+  onItemClick: (id, series, ev) => filterTo(id),  // replaces the default visibility toggle
+  colors:      { legendBg: '#222' },
+  container:   document.body,
+  className:   'my-legend',
+});
+```
+
+For full control, `formatter(ctx)` replaces a row's content. `ctx` carries
+`{ ts, series, id, label, color, hidden, colors, defaultRow() }` — call `ctx.defaultRow()`
+to get the standard nodes and build on them. Return a `Node`, an array of them, a string
+(inserted as **text**), `{ html }` for deliberate markup, or `null`/`false` to drop that
+series from the list.
+
+The controller is `{ el, refresh(), setOptions(o), show(), hide(), toggle(), destroy() }`;
+`destroy()` removes the element and unsubscribes. `demo/index.html` opts in with no
+configuration; gstar keeps its own analytical legend (totals, filtering) but the pattern is
+the same.
 
 ### Keyboard
 
@@ -487,10 +525,12 @@ Every palette key:
 | `monthOdd` / `monthEven` | Alternating month stripes |
 | `tooltipBg` / `tooltipBorder` / `tooltipShadow` | Tooltip card background, border and shadow |
 | `tooltipText` / `tooltipTitle` / `tooltipMuted` | Tooltip value, title row and timestamp colours |
+| `legendBg` / `legendBorder` / `legendShadow` | Legend panel background, border and shadow |
+| `legendText` / `legendTitle` / `legendMuted` / `legendHover` | Legend row text, header, extra text and row-hover background |
 
-The `tooltip*` keys are the only ones the canvas never reads — they style the optional
-[tooltip overlay](#tooltip), and live in the palette so one `setColors()` call re-themes
-the chart and its overlay together.
+The `tooltip*` and `legend*` keys are the only ones the canvas never reads — they style the
+optional [tooltip](#tooltip) and [legend](#legend) overlays, and live in the palette so one
+`setColors()` call re-themes the chart and its overlays together.
 
 ### Holidays
 

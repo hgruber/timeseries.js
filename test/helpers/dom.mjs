@@ -32,11 +32,19 @@ export const ELEMENT_WIDTH = 120;
 export const ELEMENT_HEIGHT = 34;
 
 /**
- * A DOM element stub covering the surface the tooltip overlay uses:
+ * A DOM element stub covering the surface the tooltip and legend overlays use:
  * className/style, appendChild/removeChild/replaceChildren, textContent
  * (recursive, so a test can assert on the rendered text) and offsetWidth/Height.
+ *
+ * The legend additionally needs a clickable/draggable surface the (pointer-inert)
+ * tooltip never did: classList, dataset, setAttribute, addEventListener/emit and
+ * offsetLeft/Top + getBoundingClientRect. `emit(type, ev)` invokes the
+ * registered listeners so a test can drive a click or a drag directly.
  */
 export function makeElement(tagName = 'div') {
+  const attrs = new Map();
+  const listeners = new Map();
+  const classes = new Set();
   const el = {
     tagName: tagName.toUpperCase(),
     className: '',
@@ -44,9 +52,42 @@ export function makeElement(tagName = 'div') {
     children: [],
     parentNode: null,
     innerHTML: '',
+    dataset: {},
     offsetWidth: ELEMENT_WIDTH,
     offsetHeight: ELEMENT_HEIGHT,
+    offsetLeft: 0,
+    offsetTop: 0,
     _text: '',
+    onclick: null,
+    classList: {
+      add: (...cs) => { for (const c of cs) classes.add(c); },
+      remove: (...cs) => { for (const c of cs) classes.delete(c); },
+      toggle: c => (classes.has(c) ? (classes.delete(c), false) : (classes.add(c), true)),
+      contains: c => classes.has(c),
+    },
+    setAttribute: (k, v) => { attrs.set(k, String(v)); },
+    getAttribute: k => (attrs.has(k) ? attrs.get(k) : null),
+    hasAttribute: k => attrs.has(k),
+    removeAttribute: k => { attrs.delete(k); },
+    getBoundingClientRect: () => ({
+      left: el.offsetLeft, top: el.offsetTop,
+      width: el.offsetWidth, height: el.offsetHeight,
+      right: el.offsetLeft + el.offsetWidth, bottom: el.offsetTop + el.offsetHeight,
+    }),
+    addEventListener: (type, fn) => {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(fn);
+    },
+    removeEventListener: (type, fn) => {
+      const l = listeners.get(type);
+      if (!l) return;
+      const i = l.indexOf(fn);
+      if (i !== -1) l.splice(i, 1);
+    },
+    emit: (type, ev = {}) => {
+      if (type === 'click' && typeof el.onclick === 'function') el.onclick(ev);
+      for (const fn of listeners.get(type) || []) fn(ev);
+    },
     appendChild(child) {
       child.parentNode = el;
       el.children.push(child);
@@ -58,12 +99,30 @@ export function makeElement(tagName = 'div') {
       child.parentNode = null;
       return child;
     },
+    remove() {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    },
     replaceChildren(...next) {
       for (const c of el.children) c.parentNode = null;
       el.children = [];
       el._text = '';
       el.innerHTML = '';
       for (const c of next) el.appendChild(c);
+    },
+    // Walk descendants matching a bare tag or `.class` selector — enough for the
+    // legend's row lookups in tests.
+    querySelectorAll(sel) {
+      const out = [];
+      const wantClass = sel[0] === '.' ? sel.slice(1) : null;
+      const wantTag = wantClass ? null : sel.toUpperCase();
+      (function walk(node) {
+        for (const c of node.children) {
+          if ((wantClass && (c.className || '').split(/\s+/).includes(wantClass)) ||
+              (wantTag && c.tagName === wantTag)) out.push(c);
+          walk(c);
+        }
+      })(el);
+      return out;
     },
   };
   Object.defineProperty(el, 'textContent', {
@@ -83,10 +142,26 @@ export function makeElement(tagName = 'div') {
  */
 export function installDOM() {
   const body = makeElement('body');
+  // The legend attaches its drag move/up listeners to the document; give it the
+  // same addEventListener/emit surface an element has so a test can drive a drag.
+  const docListeners = new Map();
   globalThis.document = {
     body,
     getElementById: id => canvases.get(id) || null,
     createElement: tag => makeElement(tag),
+    addEventListener: (type, fn) => {
+      if (!docListeners.has(type)) docListeners.set(type, []);
+      docListeners.get(type).push(fn);
+    },
+    removeEventListener: (type, fn) => {
+      const l = docListeners.get(type);
+      if (!l) return;
+      const i = l.indexOf(fn);
+      if (i !== -1) l.splice(i, 1);
+    },
+    emit: (type, ev = {}) => {
+      for (const fn of docListeners.get(type) || []) fn(ev);
+    },
   };
   globalThis.window = {
     // Viewport size: the tooltip clamps and flips against these.
