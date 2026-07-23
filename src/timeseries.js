@@ -1266,6 +1266,7 @@ export default function TimeSeries(options) {
     watermark();
     yAxis();
     _plotData(activePlot, data, rctx);
+    weekNumbers();
     frame();
     versionTag();
     redLine();
@@ -1491,17 +1492,9 @@ export default function TimeSeries(options) {
     var y = e.clientY - offset.y;
     if (margin.left < x && x < plotWidth + margin.left) {
       if (margin.top < y && y < plotHeight + margin.top) {
-        var weekitems = grid[4].filter((item) => item.tm.getDay() === 1);
-        for (var wi of weekitems) {
-          if (
-            x > wi.x &&
-            x < wi.x + c.measureText(wi.cw).width &&
-            y > plotHeight + margin.top - font_height &&
-            y < plotHeight + margin.top
-          ) {
-            var item = wi;
-            return { cw: item.cw, level: 4.5, tm: item.tm };
-          }
+        for (var wr of weekLabelRects) {
+          if (x > wr.x && x < wr.x + wr.w && y > wr.y && y < wr.y + wr.h)
+            return { cw: wr.cw, level: 4.5, tm: wr.tm };
         }
         // plot area
         return get_element(x, y);
@@ -1510,7 +1503,7 @@ export default function TimeSeries(options) {
         y < margin.top - font_height
       ) {
         // first label row
-        item = get_grid(x, grid_level_label[0][label_level]);
+        var item = get_grid(x, grid_level_label[0][label_level]);
         item.y = margin.top - font_height;
         return item;
       }
@@ -2050,7 +2043,6 @@ export default function TimeSeries(options) {
           x: x,
           len: len,
           fill: fill,
-          cw: wd === 1 ? getWeek(t) : "",
           browse: t <= tmin && len + x >= canvas.width - margin.right,
         });
       }
@@ -2225,18 +2217,36 @@ export default function TimeSeries(options) {
             c.fillRect(item.x, margin.top, item.len, plotHeight);
           }
           vertical_line(item.tm, settings.colors.gridLine);
-          if (item.cw) {
-            c.font = xFont();
-            c.textAlign = "left";
-            var x = X(item.tm);
-            if (x < margin.left) x = margin.left;
-            c.fillStyle = settings.colors.weekNumber;
-            c.textAlign = "left";
-            c.textBaseline = "bottom";
-            c.fillText(item.cw, x + 1, canvas.height - margin.bottom);
-          }
         });
       });
+  }
+
+  // ISO week numbers, drawn after the data so the plot can't cover them. The
+  // leftmost week's label sticks to margin.left and slides out as it scrolls
+  // off, so a week stays labelled even when its Monday is off-screen left.
+  // weekLabelRects mirrors the drawn boxes for the hit test (see mouse_position).
+  function weekNumbers() {
+    weekLabelRects = [];
+    if (!grid[4].length) return; // only meaningful at day-grain zoom
+    c.font = xFont();
+    c.fillStyle = settings.colors.weekNumber;
+    c.textAlign = "left";
+    c.textBaseline = "top";
+    var y = margin.top + 2;
+    for (
+      var m = panFloor(tmin, "week");
+      m <= tmax;
+      m = panAdd(m, "week", 1)
+    ) {
+      var cw = "" + getWeek(new Date(m));
+      var w = c.measureText(cw).width;
+      var mNext = panAdd(m, "week", 1);
+      // clamp to the left edge (sticky), but let the next week's boundary push
+      // the sticky label out rather than overlap it
+      var x = Math.min(Math.max(X(m), margin.left), X(mNext) - w - 4);
+      c.fillText(cw, x + 1, y);
+      weekLabelRects.push({ x: x + 1, y: y, w: w, h: font_height, cw: cw, tm: new Date(m) });
+    }
   }
 
   // Draw horizontal axis label rows for a given label_level at the given alpha.
@@ -2335,6 +2345,8 @@ export default function TimeSeries(options) {
   // handling. The two stay in step because the rect is measured off the
   // same font/text versionTag() draws with, not duplicated by hand.
   var versionTagRect = null;
+  // Drawn ISO-week-number boxes, filled by weekNumbers(), read by the hit test.
+  var weekLabelRects = [];
 
   // Small, unobtrusive build tag in the bottom-left margin corner — sits on
   // the frameBg painted by frame(), so draw it after frame() has run.
