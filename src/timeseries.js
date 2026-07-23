@@ -144,15 +144,56 @@ export function siFormat(v) {
 // across a DST change — Math.round absorbs that, so the step count still comes
 // out right (see test/pan.test.mjs).
 
-export function panSnapUnit(span) {
+// Shared by panSnapUnit's calendar-boundary detection and panSnapEdge's
+// boundary rounding: how close (as a fraction of the unit's actual length)
+// a viewport edge must be to a calendar boundary to snap to it.
+export var PAN_TOLERANCE = 0.05;
+
+export function panSnapUnit(tmin, tmax) {
+  var span = tmax - tmin;
   var s = 1000, m = 60000, h = 3600000, d = 86400000;
-  if (span <  90 * s)        return 'second';
-  if (span <  90 * m)        return 'minute';
-  if (span <  36 * h)        return 'hour';
-  if (span <  14 * d)        return 'day';
-  if (span <  60 * d)        return 'week';
-  if (span < 2 * 365.25 * d) return 'month';
-  return 'year';
+  var YEAR_AVG = 365.25 * d, MONTH_AVG = YEAR_AVG / 12;
+
+  // Months/years have variable real length (28-31d, 365-366d), so a fixed-ms
+  // threshold alone can never tell "this 30-day span is April" from "this
+  // 30-day span is just a long week-ish view" — only checking against the
+  // actual calendar anchored at tmin can. Checked largest-first so an exact
+  // multi-year span wins over an incidental multi-month match.
+  if (calendarUnitMatches(tmin, span, 'year', YEAR_AVG))   return 'year';
+  if (calendarUnitMatches(tmin, span, 'month', MONTH_AVG)) return 'month';
+
+  if (span <  90 * s) return 'second';
+  if (span <  90 * m) return 'minute';
+  if (span <  36 * h) {
+    // A viewport already sitting on local-midnight boundaries at both edges
+    // is a calendar-day view (or a short run of them) even when its real
+    // duration isn't exactly 24h — the day either side of a DST transition
+    // is 23h or 25h. 'hour' would then step it via panAdd's Date#setHours
+    // field arithmetic, which only rolls to the next day when the hour
+    // count overflows past 23; a DST day's real hour count (23) doesn't,
+    // so the boundary silently sticks 1h off local midnight. 'day' steps
+    // via Date#setDate instead, which is calendar-safe (see panAdd tests).
+    // A non-midnight-aligned rolling window (e.g. last24()) still falls
+    // through to 'hour' below, unaffected.
+    if (panFloor(tmin, 'day') === tmin && panFloor(tmax, 'day') === tmax) return 'day';
+    return 'hour';
+  }
+  if (span <  14 * d) return 'day';
+  if (span <  60 * d) return 'week';
+  return 'month';  // multi-month span that isn't calendar-aligned within tolerance
+}
+
+// n is estimated from the average unit length rather than panDiff(unit),
+// because panDiff('year'/'month') is a raw calendar-field difference
+// (getFullYear()/getMonth() only) — it doesn't know whether an anniversary
+// has actually elapsed, so it's inconsistent with panAdd for an arbitrary
+// (non-boundary-aligned) tmin. Rounding by average length and then verifying
+// the *actual* panAdd-derived span avoids that mismatch.
+function calendarUnitMatches(tmin, span, unit, avgLen) {
+  var n = Math.round(span / avgLen);
+  if (n < 1) return false;
+  var unitSpan = panAdd(tmin, unit, n) - tmin;
+  return Math.abs(span - unitSpan) <= PAN_TOLERANCE * unitSpan;
 }
 
 export function panFloor(ms, unit) {
@@ -189,6 +230,21 @@ export function panDiff(lo, hi, unit) {
   if (unit === 'month')
     return (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
   return b.getFullYear() - a.getFullYear();
+}
+
+// Rounds one viewport edge to the nearest boundary of `unit` if it's within
+// PAN_TOLERANCE of one, otherwise falls back to the historical behaviour
+// (floor when roundUpIfAmbiguous is false, ceil when true) — so this only
+// changes anything for edges that sit close to, but not exactly on, a
+// calendar boundary; an already-aligned edge is untouched.
+export function panSnapEdge(ms, unit, roundUpIfAmbiguous) {
+  var lo = panFloor(ms, unit);
+  if (lo === ms) return lo;
+  var hi = panAdd(lo, unit, 1);
+  var unitLen = hi - lo;
+  if ((ms - lo) <= PAN_TOLERANCE * unitLen) return lo;
+  if ((hi - ms) <= PAN_TOLERANCE * unitLen) return hi;
+  return roundUpIfAmbiguous ? hi : lo;
 }
 
 export default function TimeSeries(options) {
@@ -1137,10 +1193,9 @@ export default function TimeSeries(options) {
     var inFlight = animation.endT && Date.now() < animation.endT;
     var srcMin = inFlight ? animation.end.tmin : tmin;
     var srcMax = inFlight ? animation.end.tmax : tmax;
-    var unit = panSnapUnit(srcMax - srcMin);
-    var lo   = panFloor(srcMin, unit);
-    var hiF  = panFloor(srcMax, unit);
-    var hi   = hiF < srcMax ? panAdd(hiF, unit, 1) : hiF;
+    var unit = panSnapUnit(srcMin, srcMax);
+    var lo   = panSnapEdge(srcMin, unit, false);
+    var hi   = panSnapEdge(srcMax, unit, true);
     var n    = Math.max(1, panDiff(lo, hi, unit));
     zoom(panAdd(lo, unit, dir * n), panAdd(hi, unit, dir * n));
   };
