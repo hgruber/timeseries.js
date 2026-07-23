@@ -318,8 +318,20 @@ reduced array.
 
 Besides the default export, `src/timeseries.js` exports the pure date/format helpers so
 they can be tested and reused without constructing a chart: `Easter(year)`,
-`isoWeekStart(year, week)`, `siFormat(v)`, and the pan-snapping set `panSnapUnit(span)`,
-`panFloor(ms, unit)`, `panAdd(ms, unit, n)`, `panDiff(lo, hi, unit)`.
+`isoWeekStart(year, week)`, `siFormat(v)`, and the pan-snapping set `panSnapUnit(tmin, tmax)`,
+`panFloor(ms, unit)`, `panAdd(ms, unit, n)`, `panDiff(lo, hi, unit)`,
+`panSnapEdge(ms, unit, roundUpIfAmbiguous)`, and the `PAN_TOLERANCE` constant (5%) they
+share. `panSnapUnit` is calendar-aware for month/year (a plain ms threshold can't tell a
+30-day April from a 30-day non-month span, since real month/year lengths vary); `panSnapEdge`
+applies that same tolerance when rounding `pan()`'s viewport edges to the unit's boundaries,
+so a viewport that's close to but not exactly one calendar month/year still snaps cleanly
+instead of inflating to the next full unit. It's also calendar-aware at the hour/day
+boundary: a viewport already sitting on local-midnight at both edges is treated as `'day'`
+grain even when its real length is 23h/25h (a DST transition day), because `'day'`
+steps via `Date#setDate` (DST-safe) where `'hour'` steps via `Date#setHours` field
+arithmetic — which only rolls to the next day when the added hour count overflows past
+23, so a 23-hour DST day (which doesn't) used to leave `pan()`'s boundary stuck 1h off
+midnight. A non-midnight-aligned rolling window (e.g. `last24()`) still uses `'hour'`.
 
 The statics `TimeSeries.registerRenderer` / `registerSource` / `seriesColor` / `lttb` /
 `siFormat` / `themes` live at module scope, so the IIFE build can call them **before**
