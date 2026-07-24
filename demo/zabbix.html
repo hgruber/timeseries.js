@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — Zabbix history/trends</title>
+    <style>
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(160deg, #f0f6ff 0%, #deeafc 40%, #c8daf5 100%);
+        min-height: 100vh;
+        color: #1a2e45;
+      }
+      header { padding: 2rem 2.5rem 1.2rem; display: flex; align-items: baseline; gap: 1rem; }
+      header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+      header h1 span { color: #2d6a9f; }
+      header p { font-size: 0.85rem; color: #5a7a9a; }
+      header nav { margin-left: auto; display: flex; gap: 1rem; }
+      header nav a {
+        font-size: .85rem; color: #2d6a9f; text-decoration: none;
+        padding: .3rem .7rem; border-radius: 8px; white-space: nowrap;
+        border: 1px solid rgba(45,106,159,.25);
+      }
+      header nav a:hover { background: rgba(45,106,159,.10); }
+      main { max-width: 1300px; margin: 0 auto; padding: 0 1.5rem 3rem; }
+      .chart-card {
+        background: #f0f6ff;
+        border-radius: 16px;
+        box-shadow: 0 1px 3px rgba(30,60,100,.08), 0 8px 32px rgba(30,60,100,.10),
+                    0 0 0 1px rgba(45,106,159,.10);
+        overflow: hidden;
+      }
+      .canvas-wrap { position: relative; height: 420px; }
+      canvas { width: 100%; height: 100%; display: block; }
+      .controls {
+        display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
+        padding: .9rem 1.2rem; border-top: 1px solid rgba(45,106,159,.12);
+      }
+      button {
+        font: inherit; font-size: .82rem; padding: .35rem .8rem; cursor: pointer;
+        border: 1px solid rgba(45,106,159,.25); border-radius: 8px;
+        background: #fff; color: #1a2e45;
+      }
+      button:hover { background: rgba(45,106,159,.08); }
+      .spacer { flex: 1; }
+      .status {
+        font-size: .78rem; color: #5a7a9a; display: inline-flex; gap: .4rem; align-items: center;
+      }
+      .pill {
+        font-size: .72rem; font-weight: 600; padding: .12rem .5rem; border-radius: 999px;
+        border: 1px solid rgba(45,106,159,.3); color: #2d6a9f; background: rgba(45,106,159,.06);
+      }
+      .hint {
+        padding: .9rem 1.2rem; font-size: .78rem; color: #5a7a9a;
+        border-top: 1px solid rgba(45,106,159,.12); line-height: 1.5;
+      }
+      code { background: rgba(45,106,159,.08); padding: .1rem .3rem; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — Zabbix</h1>
+      <p>zoom-adaptive <code>history</code>/<code>trends</code> with a min/avg/max band</p>
+      <nav>
+        <a href="index.html">Main demo</a>
+        <a href="caldav.html">CalDAV</a>
+        <a href="https://github.com/hgruber/timeseries.js">GitHub</a>
+      </nav>
+    </header>
+
+    <main>
+      <div class="chart-card">
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div class="controls">
+          <button id="day">Day</button>
+          <button id="week">Week</button>
+          <button id="month">Month</button>
+          <button id="quarter">Quarter</button>
+          <span class="spacer"></span>
+          <span class="status">resolution:<span class="pill" id="tier">…</span></span>
+        </div>
+        <p class="hint">
+          No Zabbix server is configured, so this page installs a synthetic
+          <code>api_jsonrpc.php</code> (a fake <code>XMLHttpRequest</code>) that answers
+          <code>history.get</code> and <code>trends.get</code> with a generated signal — the
+          <em>real</em> <code>zabbix</code> source runs against it unchanged. Zoom in and the fine
+          <code>history</code> line takes over; zoom out and it cross-fades into the hourly
+          <code>trends</code> min/avg/max band. Panning prefetches ±50% either side. Point this at
+          a real server by replacing the fake-server block with <code>url</code>/credentials.
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      // ── Synthetic Zabbix JSON-RPC server ────────────────────────────────────
+      // Replace this whole block with a real `url` + credentials on the source
+      // below to talk to an actual Zabbix. The generated signal is deterministic
+      // in `clock`, so re-fetching a window (prefetch, pan-back) is stable.
+      const ITEM = '10084';
+      function base(t) {                       // value at unix-seconds t
+        return 55
+          + 22 * Math.sin((2 * Math.PI * t) / 86400)      // daily swing
+          + 8  * Math.sin((2 * Math.PI * t) / (86400 * 7)) // weekly drift
+          + 6  * Math.sin((2 * Math.PI * t) / 3600);       // hourly ripple
+      }
+      function genHistory(p) {
+        const from = +p.time_from, till = +p.time_till;
+        const step = Math.max(30, Math.floor((till - from) / 1500));   // cap point count
+        const rows = [];
+        for (let t = Math.ceil(from / step) * step; t <= till; t += step)
+          rows.push({ itemid: ITEM, clock: String(t), value: base(t).toFixed(2), ns: '0' });
+        return rows;
+      }
+      function genTrends(p) {
+        const from = +p.time_from, till = +p.time_till;
+        const h0 = Math.floor(from / 3600) * 3600;
+        const rows = [];
+        for (let h = h0; h <= till; h += 3600) {
+          const avg = base(h + 1800);
+          const amp = 7 + 5 * Math.abs(Math.sin(h / 3600));   // deterministic spread
+          rows.push({
+            itemid: ITEM, clock: String(h), num: '60',
+            value_min: (avg - amp).toFixed(2),
+            value_avg: avg.toFixed(2),
+            value_max: (avg + amp).toFixed(2),
+          });
+        }
+        return rows;
+      }
+      function handle(method, params) {
+        if (method === 'apiinfo.version') return '6.4.0';
+        if (method === 'user.login')      return 'FAKE-TOKEN';
+        if (method === 'history.get')     return genHistory(params);
+        if (method === 'trends.get')      return genTrends(params);
+        return [];
+      }
+      window.XMLHttpRequest = class {
+        open(m, u) { this._u = u; }
+        setRequestHeader() {}
+        send(body) {
+          const req = JSON.parse(body);
+          const result = handle(req.method, req.params || {});
+          this.status = 200;
+          this.response = JSON.stringify({ jsonrpc: '2.0', id: req.id, result });
+          // A little latency, so prefetch and the cross-fade are visible.
+          setTimeout(() => { if (this.onload) this.onload(); }, 80);
+        }
+      };
+
+      // ── The chart ───────────────────────────────────────────────────────────
+      const ts = new TimeSeries({
+        canvas: 'chart',
+        initialView: null,
+        sources: [{
+          'source-type': 'zabbix',
+          url: 'http://localhost/api_jsonrpc.php',   // answered by the fake above
+          username: 'Admin', password: 'zabbix',      // exercises the login flow
+          itemids: [ITEM],
+          'value-type': 0,
+          'history-interval': 60,
+          series_colors: { [ITEM]: '#2d6a9f' },
+          name: 'CPU load',
+        }],
+      });
+
+      attachTooltip(ts);
+
+      const DAY = 86400e3;
+      const now = Date.now();
+      const view = (days) => ts.zoom(now - days * DAY, now, 600);
+      document.getElementById('day').onclick     = () => view(1);
+      document.getElementById('week').onclick    = () => view(7);
+      document.getElementById('month').onclick   = () => view(30);
+      document.getElementById('quarter').onclick = () => view(90);
+
+      // Reflect which resolution the current zoom selects (same 2px rule the
+      // core and the source share).
+      const tierPill = document.getElementById('tier');
+      setInterval(() => {
+        const px = 60 * 1000 * ts.getViewport().ppms;   // fine-bucket width
+        tierPill.textContent = px >= 2 ? 'history (60s line)'
+          : px > 1 ? 'cross-fading…'
+          : 'trends (1h band)';
+      }, 200);
+
+      view(30);   // start zoomed out on the trends band
+    </script>
+  </body>
+</html>

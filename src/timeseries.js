@@ -1268,7 +1268,6 @@ export default function TimeSeries(options) {
     _plotData(activePlot, data, rctx);
     weekNumbers();
     frame();
-    versionTag();
     redLine();
     // console.log('plot finished: ' + follow_timers);
     // console.log(grid);
@@ -1747,32 +1746,63 @@ export default function TimeSeries(options) {
         if (!byType[t][p.interval]) byType[t][p.interval] = [];
         byType[t][p.interval].push(j);
       }
+      // Cross-fade band, in px of bar width: as a resolution's bars shrink
+      // past FADE_HI while zooming out it stops being `best`, but we keep
+      // drawing it (fading out) until FADE_LO so the swap to the coarser tier
+      // is a dissolve, not a pop. Read by the quantile-bands renderer via
+      // plot._fade; ignored by renderers that don't set it.
+      var FADE_HI = 2, FADE_LO = 1;
+      var m;
       for (t in byType) {
         var ivs = byType[t];
-        var keys = Object.keys(ivs);
+        var keys = Object.keys(ivs).map(Number).sort(function (a, b) { return a - b; });
+        // Reset stale fade first: a block that ends up the sole resolution
+        // must paint at full alpha even if it faded on a previous frame.
+        for (var ri = 0; ri < keys.length; ri++)
+          for (var rj = 0; rj < ivs[keys[ri]].length; rj++)
+            data[activePlot[ivs[keys[ri]][rj]]]._fade = 1;
         if (keys.length <= 1) continue;
         var best = null;
+        var fadeIv = null, fadeProg = 0;   // finer tier to fade out, progress 0..1
         // If the caller has set an explicit render interval and we have
         // blocks at that interval, use it — the GUI owns the transition
-        // policy via setRenderInterval().
+        // policy via setRenderInterval(), so no cross-fade there.
         if (renderInterval !== null && ivs[renderInterval]) {
           best = +renderInterval;
         } else {
-          // Fallback: finest interval whose bar width is at least 2px;
+          // Fallback: finest interval whose bar width is at least FADE_HI px;
           // if none qualify, the coarsest available — better wide-but-
           // readable bars than invisible sub-pixel ones.
           var coarsest = null;
           for (var k = 0; k < keys.length; k++) {
-            var iv = +keys[k];
+            var iv = keys[k];
             var w = iv * 1000 * ppms;
             if (coarsest === null || iv > coarsest) coarsest = iv;
-            if (w >= 2 && (best === null || iv < best)) best = iv;
+            if (w >= FADE_HI && (best === null || iv < best)) best = iv;
           }
           if (best === null) best = coarsest;
+          // The tier one step finer than `best` has just dropped below the
+          // switch threshold. While its bars are still within the fade band,
+          // keep it and cross-fade against `best`.
+          for (k = 0; k < keys.length; k++)
+            if (keys[k] < best && (fadeIv === null || keys[k] > fadeIv)) fadeIv = keys[k];
+          if (fadeIv !== null) {
+            var wf = fadeIv * 1000 * ppms;
+            if (wf > FADE_LO && wf < FADE_HI) fadeProg = (FADE_HI - wf) / (FADE_HI - FADE_LO);
+            else fadeIv = null;   // outside the band: drop it normally, no fade
+          }
         }
         for (k = 0; k < keys.length; k++) {
-          if (+keys[k] !== best) {
-            for (var m = 0; m < ivs[keys[k]].length; m++)
+          if (keys[k] === best) {
+            // Coarser tier fades in as the finer one fades out (else stays 1).
+            if (fadeIv !== null)
+              for (m = 0; m < ivs[keys[k]].length; m++)
+                data[activePlot[ivs[keys[k]][m]]]._fade = fadeProg;
+          } else if (keys[k] === fadeIv) {
+            for (m = 0; m < ivs[keys[k]].length; m++)
+              data[activePlot[ivs[keys[k]][m]]]._fade = 1 - fadeProg;
+          } else {
+            for (m = 0; m < ivs[keys[k]].length; m++)
               activePlot[ivs[keys[k]][m]] = -1;
           }
         }
@@ -2285,6 +2315,7 @@ export default function TimeSeries(options) {
     c.lineTo(canvas.width - margin.right, margin.top - 2 * font_height);
     c.strokeStyle = settings.colors.text;
     c.stroke();
+    versionTag();  // under the vertical time labels below, so they overprint it
     c.fillStyle = settings.colors.text;
     c.font = xFont();
     c.textAlign = "right";
@@ -2348,20 +2379,48 @@ export default function TimeSeries(options) {
   // Drawn ISO-week-number boxes, filled by weekNumbers(), read by the hit test.
   var weekLabelRects = [];
 
-  // Small, unobtrusive build tag in the bottom-left margin corner — sits on
-  // the frameBg painted by frame(), so draw it after frame() has run.
+  // Trace a rounded-rectangle sub-path; prefers the native roundRect where the
+  // browser has it (all current ones), falls back to arcTo corners otherwise.
+  function roundRectPath(x, y, w, h, r) {
+    c.beginPath();
+    if (typeof c.roundRect === 'function') { c.roundRect(x, y, w, h, r); return; }
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+  }
+
+  // Small, unobtrusive build tag, in a rounded pill just inside the plot's right
+  // edge of the bottom margin. Drawn from within frame() — after the frameBg it
+  // sits on, but *before* frame()'s vertical time labels, so those overprint the
+  // pill (its background never hides a "now"-adjacent time reading).
   function versionTag() {
     var tag = 'timeseries.js ' + VERSION;
     c.save();
     c.font = '8px sans-serif';
-    var w = c.measureText(tag).width;
-    var y1 = canvas.height - 3;
-    versionTagRect = { x0: 3, y0: y1 - 8, x1: 3 + w, y1: y1 };
-    c.globalAlpha = 0.35;
+    var padX = 6, padY = 3, r = 4;
+    var boxW = Math.ceil(c.measureText(tag).width) + 2 * padX;
+    var boxH = 8 + 2 * padY;
+    var boxX = canvas.width - margin.right - boxW - 4;  // just inside the right edge
+    var boxY = canvas.height - 3 - boxH;
+    versionTagRect = { x0: boxX, y0: boxY, x1: boxX + boxW, y1: boxY + boxH };
+    // A translucent white wash reads as "slightly lighter" composited over
+    // whatever frameBg the active theme paints (light, dark, sepia, high
+    // contrast), and the faint outline/text follow the theme text colour — so
+    // the pill re-themes for free with ts.setColors().
+    roundRectPath(boxX, boxY, boxW, boxH, r);
+    c.fillStyle = 'rgba(255,255,255,0.22)';
+    c.fill();
+    c.globalAlpha = 0.30;
+    c.strokeStyle = settings.colors.text;
+    c.stroke();
+    c.globalAlpha = 0.55;
     c.fillStyle = settings.colors.text;
     c.textAlign = 'left';
-    c.textBaseline = 'bottom';
-    c.fillText(tag, versionTagRect.x0, y1);
+    c.textBaseline = 'middle';
+    c.fillText(tag, boxX + padX, boxY + boxH / 2 + 0.5);
     c.restore();
   }
 

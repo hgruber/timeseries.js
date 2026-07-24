@@ -337,6 +337,12 @@ function quantilebands(plot, rctx) {
   var npct = pct.length;
   if (npct < 2) return;
   if (plot.category === 'point') return;        // binned series only
+  // Cross-fade factor set by prepare_grid when two adjacent resolutions
+  // (e.g. Zabbix history vs. trends) overlap at the switch threshold: the
+  // outgoing block draws at reduced alpha so the swap is not a hard pop.
+  // Absent (the steady state) it is 1 — no visual change.
+  var fade = plot._fade == null ? 1 : plot._fade;
+  if (fade <= 0) return;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   var half = step / 2;
@@ -348,7 +354,7 @@ function quantilebands(plot, rctx) {
     // Fills: one polygon per band segment, broken on slot gaps so disjoint
     // runs don't bridge across missing data.
     for (var j = 0; j < npct - 1; j++) {
-      c.fillStyle = resolveColor(plot, id, bandAlpha(j, npct));
+      c.fillStyle = resolveColor(plot, id, bandAlpha(j, npct) * fade);
       var run = [];
       for (var si = 0; si <= slots.length; si++) {
         var v = si < slots.length ? plot.data[slots[si]][id] : undefined;
@@ -371,7 +377,7 @@ function quantilebands(plot, rctx) {
     // Lines: one polyline per percentile, gap-aware. Median bold and opaque.
     for (var jl = 0; jl < npct; jl++) {
       c.lineWidth = (jl === medianIdx) ? 2 : 1;
-      c.strokeStyle = resolveColor(plot, id, (jl === medianIdx) ? 0.9 : 0.55);
+      c.strokeStyle = resolveColor(plot, id, ((jl === medianIdx) ? 0.9 : 0.55) * fade);
       var started = false;
       c.beginPath();
       for (var sl = 0; sl < slots.length; sl++) {

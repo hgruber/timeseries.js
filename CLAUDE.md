@@ -40,13 +40,13 @@ NOTE explaining the choice: `period()` (duration formatter) and `fog_of_future()
 is the only consumer of `settings.colors.future`, defined by every theme). Either wire
 them up or delete them — don't let them rot silently.
 
-**Dev without building**: `demo/caldav.html` uses `<script type="module">` and imports
-directly from `src/`, so it needs no build step. `demo/index.html` does **not** — it loads
+**Dev without building**: `demo/caldav.html` and `demo/zabbix.html` use `<script type="module">`
+and import directly from `src/`, so they need no build step. `demo/index.html` does **not** — it loads
 the IIFE bundle via `<script src="../dist/timeseries.js">`, so changes to `src/` only show
 up there after `npm run build` (or with `npm run watch` running). `dist/` is gitignored;
 the Pages deploy in `.github/workflows/deploy.yml` builds it in CI. Because `caldav.html`
-imports `src/` directly even in production, that workflow also copies `src/` into the
-deploy folder alongside `demo/` and `dist/` — otherwise the live `caldav.html` 404s on its
+and `zabbix.html` import `src/` directly even in production, that workflow also copies `src/`
+into the deploy folder alongside `demo/` and `dist/` — otherwise those pages 404 on their
 `../src/*.js` imports.
 
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
@@ -108,7 +108,11 @@ drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
 (bounded growth of `data[]` under a polling source), `test/series.test.mjs`
 (series enumeration, visibility, y-axis rescaling, point hit test),
 `test/keyboard.test.mjs` (focusability, arrow-key paging), `test/offset.test.mjs`
-(hit testing survives the canvas moving in the viewport — see below).
+(hit testing survives the canvas moving in the viewport — see below),
+`test/zabbix.test.mjs` (the zoom-adaptive Zabbix source: the pure ring helpers
+`zabbixFold`/`zabbixEvict`/`zabbixPlot`/`zabbixWindow`/`zabbixPrimaryTier`, the
+`prepare_grid` history↔trends cross-fade `_fade`, and the source end-to-end over a stubbed
+`XMLHttpRequest` — trends→band, ±50% prefetch skip, and the out-of-order sequence guard).
 
 **Pointer coordinates**: mouse/touch events carry viewport-relative `clientX/clientY`.
 `refreshOffset()` re-reads `canvas.getBoundingClientRect()` at the start of every pointer
@@ -136,13 +140,18 @@ The project is on a fixed `0.8.x` line; the patch number increments by exactly 1
 **every** commit — it's a build counter, not a semver signal. `package.json`'s `version`
 is the source of truth; `src/version.js` mirrors it (`export const VERSION`) and is
 bundled as `TimeSeries.VERSION`, and the canvas itself draws a small `timeseries.js
-0.8.N` tag in the bottom-left frame margin (`versionTag()` in `timeseries.js`, drawn
-right after `frame()`) — low-alpha, 8px, unobtrusive by design. It's clickable: hovering
-it swaps the cursor to `pointer` and a click opens the repo
+0.8.N` tag in a rounded pill in the bottom margin, just inside the plot's right edge
+(`versionTag()` in `timeseries.js`) — 8px, low-alpha, unobtrusive by design. The pill's
+fill is a translucent white wash (reads as "slightly lighter" over whatever `frameBg`
+the theme paints) with a faint `colors.text` outline, so it re-themes for free.
+`versionTag()` is called from *within* `frame()`, after the `frameBg` it sits on but
+**before** frame()'s vertical time labels, so those overprint the pill rather than being
+hidden by its background — keep it in that spot if you touch `frame()`. It's clickable:
+hovering it swaps the cursor to `pointer` and a click opens the repo
 (`https://github.com/hgruber/timeseries.js`) in a new tab. `versionTag()` measures its
-own text and stores the box in `versionTagRect`; `hitVersionTag()` (used by both
+own text and stores the pill box in `versionTagRect`; `hitVersionTag()` (used by both
 `onmousemove` for the cursor and `onmouseup` for the click) reads that same rect rather
-than re-deriving it, so hit area and drawn text can't drift apart.
+than re-deriving it, so hit area and drawn box can't drift apart.
 
 The bump is automatic: `hooks/pre-commit` runs `node scripts/bump-version.mjs`, which
 increments the patch component in `package.json` and rewrites `src/version.js` to
@@ -286,6 +295,48 @@ refetch.
 Demo: `demo/caldav.html`. With no server configured it parses the static fixtures in
 `demo/fixtures/` (shifted onto the current week), so the renderer and parser are testable with no
 infrastructure.
+
+### Zabbix source — zoom-adaptive history/trends
+
+```js
+{ 'source-type': 'zabbix',
+  url, username, password, 'auth-token',           // see src/jpZabbix.js (token skips login)
+  itemids: [itemid, …],                            // each item is one band series
+  'value-type': 0,                                 // history.get value type (0 float, 3 unsigned)
+  'history-interval': 60,                          // fine tier bucket seconds
+  tiers: [{interval, kind:'history'|'trends'}],    // optional; default 60s history + 3600s trends
+  padding: 0.5,                                    // prefetch fraction fetched either side
+  series_colors: { [itemid]: cssColor }, name }
+```
+
+Two (or more) **resolution tiers coexist as `quantile-bands` plots that differ only in
+`interval`**. Both `history` (raw, binned to min/avg/max per bucket) and `trends` (Zabbix's
+hourly `value_min/avg/max`) map to the **same `[min, avg, max]` band shape**, so history draws
+as a single line (min=avg=max at ~1 sample/bucket) and trends as a filled band — via the one
+`quantile-bands` renderer. The core's `prepare_grid` picks the finest tier whose buckets are
+≥ 2px per zoom (the same rule the source uses to decide what to fetch, `zabbixPrimaryTier`),
+so no extra switch logic is needed. `jpZabbix.api()` is generic, so `trends.get` needs no
+client change.
+
+Each tier is a **self-managed ring cache** (mirrors the CalDAV pattern): one `replaceData`
+block, prefetching ±`padding` around the viewport, refetched via `onViewportChange` only when
+the *viewport* nears the fetched edge, stale responses dropped by sequence number. The ring
+(`Map<slot, {[itemid]:{mn,av,mx,n}}>`) retains **multiple visited windows** so panning back is
+instant, and is bounded by `ZBX_MAX_SLOTS`, evicting the slots farthest from the viewport
+centre. The pure ring helpers (`zabbixPrimaryTier`, `zabbixWindow`, `zabbixClearRange`,
+`zabbixFold`, `zabbixEvict`, `zabbixPlot`) are **exported from `src/sources.js`** for testing.
+
+**Cross-fade at the switch.** When zooming out, a tier's bars drop below the 2px threshold and
+the coarser tier takes over. Rather than a hard pop, `prepare_grid`'s interval-selection keeps
+both adjacent intervals in `activePlot` across a 2px→1px band and stamps `plot._fade` (outgoing
+`1 → 0`, incoming `0 → 1`); the `quantile-bands` renderer multiplies every alpha by
+`plot._fade ?? 1` (1 in the steady state, so no other renderer is affected). Prefetch means the
+incoming tier is already cached, so the dissolve never waits on the network.
+
+Demo: `demo/zabbix.html`. With no server configured it installs a synthetic
+`api_jsonrpc.php` (a fake `XMLHttpRequest` answering `history.get`/`trends.get` with a generated
+signal), so the **real** `zabbix` source — login flow, tiering, prefetch, ring, cross-fade —
+runs unchanged with no infrastructure.
 
 ### Public API (TimeSeries instance)
 
