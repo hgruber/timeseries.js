@@ -456,6 +456,7 @@
                 <!-- /.controls -->
                 <div class="chart-footer">
                     <span>Scroll to zoom &nbsp;·&nbsp; Drag to pan &nbsp;·&nbsp; Click labels to navigate &nbsp;·&nbsp; Pinch to zoom on touch &nbsp;·&nbsp;
+                        Hourly and minute resolution cross-fade as you zoom &nbsp;·&nbsp;
                         <a href="https://github.com/hgruber/timeseries.js">on github.com</a></span>
                     <div class="legend">
                         <span class="legend-item">
@@ -597,7 +598,13 @@
         <script src="../dist/timeseries.js"></script>
         <script src="./artificial.js"></script>
         <script>
-    window.ts = new TimeSeries({ canvas: 'timeseries', sources: [artificial], group: 'demo' });
+    // Two tiers of the same signal (1 h and 1 min): the chart picks whichever
+    // gives readable bars at the current zoom and cross-fades at the switch.
+    window.ts = new TimeSeries({
+      canvas: 'timeseries',
+      sources: [artificialHourly, artificialFine],
+      group: 'demo',
+    });
     ts.onStop(function () { setLive(null); });
     ts.onFollow(setLive);
 

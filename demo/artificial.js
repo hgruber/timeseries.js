@@ -1,3 +1,4 @@
+/* global TimeSeries */
 function gauss(x, a, s) {
   return Math.exp(-(x - a) * (x - a) / s);
 }
@@ -30,6 +31,29 @@ var artificial = {
   "interval_end": _intervalEnd,
   "data": artificialData
 }
+
+// ── Two resolution tiers of the same data (zoom-adaptive cross-fade) ─────────
+//
+// The core keeps blocks of differing `interval` side by side and dissolves
+// between them as the bars cross ~2px wide, so the day view shows readable
+// hourly bars that resolve into the 1440 minute bars as you zoom in.
+//
+// A separate object rather than `artificial` itself: pushData stores the block
+// by reference, and `artificial` is already driving the gallery card below —
+// two charts must not share mutable render state (`_fade`, `interval_end`).
+//
+// `mean`, not the default `sum`: the point here is the dissolve, and averaging
+// keeps both tiers on the same y-scale so the eye follows the bar widths rather
+// than a change of unit.
+
+var artificialFine = Object.assign({}, artificial, {
+  name: "example stacked bars (1 min)",
+});
+
+var artificialHourly = Object.assign(
+  TimeSeries.rollupBinned(artificialFine, 3600, { agg: 'mean' }),
+  { "source-type": "artificial", name: "example stacked bars (1 h)" },
+);
 
 // ── BinnedSeries variants (same slot-indexed data, different renderer type) ──
 

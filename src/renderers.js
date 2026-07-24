@@ -52,21 +52,46 @@ function coalesceBlocks(group, data) {
 }
 
 /**
+ * Cross-fade factor a block is currently drawn at. prepare_grid stamps `_fade`
+ * on both blocks involved in a resolution switch (outgoing 1 → 0, incoming
+ * 0 → 1, summing to 1 across the band); everywhere else it is 1.
+ */
+function fadeOf(plot) {
+  return (plot && plot._fade != null) ? plot._fade : 1;
+}
+
+/**
  * Draw all active plots using their registered renderers. A renderer may set
  * `coalesce(plot) -> key`; active blocks of the same type sharing that key are
  * merged (see coalesceBlocks) and drawn once, so connected renderers stay
  * continuous across the separate fetch blocks stored in `data`.
+ *
+ * The cross-fade is applied here rather than inside each renderer: `globalAlpha`
+ * multiplies the source alpha of every drawing op, which is exactly what a
+ * renderer would otherwise do by hand to each of its own colours — so every
+ * renderer, including third-party ones, gets the resolution dissolve for free
+ * and none of them has to know `_fade` exists.
  */
 export function plotData(activePlot, data, rctx) {
+  var c = rctx.c;
   var done = null;
-  for (const i of activePlot) {
+  // Faintest first: a block at _fade 0.1 painted *over* its 0.9 counterpart
+  // would wash the dominant one out. Without an explicit order this would be
+  // decided by push order, i.e. by which fetch happened to land first.
+  var order = activePlot.slice().sort(function (a, b) {
+    return fadeOf(data[a]) - fadeOf(data[b]);
+  });
+  for (const i of order) {
     if (done && done.has(i)) continue;
     const plugin = registry.get(data[i].type);
     if (!plugin) { console.warn('TimeSeries: unknown plot type', data[i].type); continue; }
+    var fade = fadeOf(data[i]);
+    if (fade <= 0) continue;
+    if (fade < 1) c.globalAlpha = fade;
     if (plugin.coalesce) {
       var key = plugin.coalesce(data[i]);
       var group = [];
-      for (const j of activePlot)
+      for (const j of order)
         if (data[j].type === data[i].type && plugin.coalesce(data[j]) === key) {
           group.push(j);
           (done || (done = new Set())).add(j);
@@ -75,15 +100,23 @@ export function plotData(activePlot, data, rctx) {
     } else {
       plugin.draw(data[i], rctx);
     }
+    if (fade < 1) c.globalAlpha = 1;
   }
 }
 
 /**
  * Highlight a specific data point using the registered renderer's highlight handler.
+ * Faded the same way plotData fades the block itself, so a highlight mid-dissolve
+ * does not sit at full opacity on top of a half-faded bar.
  */
 export function highlight(plot, n, item, rctx) {
   const plugin = registry.get(plot.type);
-  if (plugin && plugin.highlight) plugin.highlight(plot, n, item, rctx);
+  if (!plugin || !plugin.highlight) return;
+  var fade = fadeOf(plot);
+  if (fade <= 0) return;
+  if (fade < 1) rctx.c.globalAlpha = fade;
+  plugin.highlight(plot, n, item, rctx);
+  if (fade < 1) rctx.c.globalAlpha = 1;
 }
 
 export function seriesColor(i, t) {
@@ -337,12 +370,8 @@ function quantilebands(plot, rctx) {
   var npct = pct.length;
   if (npct < 2) return;
   if (plot.category === 'point') return;        // binned series only
-  // Cross-fade factor set by prepare_grid when two adjacent resolutions
-  // (e.g. Zabbix history vs. trends) overlap at the switch threshold: the
-  // outgoing block draws at reduced alpha so the swap is not a hard pop.
-  // Absent (the steady state) it is 1 — no visual change.
-  var fade = plot._fade == null ? 1 : plot._fade;
-  if (fade <= 0) return;
+  // The resolution cross-fade (history vs. trends) is applied by plotData via
+  // globalAlpha — nothing to do here beyond drawing at the normal alphas.
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   var half = step / 2;
@@ -354,7 +383,7 @@ function quantilebands(plot, rctx) {
     // Fills: one polygon per band segment, broken on slot gaps so disjoint
     // runs don't bridge across missing data.
     for (var j = 0; j < npct - 1; j++) {
-      c.fillStyle = resolveColor(plot, id, bandAlpha(j, npct) * fade);
+      c.fillStyle = resolveColor(plot, id, bandAlpha(j, npct));
       var run = [];
       for (var si = 0; si <= slots.length; si++) {
         var v = si < slots.length ? plot.data[slots[si]][id] : undefined;
@@ -377,7 +406,7 @@ function quantilebands(plot, rctx) {
     // Lines: one polyline per percentile, gap-aware. Median bold and opaque.
     for (var jl = 0; jl < npct; jl++) {
       c.lineWidth = (jl === medianIdx) ? 2 : 1;
-      c.strokeStyle = resolveColor(plot, id, ((jl === medianIdx) ? 0.9 : 0.55) * fade);
+      c.strokeStyle = resolveColor(plot, id, (jl === medianIdx) ? 0.9 : 0.55);
       var started = false;
       c.beginPath();
       for (var sl = 0; sl < slots.length; sl++) {

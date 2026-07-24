@@ -13,6 +13,7 @@ import { plotData as _plotData, highlight as _highlight, registerRenderer, serie
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
+import { rollupBinned } from './rollup.js';
 import { attachTooltip } from './tooltip.js';
 import { attachLegend } from './legend.js';
 import { VERSION } from './version.js';
@@ -1558,6 +1559,10 @@ export default function TimeSeries(options) {
       // quantile-bands store an array per series, not a stackable scalar;
       // they have no per-bar hit target, so skip hit-testing them.
       if (data[i].type === 'quantile-bands') continue;
+      // Mid-cross-fade both resolutions are active and overlap. Only the
+      // dominant one is hittable, so the tooltip follows what is actually
+      // visible instead of whichever tier happens to sit first in activePlot.
+      if (data[i]._fade != null && data[i]._fade < 0.5) continue;
       if (
         data[i].interval_start * 1000 <= t &&
         t <= data[i].interval_end * 1000
@@ -1749,10 +1754,33 @@ export default function TimeSeries(options) {
       // Cross-fade band, in px of bar width: as a resolution's bars shrink
       // past FADE_HI while zooming out it stops being `best`, but we keep
       // drawing it (fading out) until FADE_LO so the swap to the coarser tier
-      // is a dissolve, not a pop. Read by the quantile-bands renderer via
-      // plot._fade; ignored by renderers that don't set it.
+      // is a dissolve, not a pop. Published as plot._fade and applied centrally
+      // by plotData() via globalAlpha, so every renderer dissolves alike and
+      // none of them has to know about it.
       var FADE_HI = 2, FADE_LO = 1;
       var m;
+      // Replace the y-extents of the two tiers taking part in a cross-fade with
+      // a single value interpolated by the same progress that drives their
+      // alphas. Without this the ratio-weighted blend further down picks the
+      // taller tier outright as soon as both cover the viewport — so a coarse
+      // tier holding sums (60× the fine values) would snap the axis at the very
+      // *start* of the dissolve and squash the outgoing bars to a sliver.
+      // Writing the same number to both entries makes that downstream blend a
+      // no-op, whichever of the two it ends up choosing.
+      function blendExtents(arr, incoming, outgoing, prog) {
+        var eIn = 0, eOut = 0, e;
+        for (e = 0; e < arr.length; e++) {
+          if (incoming.indexOf(arr[e][0]) !== -1) {
+            if (arr[e][1] > eIn) eIn = arr[e][1];
+          } else if (outgoing.indexOf(arr[e][0]) !== -1) {
+            if (arr[e][1] > eOut) eOut = arr[e][1];
+          }
+        }
+        var v = prog * eIn + (1 - prog) * eOut;
+        for (e = 0; e < arr.length; e++)
+          if (incoming.indexOf(arr[e][0]) !== -1 || outgoing.indexOf(arr[e][0]) !== -1)
+            arr[e][1] = v;
+      }
       for (t in byType) {
         var ivs = byType[t];
         var keys = Object.keys(ivs).map(Number).sort(function (a, b) { return a - b; });
@@ -1805,6 +1833,13 @@ export default function TimeSeries(options) {
             for (m = 0; m < ivs[keys[k]].length; m++)
               activePlot[ivs[keys[k]][m]] = -1;
           }
+        }
+        if (fadeIv !== null) {
+          var inIdx = [], outIdx = [];
+          for (m = 0; m < ivs[best].length; m++) inIdx.push(activePlot[ivs[best][m]]);
+          for (m = 0; m < ivs[fadeIv].length; m++) outIdx.push(activePlot[ivs[fadeIv][m]]);
+          blendExtents(ymax_array, inIdx, outIdx, fadeProg);
+          blendExtents(ymin_array, inIdx, outIdx, fadeProg);
         }
       }
       if (activePlot.indexOf(-1) !== -1) {
@@ -2515,6 +2550,9 @@ export default function TimeSeries(options) {
     return { tmin: rT(margin.left), tmax: rT(margin.left + plotWidth) };
   };
   this.getViewport = function () { return { tmin: tmin, tmax: tmax, ppms: ppms }; };
+  // Vertical counterpart to getViewport: the value range the y-axis currently
+  // spans, after hidden series and any resolution cross-fade are accounted for.
+  this.getValueRange = function () { return { ymin: ymin, ymax: ymax }; };
   this.getPlotArea = function () { return { margin: margin, plotWidth: plotWidth, plotHeight: plotHeight }; };
   // Overlays need the element to track the pointer against; the core resolves
   // it from settings.canvas and is the only one that knows which it got.
@@ -2662,6 +2700,7 @@ TimeSeries.resolveColor = resolveColor;
 TimeSeries.attachTooltip = attachTooltip;
 TimeSeries.attachLegend = attachLegend;
 TimeSeries.lttb = lttb;
+TimeSeries.rollupBinned = rollupBinned;
 TimeSeries.siFormat = siFormat;
 TimeSeries.VERSION = VERSION;
 

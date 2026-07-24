@@ -126,7 +126,14 @@ drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
 `test/zabbix.test.mjs` (the zoom-adaptive Zabbix source: the pure ring helpers
 `zabbixFold`/`zabbixEvict`/`zabbixPlot`/`zabbixWindow`/`zabbixPrimaryTier`, the
 `prepare_grid` history↔trends cross-fade `_fade`, and the source end-to-end over a stubbed
-`XMLHttpRequest` — trends→band, ±50% prefetch skip, and the out-of-order sequence guard).
+`XMLHttpRequest` — trends→band, ±50% prefetch skip, and the out-of-order sequence guard),
+`test/rollup.test.mjs` (`rollupBinned`: every `agg`, epoch-gridded buckets, sparse means,
+non-mutation, and the shapes it refuses), and `test/crossfade.test.mjs` (the generic tier
+dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
+`multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
+the band, and the hit test following the dominant tier). The renderer-level assertions there
+use a **recording 2D context** defined in the test file — the Proxy context in
+`test/helpers/dom.mjs` is a pure no-op and cannot report the alpha a draw call ran at.
 
 **Pointer coordinates**: mouse/touch events carry viewport-relative `clientX/clientY`.
 `refreshOffset()` re-reads `canvas.getBoundingClientRect()` at the start of every pointer
@@ -188,13 +195,16 @@ any other hook.
 | `tooltip.js` | `attachTooltip()` — shipped opt-in hover overlay (see below) |
 | `legend.js` | `attachLegend()` — shipped opt-in series-visibility legend overlay (see below) |
 | `intervals.js` | Six standalone interval-arithmetic utility functions (no global side effects) |
+| `rollup.js` | `rollupBinned()` — pure helper deriving a coarser resolution tier from a binned block |
 | `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline`, `multipoint` |
 | `gantt.js` | `gantt` renderer + `layoutSpans()` row packing for `category: 'span'` plots |
 | `sources.js` | Data source plugin registry + built-in adapters: `zabbix`, `artificial`, `caldav` |
 | `jpZabbix.js` | Standalone Zabbix JSON-RPC client (Promise-based, reusable independently) |
 | `caldav.js` | Standalone CalDAV client + iCalendar parser (Promise-based, reusable independently) |
 
-`demo/artificial.js` — demo data generator (Gaussian-shaped multibar dataset), not part of the library.
+`demo/artificial.js` — demo data generator (Gaussian-shaped multibar dataset), not part of the
+library. It also derives an hourly tier from the minute data via `TimeSeries.rollupBinned`, so
+`demo/index.html`'s main chart shows the resolution cross-fade below.
 
 ### Main constructor (`src/timeseries.js`)
 
@@ -310,6 +320,47 @@ Demo: `demo/caldav.html`. With no server configured it parses the static fixture
 `demo/fixtures/` (shifted onto the current week), so the renderer and parser are testable with no
 infrastructure.
 
+### Resolution tiers and the cross-fade (any renderer)
+
+Blocks of the **same `type` differing only in `interval`** are kept side by side by `pushData`
+and treated by `prepare_grid` as resolution tiers of one signal. Per frame it picks the finest
+tier whose bars are at least `FADE_HI` (2px) wide; as that tier shrinks past the threshold the
+coarser one takes over. Rather than a hard pop, both stay in `activePlot` across a 2px→1px band
+and each is stamped with `plot._fade` (outgoing `1 → 0`, incoming `0 → 1`, summing to 1).
+
+Two things make that dissolve actually look right, and both are **generic — not Zabbix- or
+renderer-specific**:
+
+- **`plotData()` applies `_fade` via `c.globalAlpha`** around each `plugin.draw()` call
+  (`src/renderers.js`), so every renderer — `multibar`, `multiline`, `quantile-bands`, and any
+  third-party one — gets the dissolve without knowing `_fade` exists. Do **not** reintroduce a
+  per-renderer `* fade` on colour alphas; it would double up with `globalAlpha`. Blocks are
+  drawn faintest-first, so the nearly-invisible tier can never wash out the dominant one.
+  `highlight()` is wrapped the same way. A renderer that sets `globalAlpha` itself must restore
+  it to the value it found, not to `1`.
+- **`prepare_grid` interpolates the y-extent across the band.** The two tiers may sit on very
+  different value scales (a `sum` rollup: hourly bars are 60× the minute bars). The
+  ratio-weighted `ymax_array` blend would otherwise pick the taller tier outright the moment
+  both cover the viewport, snapping the axis at the *start* of the dissolve and squashing the
+  outgoing bars to a sliver. `blendExtents()` overwrites both tiers' extents with
+  `fadeProg * E_incoming + (1 - fadeProg) * E_outgoing`, so the axis travels with the fade.
+
+The hit test in `get_element` skips blocks at `_fade < 0.5`, so mid-dissolve the tooltip follows
+the tier that is visually dominant rather than whichever landed first in `activePlot`.
+
+`setRenderInterval(iv)` pins one interval and disables the cross-fade entirely — the GUI then
+owns the transition policy.
+
+**Producing a second tier**: `TimeSeries.rollupBinned(plot, coarseInterval, { agg })`
+(`src/rollup.js`) derives a coarser block from a fine one. Pure and non-mutating, like `lttb`.
+`coarseInterval` must be an integer multiple of `plot.interval`; buckets are gridded on absolute
+epoch time (not on the block's slot 0) so separately fetched blocks land on the same coarse
+boundaries. `agg` is `'sum'` (default) | `'mean'` | `'max'` | `'min'` | `fn(values, seriesId, slot)`;
+`'mean'` divides by the fine slots actually present, not by the bucket ratio. Binned scalar
+blocks only — `category: 'point'`/`'span'` and array-valued (`quantile-bands`) blocks return
+`null`. Note that `'sum'` is right for counts but changes the effective axis unit across the
+dissolve ("per minute" → "per hour"); `'mean'` keeps both tiers on one scale.
+
 ### Zabbix source — zoom-adaptive history/trends
 
 ```js
@@ -340,12 +391,9 @@ instant, and is bounded by `ZBX_MAX_SLOTS`, evicting the slots farthest from the
 centre. The pure ring helpers (`zabbixPrimaryTier`, `zabbixWindow`, `zabbixClearRange`,
 `zabbixFold`, `zabbixEvict`, `zabbixPlot`) are **exported from `src/sources.js`** for testing.
 
-**Cross-fade at the switch.** When zooming out, a tier's bars drop below the 2px threshold and
-the coarser tier takes over. Rather than a hard pop, `prepare_grid`'s interval-selection keeps
-both adjacent intervals in `activePlot` across a 2px→1px band and stamps `plot._fade` (outgoing
-`1 → 0`, incoming `0 → 1`); the `quantile-bands` renderer multiplies every alpha by
-`plot._fade ?? 1` (1 in the steady state, so no other renderer is affected). Prefetch means the
-incoming tier is already cached, so the dissolve never waits on the network.
+**Cross-fade at the switch** is the generic tier mechanism described above — the Zabbix source
+adds nothing to it beyond making sure the data is there: prefetch means the incoming tier is
+already cached, so the dissolve never waits on the network.
 
 Demo: `demo/zabbix.html`. With no server configured it installs a synthetic
 `api_jsonrpc.php` (a fake `XMLHttpRequest` answering `history.get`/`trends.get` with a generated
@@ -354,10 +402,13 @@ runs unchanged with no infrastructure.
 
 ### Public API (TimeSeries instance)
 
-`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`, `ts.getSeries()`, `ts.setSeriesHidden(id, bool)`, `ts.toggleSeries(id)`, `ts.showAllSeries()`, `ts.onSeriesChange(fn)`, `ts.onColorsChange(fn)`, `ts.getCanvas()`
+`ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`, `ts.getSeries()`, `ts.setSeriesHidden(id, bool)`, `ts.toggleSeries(id)`, `ts.showAllSeries()`, `ts.onSeriesChange(fn)`, `ts.onColorsChange(fn)`, `ts.getCanvas()`,
+`ts.getViewport()` / `ts.getValueRange()` (the horizontal and vertical range currently drawn —
+`getValueRange` reflects hidden series and any tier cross-fade)
 
 Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts)`,
-`TimeSeries.resolveColor(plot, id, alpha)`.
+`TimeSeries.resolveColor(plot, id, alpha)`,
+`TimeSeries.rollupBinned(plot, coarseInterval, opts)`.
 
 ### DOM overlays: the tooltip and legend are the shipped exceptions
 
@@ -462,8 +513,8 @@ arithmetic — which only rolls to the next day when the added hour count overfl
 midnight. A non-midnight-aligned rolling window (e.g. `last24()`) still uses `'hour'`.
 
 The statics `TimeSeries.registerRenderer` / `registerSource` / `seriesColor` / `lttb` /
-`siFormat` / `themes` live at module scope, so the IIFE build can call them **before**
-the first `new TimeSeries(...)`.
+`rollupBinned` / `siFormat` / `themes` live at module scope, so the IIFE build can call them
+**before** the first `new TimeSeries(...)`.
 
 ### Option merging
 
