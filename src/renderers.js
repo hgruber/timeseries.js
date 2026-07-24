@@ -61,6 +61,29 @@ function fadeOf(plot) {
 }
 
 /**
+ * Value multiplier a block is currently drawn at. prepare_grid stamps `_vscale`
+ * on every block from the rate unit set with setRateUnit() (1 everywhere else).
+ */
+function vscaleOf(plot) {
+  return (plot && plot._vscale != null) ? plot._vscale : 1;
+}
+
+/**
+ * Render context with the value axis rescaled by `s`. Both the value→pixel map
+ * and the pixels-per-value factor have to move together: a renderer draws a
+ * stacked bar as a rect from `Y(base)` of height `-ppv * v`, and scaling only
+ * one of the two would detach the bar from its own baseline.
+ */
+function scaledCtx(rctx, s) {
+  if (s === 1) return rctx;
+  var Y0 = rctx.Y;
+  return Object.assign({}, rctx, {
+    Y: function (v) { return Y0(v * s); },
+    ppv: rctx.ppv * s,
+  });
+}
+
+/**
  * Draw all active plots using their registered renderers. A renderer may set
  * `coalesce(plot) -> key`; active blocks of the same type sharing that key are
  * merged (see coalesceBlocks) and drawn once, so connected renderers stay
@@ -88,6 +111,12 @@ export function plotData(activePlot, data, rctx) {
     var fade = fadeOf(data[i]);
     if (fade <= 0) continue;
     if (fade < 1) c.globalAlpha = fade;
+    // The rate scale rides on the render context for the same reason the fade
+    // rides on globalAlpha: it is a property of the block, not of the renderer,
+    // and every renderer would otherwise have to multiply it into each of its
+    // own value→pixel calls by hand. Blocks that coalesce share an interval
+    // (the coalesce key carries it), so they share a scale too.
+    var vctx = scaledCtx(rctx, vscaleOf(data[i]));
     if (plugin.coalesce) {
       var key = plugin.coalesce(data[i]);
       var group = [];
@@ -96,9 +125,9 @@ export function plotData(activePlot, data, rctx) {
           group.push(j);
           (done || (done = new Set())).add(j);
         }
-      plugin.draw(coalesceBlocks(group, data), rctx);
+      plugin.draw(coalesceBlocks(group, data), vctx);
     } else {
-      plugin.draw(data[i], rctx);
+      plugin.draw(data[i], vctx);
     }
     if (fade < 1) c.globalAlpha = 1;
   }
@@ -115,7 +144,7 @@ export function highlight(plot, n, item, rctx) {
   var fade = fadeOf(plot);
   if (fade <= 0) return;
   if (fade < 1) rctx.c.globalAlpha = fade;
-  plugin.highlight(plot, n, item, rctx);
+  plugin.highlight(plot, n, item, scaledCtx(rctx, vscaleOf(plot)));
   if (fade < 1) rctx.c.globalAlpha = 1;
 }
 

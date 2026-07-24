@@ -132,9 +132,14 @@ non-mutation, and the shapes it refuses), and `test/crossfade.test.mjs` (the gen
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
 the band, the hit test following the dominant tier, and `fadeHi`/`fadeLo`/`setFadeBand`
-moving the switch point). The renderer-level assertions there
+moving the switch point), and `test/rate.test.mjs` (the rate axis: `_vscale` through
+`plotData` for each renderer, the `extensive` opt-in, both tiers landing on one extent across
+the whole band, the hit test returning raw values, and the unit-swap dissolve). The
+renderer-level assertions there
 use a **recording 2D context** defined in the test file — the Proxy context in
 `test/helpers/dom.mjs` is a pure no-op and cannot report the alpha a draw call ran at.
+`rate.test.mjs` goes one step further and swaps `canvas.getContext` for a recording one
+*before* constructing, since the tick-set dissolve is only observable in what was drawn.
 
 **Pointer coordinates**: mouse/touch events carry viewport-relative `clientX/clientY`.
 `refreshOffset()` re-reads `canvas.getBoundingClientRect()` at the start of every pointer
@@ -279,6 +284,10 @@ Renderers receive a `plot` object with:
 `plot.category` selects between three shapes: the binned default (above), `'point'`
 (`data` is an array of `{t, values}`, extent from `plot.tmin`/`tmax`), and `'span'`.
 
+An optional `extensive: true` marks the values as amounts accumulated over the bin (counts,
+sums) rather than already per-unit (averages, percentiles, gauges) — see the rate axis below.
+It is inert unless `setRateUnit()` is in use.
+
 ### Span plots (`category: 'span'`) and the gantt renderer
 
 Spans are for data with arbitrary start/end pairs — calendar events, jobs, outages — where bar
@@ -370,7 +379,40 @@ boundaries. `agg` is `'sum'` (default) | `'mean'` | `'max'` | `'min'` | `fn(valu
 `'mean'` divides by the fine slots actually present, not by the bucket ratio. Binned scalar
 blocks only — `category: 'point'`/`'span'` and array-valued (`quantile-bands`) blocks return
 `null`. Note that `'sum'` is right for counts but changes the effective axis unit across the
-dissolve ("per minute" → "per hour"); `'mean'` keeps both tiers on one scale.
+dissolve ("per minute" → "per hour"); `'mean'` keeps both tiers on one scale, and so does the
+rate axis below.
+
+### The rate axis — `setRateUnit(seconds, opts)`
+
+The cross-fade above dissolves the two tiers into each other, but it cannot make them the same
+*size*. When a block's values are amounts accumulated over the bin — counts, `'sum'` rollups —
+the coarse tier's bars are `interval ratio` times the fine tier's (60× on a 60s→3600s ladder).
+`prepare_grid`'s `blendExtents()` then has to travel the axis across the band, so the bars
+visibly breathe through what should be a plain resolution swap.
+
+`ts.setRateUnit(seconds)` draws such blocks **per `seconds`** rather than per bin. Per second the
+two tiers hold the same number, so they draw at the same height and the axis stands still; the
+tier switch is left to change only what is *printed* on the axis. `null` (the default) is off, so
+nothing changes for a consumer that does not ask.
+
+- **Opt-in per block**, via `plot.extensive = true`. The host is the only one who knows whether a
+  value is extensive (a count, a sum) or already intensive (an average, a percentile, a gauge) —
+  scaling an average by the bin length would be simply wrong. Point/span blocks are never scaled.
+- **Applied centrally**, exactly like `_fade`: `prepare_grid` stamps `plot._vscale` and measures
+  the y-extent in drawn space; `plotData()` (`src/renderers.js`) hands each renderer a render
+  context with `Y` and `ppv` scaled by it. Every renderer, including third-party ones, gets the
+  rate axis without knowing it exists. Do **not** multiply `_vscale` into a renderer's own
+  arithmetic — it would double up. Note both `Y` *and* `ppv` are scaled: a stacked bar is drawn
+  from `Y(base)` with height `-ppv * v`, and scaling one without the other detaches the bar from
+  its own baseline.
+- **The hit test scales the stack but returns the raw value**, so a tooltip or drill-down still
+  reports the amount in the bin rather than whatever unit the axis happens to show.
+- **The unit swap dissolves.** `opts.label` sets the axis unit text in the same call (one call, so
+  there is no ordering trap between the scale and its label), and `opts.transition` (ms) fades the
+  old tick set out while the new one fades in. The outgoing numbers keep the pixels they were
+  drawn at — `ymin`/`ymax` scale by exactly the ratio of the two units, so old tick value `v` is
+  drawn at `Y(v * factor)`. Only defined between two rate units; switching the rate axis on or off
+  rescales per block (each factor depends on that block's interval), so that always snaps.
 
 ### Zabbix source — zoom-adaptive history/trends
 
@@ -417,7 +459,8 @@ runs unchanged with no infrastructure.
 `ts.getViewport()` / `ts.getValueRange()` (the horizontal and vertical range currently drawn —
 `getValueRange` reflects hidden series and any tier cross-fade),
 `ts.setRenderInterval(iv)` / `ts.setFadeBand(hi, lo)` (resolution-tier policy — see the
-cross-fade section above)
+cross-fade section above), `ts.setRateUnit(seconds, opts)` / `ts.getRateUnit()` (rate axis —
+see the section above), `ts.setYAxisLabel(lbl)`
 
 Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts)`,
 `TimeSeries.resolveColor(plot, id, alpha)`,

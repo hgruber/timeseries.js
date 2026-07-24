@@ -429,6 +429,13 @@ export default function TimeSeries(options) {
   }
   var rctx = null; // render context, updated on each plotAll() call
   var renderInterval = null; // when set via setRenderInterval(), prepare_grid renders only blocks at this interval
+  // Rate axis (setRateUnit): seconds the y-axis is "per". While set, a block the
+  // host marked `extensive` is drawn as value * rateUnit / plot.interval, so
+  // resolution tiers holding accumulated amounts land on one common scale.
+  var rateUnit = null;
+  // Outgoing tick set during a rate-unit swap: { grid, label, factor, startT,
+  // dur, alpha }. See setRateUnit().
+  var yPrev = null;
   var _currentGroup = null;  // name of the viewport-sync group this instance belongs to
   var _syncing = false;      // true while applying a viewport broadcast from a peer
   var _suppressTick = false; // true when this instance is a non-leader in a group follow session
@@ -1581,18 +1588,23 @@ export default function TimeSeries(options) {
         var slot = data[i].data[n];
         if (!slot) continue;
         var dirs = data[i].series_directions;
+        // Stack arithmetic happens in drawn value space, so it carries the
+        // block's rate scale — but the value handed back is the raw one, so a
+        // tooltip or drill-down still reports the amount in the bin rather than
+        // whatever unit the axis happens to be showing.
+        var vs = data[i]._vscale != null ? data[i]._vscale : 1;
         var hUp = 0, hDown = 0;
         for (const [k, v] of Object.entries(slot)) {
           if (dirs && dirs[k] === 'down') {
-            if (py < -hDown && py >= -(hDown + v)) {
+            if (py < -hDown && py >= -(hDown + v * vs)) {
               return { plot: i, n: n, key: k, value: v };
             }
-            hDown += v;
+            hDown += v * vs;
           } else {
-            if (py >= hUp && py < hUp + v) {
+            if (py >= hUp && py < hUp + v * vs) {
               return { plot: i, n: n, key: k, value: v };
             }
-            hUp += v;
+            hUp += v * vs;
           }
         }
       }
@@ -1637,6 +1649,25 @@ export default function TimeSeries(options) {
     return (max - min) / (tmax - tmin);
   }
 
+  // Render-time value multiplier for a block, stamped onto it as `_vscale` by
+  // prepare_grid the same way `_fade` is, and applied centrally by plotData()
+  // (src/renderers.js) so no renderer has to know about it.
+  //
+  // With a rate unit set, a block whose values are amounts accumulated over the
+  // bin (`plot.extensive`) is drawn per rateUnit seconds instead of per bin. Two
+  // resolution tiers of one signal then draw at the same height — without it the
+  // coarser tier's bars are `interval ratio` times taller (60× on a 60s→3600s
+  // ladder) and the cross-fade has to travel the axis between them.
+  //
+  // Only meaningful for binned blocks: point/span plots have no bin length, and
+  // an intensive value (an average, a percentile) is already per-unit.
+  function vscaleOf(plot) {
+    if (rateUnit === null || !plot || !plot.extensive) return 1;
+    if (plot.category === 'point' || plot.category === 'span') return 1;
+    if (!plot.interval) return 1;
+    return rateUnit / plot.interval;
+  }
+
   // create grid array containing all time labels
   function prepare_grid() {
     ppms = plotWidth / (tmax - tmin);
@@ -1650,6 +1681,7 @@ export default function TimeSeries(options) {
     if (data.length)
       data.forEach((plot, i) => {
         if (!plot) return;
+        plot._vscale = vscaleOf(plot);
         var ptmin, ptmax;
         if (plot.category === 'span') {
           // Rows and the vertical extent come from the packing, which the
@@ -1742,8 +1774,12 @@ export default function TimeSeries(options) {
               }
             }
           }
-          ymax_array.push([i, vpUpMax || plot.max, pp]);
-          ymin_array.push([i, vpDownMax, pp]);
+          // The extent goes onto the axis in *drawn* value space, so it carries
+          // the block's rate scale — otherwise a rate-scaled block would be
+          // drawn at one size and measured at another.
+          var _up = vpUpMax || plot.max;
+          ymax_array.push([i, plot._vscale === 1 ? _up : _up * plot._vscale, pp]);
+          ymin_array.push([i, vpDownMax * plot._vscale, pp]);
         }
       });
     // For each plot type, keep only blocks at the best interval for the
@@ -1941,21 +1977,34 @@ export default function TimeSeries(options) {
       }
     }
 
+    // Advance the rate-unit swap before the margin is measured below: while it
+    // runs, both tick sets are on screen and the axis has to be wide enough for
+    // the wider of the two, or it twitches halfway through the dissolve.
+    if (yPrev) {
+      yPrev.alpha = 1 - Math.min(1, (Date.now() - yPrev.startT) / yPrev.dur);
+      if (yPrev.alpha <= 0) yPrev = null;
+      else scheduleAxisTransition();
+    }
+
     // Animate margin.left — width from actual ygrid label text so longest label touches canvas left
     var _yLabelW = 0;
-    if (ygrid.length > 0) {
-      c.font = yFont();
-      ygrid.forEach(function (item) {
+    c.font = yFont();
+    var _measureTicks = function (items) {
+      items.forEach(function (item) {
         var w = c.measureText(String(item.label)).width;
         if (w > _yLabelW) _yLabelW = w;
       });
-    }
+    };
+    if (ygrid.length > 0) _measureTicks(ygrid);
+    if (yPrev) _measureTicks(yPrev.grid);
     // If a yAxisLabel is set, it sits above the top grid line; include its width
-    if (_yLabel) {
-      c.font = yFont();
-      var _yw = c.measureText(_yLabel).width;
+    var _measureLabel = function (lbl) {
+      if (!lbl) return;
+      var _yw = c.measureText(lbl).width;
       if (_yw > _yLabelW) _yLabelW = _yw;
-    }
+    };
+    _measureLabel(_yLabel);
+    if (yPrev) _measureLabel(yPrev.label);
     // +4 preserves the existing 4px gap between label right-edge and axis line
     var margin_left_new = ygrid.length > 0 ? Math.ceil(_yLabelW) + 4 + basePad.left : basePad.left;
     if (!margin_left_initialized) {
@@ -2376,37 +2425,61 @@ export default function TimeSeries(options) {
       });
     if (label_level_alpha < 1) drawAxisLabels(label_level_prev, 1 - label_level_alpha);
     drawAxisLabels(label_level, label_level_alpha);
-    if (ygrid.length > 0 && ygrid_alpha > 0) {
-      c.globalAlpha = ygrid_alpha;
-      c.fillStyle = settings.colors.text;
-      c.font = yFont();
-      c.textAlign = "right";
-      c.textBaseline = "middle";
-      ygrid.forEach(function (item) {
-        // Skip labels whose tick value falls outside the visible y-range
-        // (e.g. the topmost tick rounded up past ymax).
-        if (item.y < ymin || item.y > ymax) return;
-        c.fillText(String(item.label), margin.left - 4, Y(item.y));
-      });
-      if (_yLabel) {
-        // Sit a full font_height above the top grid line so the topmost
-        // (center-aligned) tick label has clearance below the y-axis label.
-        c.textBaseline = "bottom";
-        c.fillText(_yLabel, margin.left - 4, margin.top - font_height);
-      }
-      c.globalAlpha = 1;
+    if (ygrid_alpha > 0) {
+      // Mid rate-unit swap the outgoing tick set is still on screen; it is drawn
+      // first so the incoming numbers sit on top of it.
+      if (yPrev)
+        drawYLabels(yPrev.grid, yPrev.label, ygrid_alpha * yPrev.alpha, yPrev.factor);
+      drawYLabels(ygrid, _yLabel, ygrid_alpha * (yPrev ? 1 - yPrev.alpha : 1), 1);
     }
   }
 
+  // Draws one y-axis tick set plus its unit label.
+  //
+  // `factor` rescales the tick *values* into the current value space. During a
+  // rate-unit swap the outgoing set keeps its printed numbers (they were right
+  // for the unit it names) but has to stay at the pixels it was drawn at —
+  // ymin/ymax have meanwhile scaled by exactly that factor, so tick value v now
+  // lands at Y(v * factor). Everything else passes 1.
+  function drawYLabels(items, unit, alpha, factor) {
+    if (!items.length || alpha <= 0) return;
+    c.globalAlpha = alpha;
+    c.fillStyle = settings.colors.text;
+    c.font = yFont();
+    c.textAlign = "right";
+    c.textBaseline = "middle";
+    items.forEach(function (item) {
+      // Skip labels whose tick value falls outside the visible y-range
+      // (e.g. the topmost tick rounded up past ymax).
+      var v = item.y * factor;
+      if (v < ymin || v > ymax) return;
+      c.fillText(String(item.label), margin.left - 4, Y(v));
+    });
+    if (unit) {
+      // Sit a full font_height above the top grid line so the topmost
+      // (center-aligned) tick label has clearance below the y-axis label.
+      c.textBaseline = "bottom";
+      c.fillText(unit, margin.left - 4, margin.top - font_height);
+    }
+    c.globalAlpha = 1;
+  }
+
   function yAxis() {
-    if (!ygrid.length || ygrid_alpha <= 0) return;
-    c.globalAlpha = ygrid_alpha;
+    if (ygrid_alpha <= 0) return;
+    if (yPrev) drawYLines(yPrev.grid, ygrid_alpha * yPrev.alpha, yPrev.factor);
+    drawYLines(ygrid, ygrid_alpha * (yPrev ? 1 - yPrev.alpha : 1), 1);
+  }
+
+  // Grid lines of one y-axis tick set. `factor` as in drawYLabels().
+  function drawYLines(items, alpha, factor) {
+    if (!items.length || alpha <= 0) return;
+    c.globalAlpha = alpha;
     c.strokeStyle = settings.colors.gridLineY;
-    ygrid.forEach(function (item) {
+    items.forEach(function (item) {
       // Span ticks sit at lane centres, where a grid line would cut straight
       // through the bars it labels.
       if (item.noline) return;
-      var y = Y(item.y);
+      var y = Y(item.y * factor);
       c.beginPath();
       c.moveTo(margin.left, y);
       c.lineTo(margin.left + plotWidth, y);
@@ -2690,6 +2763,47 @@ export default function TimeSeries(options) {
     _yLabel = lbl || '';
     plotAll();
   };
+
+  /**
+   * Put the y-axis on a rate: blocks marked `plot.extensive` are drawn as
+   * `value * seconds / plot.interval`, i.e. per `seconds` rather than per bin.
+   * `null` (the default) turns it off and every block draws its raw values.
+   *
+   * This is what makes a resolution cross-fade hold still when the tiers carry
+   * accumulated amounts (counts, sums). Per bin the coarse tier's values are
+   * `interval ratio` times the fine tier's — 60× on a 60s→3600s ladder — so the
+   * axis has to travel between them across the dissolve and the bars visibly
+   * breathe. Per second they are the same number, the bars are the same height,
+   * and the switch is left to change only what is *printed* on the axis.
+   *
+   * `opts.label` sets the unit text over the axis in the same call (see
+   * setYAxisLabel), and `opts.transition` (ms) dissolves the old tick set into
+   * the new one instead of swapping it outright: the outgoing numbers keep the
+   * pixels they were drawn at (ymin/ymax scale by exactly the ratio of the two
+   * units) and fade out while the new ones fade in. Only defined between two
+   * rate units — switching the rate axis on or off rescales per block, since
+   * each block's factor depends on its own interval, so that always snaps.
+   */
+  this.setRateUnit = function (seconds, opts) {
+    var next = (seconds == null) ? null : +seconds;
+    if (next !== null && !(next > 0)) {
+      console.warn('TimeSeries: ignoring setRateUnit(' + seconds + ') — need a positive number of seconds, or null');
+      return;
+    }
+    opts = opts || {};
+    var dur = (opts.transition != null) ? +opts.transition : 0;
+    if (dur > 0 && rateUnit !== null && next !== null && next !== rateUnit && ygrid.length)
+      yPrev = {
+        grid: ygrid.slice(), label: _yLabel, factor: next / rateUnit,
+        startT: Date.now(), dur: dur, alpha: 1,
+      };
+    else yPrev = null;
+    rateUnit = next;
+    if (opts.label !== undefined) _yLabel = opts.label || '';
+    plotAll();
+  };
+
+  this.getRateUnit = function () { return rateUnit; };
 
   this.setWatermark = function (src) {
     if (!src) { _watermarkImg = null; plotAll(); return; }
