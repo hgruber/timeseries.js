@@ -2442,7 +2442,7 @@ export default function TimeSeries(options) {
   // ymin/ymax have meanwhile scaled by exactly that factor, so tick value v now
   // lands at Y(v * factor). Everything else passes 1.
   function drawYLabels(items, unit, alpha, factor) {
-    if (!items.length || alpha <= 0) return;
+    if (!items.length) return;
     c.globalAlpha = alpha;
     c.fillStyle = settings.colors.text;
     c.font = yFont();
@@ -2472,7 +2472,7 @@ export default function TimeSeries(options) {
 
   // Grid lines of one y-axis tick set. `factor` as in drawYLabels().
   function drawYLines(items, alpha, factor) {
-    if (!items.length || alpha <= 0) return;
+    if (!items.length) return;
     c.globalAlpha = alpha;
     c.strokeStyle = settings.colors.gridLineY;
     items.forEach(function (item) {
