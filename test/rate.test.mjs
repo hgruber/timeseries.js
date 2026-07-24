@@ -271,8 +271,11 @@ function makeRecordingCanvas(id) {
 }
 
 // Every unit label drawn since the marker, with the alpha it was drawn at.
+// Unit labels are a single word like 'txn/h'; day-grid labels also contain a
+// '/' under locales that render numeric dates as M/D (e.g. "Wednesday, 1/7"),
+// but always carry whitespace, so that's what tells the two apart.
 function unitsSince(canvas, from) {
-  return canvas.texts.slice(from).filter(t => t.text.includes('/'));
+  return canvas.texts.slice(from).filter(t => t.text.includes('/') && !/\s/.test(t.text));
 }
 
 test('a unit swap holds the old tick set on screen and fades it out', async () => {
