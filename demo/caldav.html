@@ -4,64 +4,28 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>timeseries.js — CalDAV calendar view</title>
+    <link rel="stylesheet" href="./demo.css">
     <style>
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: linear-gradient(160deg, #f0f6ff 0%, #deeafc 40%, #c8daf5 100%);
-        min-height: 100vh;
-        color: #1a2e45;
-      }
-      header { padding: 2rem 2.5rem 1.2rem; display: flex; align-items: baseline; gap: 1rem; }
-      header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
-      header h1 span { color: #2d6a9f; }
-      header p { font-size: 0.85rem; color: #5a7a9a; }
-      header nav { margin-left: auto; display: flex; gap: 1rem; }
-      header nav a {
-        font-size: .85rem; color: #2d6a9f; text-decoration: none;
-        padding: .3rem .7rem; border-radius: 8px; white-space: nowrap;
-        border: 1px solid rgba(45,106,159,.25);
-      }
-      header nav a:hover { background: rgba(45,106,159,.10); }
-      main { max-width: 1300px; margin: 0 auto; padding: 0 1.5rem 3rem; }
-      .chart-card {
-        background: #f0f6ff;
-        border-radius: 16px;
-        box-shadow: 0 1px 3px rgba(30,60,100,.08), 0 8px 32px rgba(30,60,100,.10),
-                    0 0 0 1px rgba(45,106,159,.10);
-        overflow: hidden;
-      }
-      .canvas-wrap { position: relative; height: 420px; }
-      canvas { width: 100%; height: 100%; display: block; }
-      .controls {
-        display: flex; flex-wrap: wrap; gap: .5rem; align-items: center;
-        padding: .9rem 1.2rem; border-top: 1px solid rgba(45,106,159,.12);
-      }
-      button {
-        font: inherit; font-size: .82rem; padding: .35rem .8rem; cursor: pointer;
-        border: 1px solid rgba(45,106,159,.25); border-radius: 8px;
-        background: #fff; color: #1a2e45;
-      }
-      button[aria-pressed="true"] { background: #2d6a9f; color: #fff; border-color: #2d6a9f; }
-      .spacer { flex: 1; }
-      .status { font-size: .78rem; color: #5a7a9a; }
-      .hint {
-        padding: .9rem 1.2rem; font-size: .78rem; color: #5a7a9a;
-        border-top: 1px solid rgba(45,106,159,.12); line-height: 1.5;
-      }
-      code { background: rgba(45,106,159,.08); padding: .1rem .3rem; border-radius: 4px; }
-      /* The tooltip comes from the library (attachTooltip) and styles itself
-         from the chart palette — no tooltip CSS needed here. */
+      /* The whole page frame — reset, themes, header, nav, cards, controls,
+         buttons, .hint/.status/code — comes from demo.css. Only the chart
+         height is specific to this page.
+         The tooltip comes from the library (attachTooltip) and styles itself
+         from the chart palette, so there is no tooltip CSS here either. */
+      .canvas-wrap { height: 420px; }
     </style>
   </head>
   <body>
     <header>
       <h1>timeseries<span>.js</span> — CalDAV</h1>
       <p>calendar events as spans, via the <code>caldav</code> source and <code>gantt</code> renderer</p>
-      <nav>
-        <a href="index.html">&larr; Main demo</a>
-      </nav>
+      <!-- Nav bar + theme picker are built by demo-nav.js -->
+      <div id="demo-nav"></div>
     </header>
+    <!-- Classic script, loaded here rather than deferred in <head>: the
+         placeholder above already exists, the theme class lands on <body>
+         before the page below paints, and window.demoTheme is defined before
+         the deferred module script runs. -->
+    <script src="./demo-nav.js"></script>
 
     <main>
       <div class="chart-card">
@@ -190,6 +154,12 @@
       });
       window.ts = ts;
       if (CALDAV.url) status.textContent = 'connecting to ' + CALDAV.url;
+
+      // ── Theme ──────────────────────────────────────────────────────────────
+      // demo-nav.js owns the picker, the <body> class and localStorage. Its
+      // onChange fires immediately with the stored theme, so this both applies
+      // the saved palette on load and follows every later switch.
+      window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
 
       // ── Layout toggle ──────────────────────────────────────────────────────
       const btnCal = document.getElementById('layout-calendar');

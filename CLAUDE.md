@@ -49,6 +49,20 @@ and `zabbix.html` import `src/` directly even in production, that workflow also 
 into the deploy folder alongside `demo/` and `dist/` — otherwise those pages 404 on their
 `../src/*.js` imports.
 
+**Shared demo chrome**: all three demo pages link `demo/demo.css` and load `demo/demo-nav.js`.
+The stylesheet holds the page frame (header, cards, controls, buttons, footer) with the four
+palettes declared as CSS custom properties on `body` — `light` is the bare default, the others
+are `body.theme-dark` / `.theme-highContrast` / `.theme-warm`. Each page keeps only its own
+rules in an inline `<style>`, which is loaded *after* the stylesheet and therefore wins on
+equal specificity. `demo-nav.js` is a **classic** script on purpose (no `import`/`export`), so
+the IIFE page and the two module pages can all load it; it builds the nav bar and the theme
+picker into `<div id="demo-nav">`, owns the `<body>` theme class and persists the choice in
+`localStorage`, and knows nothing about `TimeSeries`. Pages repaint their own canvases via
+`window.demoTheme.onChange(fn)`, which fires immediately with the current theme so a module
+script subscribing late still gets the stored palette. Load it right after `</header>`, not
+deferred in `<head>`: the placeholder exists by then, the theme class lands before the page
+below paints, and `window.demoTheme` is defined before any page script runs.
+
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
 
 ### Testing (`test/`)
