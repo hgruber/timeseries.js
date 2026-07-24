@@ -131,7 +131,8 @@ drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
 non-mutation, and the shapes it refuses), and `test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
-the band, and the hit test following the dominant tier). The renderer-level assertions there
+the band, the hit test following the dominant tier, and `fadeHi`/`fadeLo`/`setFadeBand`
+moving the switch point). The renderer-level assertions there
 use a **recording 2D context** defined in the test file — the Proxy context in
 `test/helpers/dom.mjs` is a pure no-op and cannot report the alpha a draw call ran at.
 
@@ -324,9 +325,10 @@ infrastructure.
 
 Blocks of the **same `type` differing only in `interval`** are kept side by side by `pushData`
 and treated by `prepare_grid` as resolution tiers of one signal. Per frame it picks the finest
-tier whose bars are at least `FADE_HI` (2px) wide; as that tier shrinks past the threshold the
-coarser one takes over. Rather than a hard pop, both stay in `activePlot` across a 2px→1px band
-and each is stamped with `plot._fade` (outgoing `1 → 0`, incoming `0 → 1`, summing to 1).
+tier whose bars are at least `fadeHi` (2px) wide; as that tier shrinks past the threshold the
+coarser one takes over. Rather than a hard pop, both stay in `activePlot` across the
+`fadeHi`→`fadeLo` (2px→1px) band and each is stamped with `plot._fade` (outgoing `1 → 0`,
+incoming `0 → 1`, summing to 1).
 
 Two things make that dissolve actually look right, and both are **generic — not Zabbix- or
 renderer-specific**:
@@ -347,6 +349,15 @@ renderer-specific**:
 
 The hit test in `get_element` skips blocks at `_fade < 0.5`, so mid-dissolve the tooltip follows
 the tier that is visually dominant rather than whichever landed first in `activePlot`.
+
+**The band is a setting**, `fadeHi: 2` / `fadeLo: 1`, also movable after construction with
+`setFadeBand(hi, lo)` (which rejects anything not `0 < lo < hi` rather than letting a NaN
+`fadeProg` reach `globalAlpha`). This matters for a host that decides for *itself* which tier
+to fetch: it has a switch threshold of its own, and unless the canvas switches on the same
+number it renders one resolution while the host keeps a different one topped up — so panning
+puts holes in whatever is visually dominant. Such a host should set `fadeHi` to its own
+threshold and fetch the outgoing tier for as long as the band lasts (`relevantTiers()` in
+`src/sources.js` is the in-tree example).
 
 `setRenderInterval(iv)` pins one interval and disables the cross-fade entirely — the GUI then
 owns the transition policy.
@@ -404,7 +415,9 @@ runs unchanged with no infrastructure.
 
 `ts.today()`, `ts.yesterday()`, `ts.tomorrow()`, `ts.last24()`, `ts.next24()`, `ts.lastWeek()`, `ts.thisWeek()`, `ts.nextWeek()`, `ts.zoom(tmin, tmax, animationMs)`, `ts.pan(dir)`, `ts.setWatermark(src)`, `ts.redraw()`, `ts.setColors(obj)` / `ts.getColors()`, `ts.getHolidays()`, `ts.getSeries()`, `ts.setSeriesHidden(id, bool)`, `ts.toggleSeries(id)`, `ts.showAllSeries()`, `ts.onSeriesChange(fn)`, `ts.onColorsChange(fn)`, `ts.getCanvas()`,
 `ts.getViewport()` / `ts.getValueRange()` (the horizontal and vertical range currently drawn —
-`getValueRange` reflects hidden series and any tier cross-fade)
+`getValueRange` reflects hidden series and any tier cross-fade),
+`ts.setRenderInterval(iv)` / `ts.setFadeBand(hi, lo)` (resolution-tier policy — see the
+cross-fade section above)
 
 Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts)`,
 `TimeSeries.resolveColor(plot, id, alpha)`,

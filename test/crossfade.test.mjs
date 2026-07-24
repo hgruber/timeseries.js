@@ -133,14 +133,14 @@ function tier(interval, value) {
 }
 
 let nextId = 0;
-async function build() {
+async function build(opts) {
   const id = 'xfade-' + (nextId++);
   const canvas = makeCanvas(id);
-  const ts = new TimeSeries({
+  const ts = new TimeSeries(Object.assign({
     canvas: id,
     sources: [tier(3600, COARSE_V), tier(60, FINE_V)],   // coarse pushed first
     initialView: null,
-  });
+  }, opts));
   await setView(ts, MID_MS - 6e6, MID_MS + 6e6);         // settle the margins
   return { ts, canvas, plotWidth: ts.getPlotArea().plotWidth };
 }
@@ -149,8 +149,8 @@ async function build() {
 const widthForFinePx = (pw, px) => (60 * 1000 * pw) / px;
 const centred = (w) => [MID_MS - w / 2, MID_MS + w / 2];
 
-async function atFinePx(px) {
-  const built = await build();
+async function atFinePx(px, opts) {
+  const built = await build(opts);
   const [a, b] = centred(widthForFinePx(built.plotWidth, px));
   await setView(built.ts, a, b);
   return built;
@@ -187,6 +187,54 @@ test('the axis travels monotonically across the band instead of snapping', async
   const late  = (await atFinePx(1.2)).ts.getValueRange().ymax;
   assert.ok(early < mid && mid < late, `${early} < ${mid} < ${late}`);
   assert.ok(early > FINE_V && late < COARSE_V, 'never reaches either end inside the band');
+});
+
+// ── 4. the band is configurable ──────────────────────────────────────────────
+//
+// A host that decides for itself which tier to *fetch* has a switch threshold of
+// its own; unless the canvas switches on the same number it renders one tier
+// while the host keeps the other one topped up.
+
+const WIDE = { fadeHi: 6, fadeLo: 3 };
+
+test('a widened band moves the switch point, not just its width', async () => {
+  // 5px: inside the widened band, but well clear of the default 2px→1px one.
+  assert.equal((await atFinePx(5)).ts.getActiveData().length, 1, 'default band');
+  const wide = await atFinePx(5, WIDE);
+  assert.equal(wide.ts.getActiveData().length, 2);
+  const fine = wide.ts.getActiveData().find(p => p.interval === 60);
+  // fadeProg = (6 - 5) / (6 - 3) → the coarse tier is a third of the way in.
+  assert.ok(Math.abs(fine._fade - 2 / 3) < 1e-6, 'fine _fade ' + fine._fade);
+});
+
+test('either side of a widened band a single tier stands alone', async () => {
+  const above = await atFinePx(7, WIDE);
+  assert.equal(above.ts.getActiveData().length, 1);
+  assert.equal(above.ts.getActiveData()[0].interval, 60);
+
+  const below = await atFinePx(2, WIDE);
+  assert.equal(below.ts.getActiveData().length, 1);
+  assert.equal(below.ts.getActiveData()[0].interval, 3600);
+});
+
+test('setFadeBand re-decides the tiers at the current zoom', async () => {
+  // A host learns its threshold from the server, long after construction.
+  const { ts } = await atFinePx(5);
+  assert.equal(ts.getActiveData().length, 1);
+  ts.setFadeBand(6, 3);
+  assert.equal(ts.getActiveData().length, 2);
+  ts.setFadeBand(2, 1);
+  assert.equal(ts.getActiveData().length, 1);
+});
+
+test('setFadeBand refuses a band that would poison globalAlpha', async () => {
+  const { ts } = await atFinePx(5, WIDE);
+  const before = ts.getActiveData().length;
+  for (const bad of [[3, 6], [6, 6], [6, 0], [6, -1], [NaN, 1], [6, 'x']]) {
+    ts.setFadeBand(bad[0], bad[1]);
+    assert.equal(ts.getActiveData().length, before, 'accepted ' + JSON.stringify(bad));
+  }
+  for (const p of ts.getActiveData()) assert.ok(p._fade >= 0 && p._fade <= 1, '_fade ' + p._fade);
 });
 
 // Hover the bottom of the plot, where a bar of either tier is present, and see

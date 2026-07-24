@@ -265,6 +265,14 @@ export default function TimeSeries(options) {
     zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
     keyboard: true,        // arrow-key navigation; also makes the canvas focusable
+    // Resolution-tier switch point and cross-fade band, in px of bar width.
+    // A tier is primary while its bars are at least fadeHi wide; as it shrinks
+    // past that the coarser tier takes over, dissolving across fadeHi → fadeLo.
+    // A host that owns a switch threshold of its own (because it decides what
+    // to fetch) must set these to the same number, or it fetches one tier while
+    // the canvas still draws another.
+    fadeHi: 2,
+    fadeLo: 1,
     yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
     yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
     // Copied so that a per-instance override never writes through to the shared
@@ -1756,8 +1764,10 @@ export default function TimeSeries(options) {
       // drawing it (fading out) until FADE_LO so the swap to the coarser tier
       // is a dissolve, not a pop. Published as plot._fade and applied centrally
       // by plotData() via globalAlpha, so every renderer dissolves alike and
-      // none of them has to know about it.
-      var FADE_HI = 2, FADE_LO = 1;
+      // none of them has to know about it. Configurable (settings.fadeHi/fadeLo,
+      // setFadeBand()) so a host that decides for itself which tier to fetch can
+      // put the canvas's switch point on the same number as its own.
+      var FADE_HI = settings.fadeHi, FADE_LO = settings.fadeLo;
       var m;
       // Replace the y-extents of the two tiers taking part in a cross-fade with
       // a single value interpolated by the same progress that drives their
@@ -2657,6 +2667,22 @@ export default function TimeSeries(options) {
 
   this.setRenderInterval = function (iv) {
     renderInterval = (iv == null) ? null : +iv;
+    plotAll();
+  };
+
+  // Move the resolution-tier switch point and the width of the dissolve band
+  // (both in px of bar width) after construction — a host usually learns its
+  // own threshold from the server, long after `new TimeSeries(...)`.
+  // Rejects anything that would make fadeProg NaN or negative rather than
+  // letting it reach globalAlpha, where it would blank the canvas.
+  this.setFadeBand = function (hi, lo) {
+    hi = +hi; lo = +lo;
+    if (!isFinite(hi) || !isFinite(lo) || lo <= 0 || hi <= lo) {
+      console.warn('TimeSeries: ignoring setFadeBand(' + hi + ', ' + lo + ') — need 0 < lo < hi');
+      return;
+    }
+    settings.fadeHi = hi;
+    settings.fadeLo = lo;
     plotAll();
   };
 
