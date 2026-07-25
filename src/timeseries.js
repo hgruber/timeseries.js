@@ -381,8 +381,21 @@ export default function TimeSeries(options) {
     startTmax,
     pendingClickItem = null;
   var nls = "default";
-  var plotWidth = canvas.width - margin.left - margin.right;
-  var plotHeight = canvas.height - margin.top - margin.bottom;
+  // A canvas inside a display:none container (a hidden tab panel, say) measures
+  // 0×0 — but readContainerPad() still reports the container's *real* CSS
+  // padding, and margin.top is 2 label rows regardless, so
+  // "canvas.width - margin.left - margin.right" comes out NEGATIVE rather than
+  // zero. Everything downstream divides by that: ppms goes negative, so
+  // mspp = 1/ppms goes large-negative, and setTimeout(fn, -5400000) is clamped
+  // to 0 by the browser and fires on the next tick — which plotAll() then
+  // re-arms unconditionally (scheduleNowLine), spinning at ~250 fps and, via
+  // _groupBroadcast, dragging every visible group peer into the same loop and
+  // its data sources into an endless refetch. Clamping to one pixel keeps every
+  // derived scale finite and positive. The geometry is meaningless while hidden
+  // anyway; the ResizeObserver recomputes it from a real rect on unhide.
+  function clampPlot(px) { return px > 1 ? px : 1; }
+  var plotWidth = clampPlot(canvas.width - margin.left - margin.right);
+  var plotHeight = clampPlot(canvas.height - margin.top - margin.bottom);
   var now = Date.now();
   var follow_timers = 0;
   var follow_stopped = false;
@@ -402,7 +415,14 @@ export default function TimeSeries(options) {
   var data = [];
   var viewportChangeHandlers = [];
   var viewportChangePending = null;
-  var activePlot;
+  // Assigned by prepare_grid() on every frame, but initialised here because
+  // getActiveData()/getSeries() are public and may be called before the first
+  // paint — which is now reachable, since plotAll() skips a zero-area frame and
+  // an instance constructed inside a hidden container therefore never runs
+  // prepare_grid until it is shown. attachLegend() calls getSeries() at attach
+  // time, so leaving this undefined made attaching a legend to a chart in a
+  // hidden tab panel throw.
+  var activePlot = [];
   // Series ids the user has switched off, e.g. via a legend. Instance-wide
   // rather than per-plot: an id identifies the same measurement in every block
   // a source pushes, and hiding it in one block but not the next would flicker
@@ -842,7 +862,15 @@ export default function TimeSeries(options) {
     stopFollow:       stopFollowFromPeer,
     startFollowAsTick: startFollowAsTick,
     startFollowNoTick: startFollowNoTick,
-    getCanvasWidth:   function () { return canvas.width; },
+    // Reports 0 while the canvas is in a display:none container, so a hidden
+    // instance loses the follow-leader election in start_follower() — the
+    // ResizeObserver keeps canvas.width at its last good size, which would
+    // otherwise leave it eligible. Electing a hidden chart as the group's time
+    // driver still works (plotAll broadcasts before its zero-area bail-out), but
+    // a chart nobody can see is the wrong one to pick, and its mspp is stale.
+    // Note the election only runs inside start_follower(), so this decides who
+    // leads at that moment; it does not re-elect when a leader is later hidden.
+    getCanvasWidth:   function () { return canvas.clientWidth ? canvas.width : 0; },
   };
 
   this.joinGroup = function (name) {
@@ -898,6 +926,15 @@ export default function TimeSeries(options) {
     //console.log('Timer ' + follow_timers + ' set for ' + t + ' milliseconds');
   }
 
+  // Every redraw delay derived from mspp goes through here. One redraw per pixel
+  // of now-line travel, but never faster than a frame and never in the past: a
+  // single non-positive delay is enough to turn these self-rescheduling timers
+  // into a spin, because the browser clamps it to 0 and the callback re-arms
+  // unconditionally. clampPlot() already keeps mspp positive, so this is the
+  // second line of defence — and it catches NaN, which would otherwise reach
+  // setTimeout and be treated as 0 the same way.
+  function tickDelay(ms) { return ms > 16 ? (ms > 5000 ? 5000 : ms) : 16; }
+
   function follow_view() {
     follow_timers--;
     if (follow_stopped) return;
@@ -907,12 +944,19 @@ export default function TimeSeries(options) {
       tmax = now;
     } else if (now > tmax) return;
     if (now < rT(0)) {
-      timer(follow_view, now - rT(0));
+      // NOTE, flagged rather than fixed: the guard is `now < rT(0)`, so
+      // `now - rT(0)` is NEGATIVE, where the intent reads as "wait until now
+      // reaches the canvas's left edge", i.e. rT(0) - now. Left alone
+      // deliberately — flipping a sign here is a behaviour change that wants
+      // its own commit and its own test, and the branch is barely reachable:
+      // follow_view() is only ever entered via the `follow_timers < 0` guard in
+      // plotAll(), which timer()'s ++/-- bookkeeping should make impossible,
+      // which is presumably why nobody has noticed. tickDelay() at least keeps
+      // it off the immediate-fire path.
+      timer(follow_view, tickDelay(now - rT(0)));
       return;
     } else {
-      var t = mspp;
-      if (mspp > 5000) t = 5000;
-      timer(follow_view, t);
+      timer(follow_view, tickDelay(mspp));
     }
     scheduleViewportChange();
     plotAll();
@@ -927,9 +971,7 @@ export default function TimeSeries(options) {
     var range = tmax - tmin;
     tmin = now - follow_fraction * range;
     tmax = tmin + range;
-    var t = mspp;
-    if (mspp > 5000) t = 5000;
-    timer(follower_tick, t);
+    timer(follower_tick, tickDelay(mspp));
     scheduleViewportChange();
     plotAll();
   }
@@ -971,7 +1013,7 @@ export default function TimeSeries(options) {
   // Same interval as follower_tick: one redraw per pixel of now-line travel.
   function scheduleNowLine() {
     if (nowline_timer !== null) return;
-    var t = mspp > 5000 ? 5000 : mspp;
+    var t = tickDelay(mspp);
     nowline_timer = setTimeout(function () {
       nowline_timer = null;
       if (settings.autoFollow && Date.now() >= tmax) {
@@ -1274,6 +1316,28 @@ export default function TimeSeries(options) {
   }
 
   function plotAll() {
+    // Nothing to draw into: the canvas sits in a display:none container (a
+    // hidden tab panel). Note clientWidth, not canvas.width — the
+    // ResizeObserver below deliberately leaves the bitmap at its last good
+    // size, so canvas.width is non-zero while hidden and would never trip this.
+    //
+    // The group broadcast happens *above* the bail-out on purpose: a hidden
+    // instance must still propagate its viewport. A follow leader that gets
+    // hidden keeps ticking (follower_tick re-arms itself before calling us) and
+    // is the only thing driving time for the whole group, so swallowing its
+    // broadcast froze every visible peer until the user next interacted.
+    // Broadcasting from a hidden chart is safe now because the repaint storm is
+    // fixed at its source instead: clampPlot()/tickDelay() keep mspp positive,
+    // so these ticks stay seconds apart rather than firing on every event-loop
+    // turn. tmin/tmax are already final on entry — prepare_grid never moves
+    // them — so this reads the same values the trailing call used to.
+    if (!_syncing && !_suppressTick && _currentGroup) _groupBroadcast(_currentGroup, tmin, tmax, _handle);
+    // Nothing to draw into beyond this point. No state is stranded — setViewport
+    // applies tmin/tmax before calling us, and everything prepare_grid derives is
+    // recomputed by the ResizeObserver's plotAll on unhide; margin_left_initialized
+    // and margin_bottom_initialized stay false, so that first real paint snaps
+    // instead of animating from a bogus origin.
+    if (!canvas.clientWidth || !canvas.clientHeight) return;
     now = Date.now();
     c.clearRect(0, 0, canvas.width, canvas.height);
     prepare_grid(); // must run before rctx is built: recalculates ppms, ppv, ppv, mspp
@@ -1289,18 +1353,25 @@ export default function TimeSeries(options) {
     // console.log(grid);
     if (follow_timers < 0) timer(follow_view, 1000);
     if (follow_stopped || follow_timers === 0) scheduleNowLine();
-    if (!_syncing && !_suppressTick && _currentGroup) _groupBroadcast(_currentGroup, tmin, tmax, _handle);
   }
 
   var _resizeObserver = new ResizeObserver(function () {
+    // A container that is display:none reports 0×0. Recomputing geometry from
+    // that trades the last known good numbers for meaningless ones, and there
+    // is nothing to gain: the observer fires again with a real rect the moment
+    // the container is shown. Keeping the old width also keeps getViewport()
+    // reporting a sane ppms, so the instance's sources stay on the resolution
+    // tier they were on instead of dropping to the coarsest one
+    // (zabbixPrimaryTier, src/sources.js) and having to refetch on unhide.
+    if (!canvas.clientWidth || !canvas.clientHeight) return;
     canvas.width = canvas.clientWidth;
     canvas.height = canvas.clientHeight;
     basePad = readContainerPad();
     recomputeFonts();
     margin.top   = 2 * font_height + basePad.top;
     margin.right = basePad.right;
-    plotWidth  = canvas.width  - margin.left - margin.right;
-    plotHeight = canvas.height - margin.top  - margin.bottom;
+    plotWidth  = clampPlot(canvas.width  - margin.left - margin.right);
+    plotHeight = clampPlot(canvas.height - margin.top  - margin.bottom);
     refreshOffset();
     plotAll();
     // Notify viewport-change listeners — plotWidth changed so ppms changed
@@ -2019,7 +2090,7 @@ export default function TimeSeries(options) {
       : 1;
     margin.left = Math.round(margin_left_anim.from + (margin_left_anim.to - margin_left_anim.from) * easeInOutExpo(mlt));
     if (mlt < 1) scheduleAxisTransition();
-    plotWidth = canvas.width - margin.left - margin.right;
+    plotWidth = clampPlot(canvas.width - margin.left - margin.right);
 
     // Fade in y-axis labels / lines when data enters the viewport
     var has_ygrid = ygrid.length > 0;
@@ -2258,7 +2329,7 @@ export default function TimeSeries(options) {
       : 1;
     margin.bottom = Math.round(margin_bottom_anim.from + (margin_bottom_anim.to - margin_bottom_anim.from) * easeInOutExpo(mbt));
     if (mbt < 1) scheduleAxisTransition();
-    plotHeight = canvas.height - margin.top - margin.bottom;
+    plotHeight = clampPlot(canvas.height - margin.top - margin.bottom);
   }
 
   function X(t) {

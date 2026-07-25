@@ -34,28 +34,30 @@ function jpZabbix(options) {
 		});
 
 		// create sending data
+		// As of Zabbix 6.4 the auth token belongs in the Authorization: Bearer
+		// header (set in api() below), not in this body — Zabbix 7.0 rejects a
+		// request carrying an "auth" member at all ("unexpected parameter
+		// auth"). Older servers that predate the header-based scheme are not
+		// a target here.
 		var data = {
 			jsonrpc: '2.0',
 			id: ++rpcid,
 			method: method,
 			params: params
 		};
-		
-		if (method !== "apiinfo.version") {
-			data["auth"] = authid
-		}
 
 		return JSON.stringify(data);
 	}
 
 	this.api = function(method, params) {
-		
+
 		return new Promise(function(resolve, reject) {
 
 			var req = new XMLHttpRequest();
 			req.open('POST', config.url);
 			req.setRequestHeader("Content-Type", "application/json");
-			if (config.basicAuth) {req.setRequestHeader("Authorization", "Basic " + btoa(config.user+":"+config.password));};
+			if (config.basicAuth) {req.setRequestHeader("Authorization", "Basic " + btoa(config.user+":"+config.password));}
+			else if (authid && method !== "apiinfo.version") {req.setRequestHeader("Authorization", "Bearer " + authid);};
 			if (config.timeout) {req.timeout = config.timeout;};
 
 			req.onload = function() {

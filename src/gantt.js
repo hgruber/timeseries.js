@@ -12,8 +12,16 @@
 //     tmin, tmax,                      // ms epoch — the window this block covers
 //     layout: 'calendar' | 'packed',
 //     lanes: [{ id, label, color }],   // 'calendar' layout only
-//     data: [{ id, lane, start, end, label, color, allDay }],
+//     data: [{ id, lane, start, end, label, color, allDay, group }],
 //   }
+//
+// `group` is optional: events sharing the same `group` value within one lane
+// prefer to reuse the same packed row once one of them has claimed it (see
+// pack() below), instead of falling wherever chronological first-fit happens
+// to land. Without it, several short-lived events of what a consumer thinks
+// of as "the same thing" (e.g. one flapping trigger firing many brief times)
+// can end up scattered across rows purely because unrelated events on the
+// same lane happened to occupy whichever row was free at each moment.
 //
 // layoutSpans() fills in `_row` per event plus `laneCount` / `yticks`, which
 // the y-axis and hit-testing in timeseries.js read.
@@ -26,18 +34,46 @@ var ROW_GAP = 0.18;
 // Greedy interval packing: walk events by start time and drop each into the
 // first row whose last event has already ended. O(n·rows), and rows stays
 // small for realistic calendars.
+//
+// `ev.group`, if set, keeps every event sharing that value in one row for the
+// whole pack() call (one lane). A row a group has claimed is reserved for
+// that group until its LAST event's end — its whole "season" — not just its
+// most recent one, and a same-group event always reuses its row without a
+// free-row check (occurrences of one group are assumed never to overlap each
+// other, true for e.g. one Zabbix trigger, which can't be open twice at
+// once). That season-long reservation is what makes this safe against
+// interleaving: an early version of this only remembered each group's most
+// recently used row and re-checked it was free, which meant a different,
+// unrelated event landing between two occurrences of the same group could
+// grab that row while it looked idle, permanently splitting the group across
+// two rows from then on. Reserving the whole season up front means a
+// foreign event can never wedge itself into a gap the group will need again.
 function pack(events, baseRow) {
-  var rowEnds = [];
+  var groupSeasonEnd = new Map();
   for (var ev of events) {
-    var row = -1;
-    for (var r = 0; r < rowEnds.length; r++)
-      if (rowEnds[r] <= ev.start) { row = r; break; }
-    if (row < 0) { row = rowEnds.length; rowEnds.push(0); }
-    // A zero-length event still occupies its row against the next one.
-    rowEnds[row] = Math.max(ev.end, ev.start);
-    ev._row = baseRow + row;
+    if (ev.group == null) continue;
+    var end = Math.max(ev.end, ev.start);
+    var prev = groupSeasonEnd.get(ev.group);
+    if (prev === undefined || end > prev) groupSeasonEnd.set(ev.group, end);
   }
-  return rowEnds.length;
+  var rowBusyUntil = [];
+  var groupRow = new Map();
+  for (var e2 of events) {
+    var row = -1;
+    var key = e2.group;
+    if (key != null && groupRow.has(key)) {
+      row = groupRow.get(key);
+    } else {
+      for (var r = 0; r < rowBusyUntil.length; r++)
+        if (rowBusyUntil[r] <= e2.start) { row = r; break; }
+      if (row < 0) { row = rowBusyUntil.length; rowBusyUntil.push(0); }
+    }
+    // A zero-length event still occupies its row against the next one.
+    rowBusyUntil[row] = key != null ? groupSeasonEnd.get(key) : Math.max(e2.end, e2.start);
+    e2._row = baseRow + row;
+    if (key != null) groupRow.set(key, row);
+  }
+  return rowBusyUntil.length;
 }
 
 /**
@@ -165,12 +201,37 @@ function drawLabel(c, ev, rect) {
   c.restore();
 }
 
+// Reads the same base size the month/weekday axis labels use — xFont() in
+// timeseries.js derives it from the canvas's own computed font-size; that
+// function is a private closure, so this reads the computed style itself
+// (the same "kept in step by hand" arrangement as barRect()/get_element()).
+// Unlike xFont(), this does NOT scale down with the *canvas's* height: a
+// Gantt row's own height is what actually bounds how big its label can be
+// without overflowing, and that is usually unrelated to the canvas's overall
+// height. Scaling with canvas height too (mirroring xFont() exactly) landed
+// at essentially the same size bar labels already had, because typical
+// Gantt heights and typical row heights both happen to move together —
+// clamping to the row height directly is what makes labels reliably as
+// large as the axis text instead of quietly staying small.
+function labelFont(rctx) {
+  var canvas = rctx.c && rctx.c.canvas;
+  var base = 13;
+  var family = 'sans-serif';
+  if (canvas && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+    var style = window.getComputedStyle(canvas);
+    base = parseFloat(style.fontSize) || base;
+    family = style.fontFamily || family;
+  }
+  var size = Math.min(base, Math.max(9, rctx.ppv - 4));
+  return Math.round(size) + 'px ' + family;
+}
+
 function gantt(plot, rctx) {
   if (!plot.data || !plot.data.length) return;
   layoutSpans(plot);
   var { c, Y, margin, plotWidth } = rctx;
   c.save();
-  c.font = Math.max(9, Math.min(12, rctx.ppv * 0.55)).toFixed(0) + 'px sans-serif';
+  c.font = labelFont(rctx);
 
   // Lane separators give the eye a baseline to track a row across the width;
   // in packed layout the rows carry no identity, so they are left out.
@@ -204,7 +265,7 @@ function highlight_gantt(plot, n, item, rctx) {
   if (!rect) return;
   var c = rctx.c;
   c.save();
-  c.font = Math.max(9, Math.min(12, rctx.ppv * 0.55)).toFixed(0) + 'px sans-serif';
+  c.font = labelFont(rctx);
   c.fillStyle = eventColor(plot, ev, 1);
   roundRect(c, rect.x, rect.y, rect.w, rect.h, 2);
   c.fill();

@@ -138,6 +138,34 @@ export function makeElement(tagName = 'div') {
 }
 
 /**
+ * Every ResizeObserver the library constructed, with the elements it observes,
+ * so a test can drive a resize. A real observer fires on its own; this stub
+ * cannot, and resize — specifically the 0×0 a browser reports for an element in
+ * a `display:none` container — is exactly what the zero-size guards in
+ * timeseries.js need exercised. Reset by installDOM().
+ */
+export const resizeObservers = [];
+
+/**
+ * Resize a stub canvas and run the ResizeObserver callback the library
+ * registered for it — the only path by which a browser tells a chart that its
+ * geometry changed.
+ *
+ * `resizeCanvas(c, 0, 0)` models the canvas landing inside a `display:none`
+ * container (a hidden tab panel), which is what a browser reports for it;
+ * passing the original size back models unhiding it.
+ */
+export function resizeCanvas(canvas, width, height) {
+  canvas.clientWidth = width;
+  canvas.clientHeight = height;
+  canvas.getBoundingClientRect = () => ({
+    left: 0, top: 0, width, height, right: width, bottom: height,
+  });
+  const target = canvas.parentElement || canvas;
+  for (const ro of resizeObservers) if (ro.targets.includes(target)) ro.cb([], ro);
+}
+
+/**
  * Install the stubbed globals. Call once, before importing the library.
  */
 export function installDOM() {
@@ -167,13 +195,26 @@ export function installDOM() {
     // Viewport size: the tooltip clamps and flips against these.
     innerWidth: 1024,
     innerHeight: 768,
-    getComputedStyle: () => ({
-      font: '12px sans-serif', fontFamily: 'sans-serif', fontSize: '12px',
-      color: '#000', backgroundColor: '#fff',
-      paddingTop: '0px', paddingRight: '0px', paddingBottom: '0px', paddingLeft: '0px',
-    }),
+    // Padding comes from the element's own `_pad` (see makeCanvas), so a test
+    // can model `.canvas-wrap { padding: 8px }`. That matters for the
+    // hidden-container case: readContainerPad() keeps reporting real padding
+    // even at 0×0, which is what turns a zero-width canvas into a *negative*
+    // plotWidth rather than a zero one.
+    getComputedStyle: el => {
+      const p = ((el && el._pad) || 0) + 'px';
+      return {
+        font: '12px sans-serif', fontFamily: 'sans-serif', fontSize: '12px',
+        color: '#000', backgroundColor: '#fff',
+        paddingTop: p, paddingRight: p, paddingBottom: p, paddingLeft: p,
+      };
+    },
   };
-  globalThis.ResizeObserver = class { observe() {} disconnect() {} };
+  resizeObservers.length = 0;
+  globalThis.ResizeObserver = class {
+    constructor(cb) { this.cb = cb; this.targets = []; resizeObservers.push(this); }
+    observe(el) { this.targets.push(el); }
+    disconnect() { this.targets.length = 0; }
+  };
   globalThis.Image = class { set src(_v) {} };
 
   // A live TimeSeries instance keeps a self-rescheduling timer running
@@ -194,8 +235,14 @@ export function installDOM() {
 /**
  * Create a fresh stub canvas. Each test should use its own id — the library
  * refuses to attach twice to the same element.
+ *
+ * `pad` opts into a parent element carrying that many px of CSS padding, which
+ * is what the library observes for resize and reads for its outer whitespace
+ * (`.canvas-wrap` in the demos). Left null the canvas has no parent, so
+ * readContainerPad() falls back to the canvas itself and reports 0 — the
+ * behaviour every pre-existing test relies on.
  */
-export function makeCanvas(id, width = 1000, height = 400) {
+export function makeCanvas(id, width = 1000, height = 400, pad = null) {
   // `attrs` plus the get/set/has trio is enough for the keyboard setup path,
   // which sets tabindex/role/aria-label — without them the library's guards
   // would skip that code entirely and it would go untested.
@@ -229,6 +276,7 @@ export function makeCanvas(id, width = 1000, height = 400) {
     },
   };
   canvas.getContext = () => makeContext(canvas);
+  if (pad != null) canvas.parentElement = { _pad: pad };
   canvases.set(id, canvas);
   return canvas;
 }

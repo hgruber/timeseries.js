@@ -40,6 +40,19 @@ NOTE explaining the choice: `period()` (duration formatter) and `fog_of_future()
 is the only consumer of `settings.colors.future`, defined by every theme). Either wire
 them up or delete them — don't let them rot silently.
 
+Two more flagged-but-deliberately-unfixed oddities, both carrying a NOTE in the source:
+
+- **`follow_view()`'s delay looks sign-inverted.** Under `if (now < rT(0))` it schedules
+  `now - rT(0)`, which is negative; the intent reads as `rT(0) - now`. Left alone because
+  flipping it is a behaviour change wanting its own commit and test, and the branch is all
+  but unreachable — `follow_view` is only entered via `if (follow_timers < 0)` in
+  `plotAll()`, which `timer()`'s `++`/`--` bookkeeping should make impossible. `tickDelay()`
+  keeps it off the immediate-fire path either way.
+- **`jpZabbix.api()` sets `req.timeout` but never wires `req.ontimeout`** (only `onload`
+  and `onerror`). An XHR timeout therefore settles nothing and the promise hangs forever.
+  Consumers that need a timeout must race it themselves — `examples/zabbix.html`'s connect
+  probe does. Wiring `ontimeout` is the right fix but changes behaviour for every consumer.
+
 **Dev without building**: `demo/caldav.html` and `demo/zabbix.html` use `<script type="module">`
 and import directly from `src/`, so they need no build step. `demo/index.html` does **not** — it loads
 the IIFE bundle via `<script src="../dist/timeseries.js">`, so changes to `src/` only show
@@ -103,7 +116,9 @@ discovery seems broken in a fresh environment, try the explicit glob before assu
 the test files themselves are at fault.
 
 Coverage: `test/caldav.test.mjs` (iCalendar parsing, DST-aware TZID resolution),
-`test/gantt.test.mjs` (row packing, `layoutSpans`), `test/gantt-hittest.test.mjs`
+`test/gantt.test.mjs` (row packing, `layoutSpans`, and the `group` reservation —
+including the interleaving case a foreign event used to split a group on),
+`test/gantt-hittest.test.mjs`
 (confirms `barRect()` in `gantt.js` and `get_element()` in `timeseries.js` agree — the
 two are hand-kept in sync rather than sharing code), `test/binned-regression.test.mjs`
 (guards the pre-existing multibar path against the `category: 'span'` changes),
@@ -134,7 +149,12 @@ dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`mult
 the band, the hit test following the dominant tier, and `fadeHi`/`fadeLo`/`setFadeBand`
 moving the switch point), and `test/rate.test.mjs` (the rate axis: `_vscale` through
 `plotData` for each renderer, the `extensive` opt-in, both tiers landing on one extent across
-the whole band, the hit test returning raw values, and the unit-swap dissolve). The
+the whole band, the hit test returning raw values, and the unit-swap dissolve), and
+`test/resize.test.mjs` (zero-size canvases — see that section below: the clamp with no good
+geometry to fall back on, no non-positive timer delay ever reaching `setTimeout`, a hidden
+chart neither repainting nor re-arming, a hidden peer not dragging a visible one while still
+tracking the viewport, geometry preserved across hide/unhide, `attachLegend` surviving a
+0×0 construction, and a hidden follow leader still driving the group). The
 renderer-level assertions there
 use a **recording 2D context** defined in the test file — the Proxy context in
 `test/helpers/dom.mjs` is a pure no-op and cannot report the alpha a draw call ran at.
@@ -298,7 +318,7 @@ width means duration rather than a slot on a shared grid:
   tmin, tmax,                        // ms epoch — window this block covers
   layout: 'calendar' | 'packed',     // one row-block per lane, or greedy-packed into one band
   lanes: [{ id, label, color }],     // 'calendar' layout
-  data: [{ id, lane, start, end, label, color }],   // start/end in ms epoch
+  data: [{ id, lane, start, end, label, color, group }],   // start/end in ms epoch
 }
 ```
 `layoutSpans(plot)` (`src/gantt.js`) assigns `_row` to each event and derives `laneCount`,
@@ -306,6 +326,15 @@ width means duration rather than a slot on a shared grid:
 `plot._laidOut`; `prepare_grid` calls it before computing the y-extent, so **mutating `data` in
 place requires clearing `plot._laidOut`**. Rows occupy the value space `0…laneCount`, which is
 what lets the existing `Y()`/`ppv` transforms and axis animation carry them unchanged.
+
+`group` is optional and only affects row *packing*, not drawing: within one lane, `pack()`
+prefers to reuse the same row for every event sharing a `group` value, as long as that row is
+still free at the event's start (falling back to ordinary first-fit otherwise, so it can never
+cause an incorrect overlap). Without it, several short, non-overlapping events that a consumer
+considers "the same thing" — e.g. one flapping trigger firing many brief times — can land in
+different rows purely because unrelated events on the same lane happened to occupy whichever
+row was free at each particular moment. Leave it unset for independent events (the CalDAV source
+does; each event is its own thing, nothing to keep together).
 
 Core support for `'span'` lives in four guarded spots in `src/timeseries.js`: extent in `pushData`
 and `prepare_grid`, the y-extent shortcut, and the hit test in `get_element` (which mirrors
@@ -527,6 +556,53 @@ call it rather than re-deriving it.
 **Series colours are keyed by series id everywhere.** `multiline`(point) and `scatter`
 used to colour by ordinal index instead, which meant hiding one series recoloured all the
 ones after it. If you add a renderer, use `resolveColor(plot, seriesId, alpha)`.
+
+### Zero-size canvases (hidden containers)
+
+A chart whose container is `display:none` — a tab panel, a collapsed section — measures
+0×0. That case is guarded, and the guards are load-bearing: **do not "simplify" them.**
+
+The failure they prevent: `readContainerPad()` still reports the container's real CSS
+padding, and `margin.top` is always two label rows, so `canvas.width - margin.left -
+margin.right` comes out **negative**, not zero. `ppms` then goes negative, `mspp = 1/ppms`
+large-negative, and every `setTimeout` delay derived from it non-positive — which the
+browser clamps to 0, so the self-rescheduling redraw timers spin at ~250 fps. Since
+`plotAll()` broadcasts to the viewport-sync group, one hidden chart dragged every visible
+peer into the same loop and their sources into an endless refetch.
+
+- **`clampPlot(px)` floors `plotWidth`/`plotHeight` at 1** at *all six* assignment sites:
+  two in the constructor, two in the ResizeObserver, and two inside `prepare_grid` (after
+  the `margin.left` and `margin.bottom` animations). Miss one and the negative leaks back.
+- **The ResizeObserver bails out on a zero-area canvas**, keeping the last good geometry
+  rather than recomputing from nothing — it fires again with a real rect on unhide. This
+  also keeps `getViewport().ppms` sane, so a hidden chart's sources stay on their
+  resolution tier instead of dropping to the coarsest one and refetching on unhide.
+- **`plotAll()` bails out on a zero-area canvas too, reading `canvas.clientWidth`, not
+  `canvas.width`** — the observer deliberately leaves the bitmap at its last good size, so
+  `canvas.width` is non-zero while hidden and would never trip the guard.
+- **The group broadcast sits *above* that bail-out.** A follow *leader* that gets hidden
+  keeps ticking (`follower_tick` re-arms itself before calling `plotAll`) and is the only
+  thing driving time for the group, so swallowing its broadcast froze every visible peer
+  until the user next interacted. Broadcasting from a hidden chart is safe because the
+  storm is fixed at its source by the clamp, not by silence.
+- **`activePlot` is initialised to `[]`.** It is only assigned in `prepare_grid`, which the
+  bail-out can now skip entirely, and `getActiveData()`/`getSeries()` are public —
+  `attachLegend()` calls `getSeries()` at attach time, so a legend on a chart built inside
+  a hidden panel used to throw.
+- **`getCanvasWidth()` reports 0 while hidden**, so a hidden instance loses the follow-leader
+  election. Note the election only runs inside `start_follower()` and is never re-run, so
+  this decides who leads at that moment; it does not re-elect when a leader is later hidden.
+
+There is still **no `destroy()`** on an instance, and `canvas._tsInstance` is never
+cleared, so a canvas can never be reused: a second `new TimeSeries` on it warns and
+`return`s, which under `new` yields a half-built object with none of the methods attached.
+A page that needs to rebuild (e.g. after new credentials) has to reload —
+`examples/zabbix.html`'s "Trennen" does exactly that, deliberately.
+
+`test/resize.test.mjs` covers all of the above; `test/helpers/dom.mjs` gained
+`resizeObservers`, `resizeCanvas(canvas, w, h)`, a `_pad`-aware `getComputedStyle` and an
+opt-in `parentElement` (via `makeCanvas`'s 4th argument) to make it drivable — the stub
+`ResizeObserver` used to be inert, so resize was untestable.
 
 ### Keyboard
 
