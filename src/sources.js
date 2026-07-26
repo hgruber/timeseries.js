@@ -351,14 +351,21 @@ function caldavPlot(results, from, to, layout) {
 registerSource({
   type: 'caldav',
   init(source, callbacks) {
-    var client = new CalDAV({
+    var clientOptions = {
       url: source['url'],
       username: source['username'],
       password: source['password'],
       token: source['auth-token'],
       proxy: source['proxy'],
-      timeout: source['timeout'],
-    });
+    };
+    // Set only when the caller actually asked for one. CalDAV's constructor
+    // merges via Object.assign, which overwrites a default with a
+    // present-but-undefined key — passing `timeout: source['timeout']`
+    // unconditionally therefore replaced the 20 s default with `undefined`,
+    // and `caldav.js`'s `ctl && config.timeout` then armed no abort timer at
+    // all, so a server that never answers left the promise pending forever.
+    if (source['timeout'] != null) clientOptions.timeout = source['timeout'];
+    var client = new CalDAV(clientOptions);
     source.client = client;
 
     var layout = source['layout'] === 'packed' ? 'packed' : 'calendar';

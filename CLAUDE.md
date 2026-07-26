@@ -14,6 +14,7 @@ npm run build        # bundle src/ → dist/timeseries.js (IIFE)
 npm run build:min    # minified build → dist/timeseries.min.js
 npm run watch        # rebuild on file changes
 npm run serve        # python3 static server on :8080
+npm run serve:proxy  # same, but node — adds the /dav-proxy route (see below)
 npm test             # run test/*.test.mjs with node's built-in test runner
 npm run lint         # eslint; must stay at 0 errors
 npm run lint:strict  # same, but warnings fail too (--max-warnings 0); currently green
@@ -50,31 +51,69 @@ Two more flagged-but-deliberately-unfixed oddities, both carrying a NOTE in the 
   keeps it off the immediate-fire path either way.
 - **`jpZabbix.api()` sets `req.timeout` but never wires `req.ontimeout`** (only `onload`
   and `onerror`). An XHR timeout therefore settles nothing and the promise hangs forever.
-  Consumers that need a timeout must race it themselves — `examples/zabbix.html`'s connect
+  Consumers that need a timeout must race it themselves — `demo/zabbix-live.html`'s connect
   probe does. Wiring `ontimeout` is the right fix but changes behaviour for every consumer.
 
-**Dev without building**: `demo/caldav.html` and `demo/zabbix.html` use `<script type="module">`
+**Dev without building**: `demo/caldav.html`, `demo/caldav-live.html`, `demo/zabbix.html` and
+`demo/zabbix-live.html` use `<script type="module">`
 and import directly from `src/`, so they need no build step. `demo/index.html` does **not** — it loads
 the IIFE bundle via `<script src="../dist/timeseries.js">`, so changes to `src/` only show
 up there after `npm run build` (or with `npm run watch` running). `dist/` is gitignored;
-the Pages deploy in `.github/workflows/deploy.yml` builds it in CI. Because `caldav.html`
-and `zabbix.html` import `src/` directly even in production, that workflow also copies `src/`
-into the deploy folder alongside `demo/` and `dist/` — otherwise those pages 404 on their
+the Pages deploy in `.github/workflows/deploy.yml` builds it in CI. Because those four pages
+import `src/` directly even in production, that workflow also copies `src/`
+into the deploy folder alongside `demo/` and `dist/` — otherwise they 404 on their
 `../src/*.js` imports.
 
-**Shared demo chrome**: all three demo pages link `demo/demo.css` and load `demo/demo-nav.js`.
+**Shared demo chrome**: all five demo pages link `demo/demo.css` and load `demo/demo-nav.js`.
 The stylesheet holds the page frame (header, cards, controls, buttons, footer) with the four
 palettes declared as CSS custom properties on `body` — `light` is the bare default, the others
 are `body.theme-dark` / `.theme-highContrast` / `.theme-warm`. Each page keeps only its own
 rules in an inline `<style>`, which is loaded *after* the stylesheet and therefore wins on
 equal specificity. `demo-nav.js` is a **classic** script on purpose (no `import`/`export`), so
-the IIFE page and the two module pages can all load it; it builds the nav bar and the theme
+the IIFE page and the four module pages can all load it; it builds the nav bar and the theme
 picker into `<div id="demo-nav">`, owns the `<body>` theme class and persists the choice in
 `localStorage`, and knows nothing about `TimeSeries`. Pages repaint their own canvases via
 `window.demoTheme.onChange(fn)`, which fires immediately with the current theme so a module
 script subscribing late still gets the stored palette. Load it right after `</header>`, not
 deferred in `<head>`: the placeholder exists by then, the theme class lands before the page
 below paints, and `window.demoTheme` is defined before any page script runs.
+
+That "fires immediately" is what lets a page whose charts do not exist at load time still get
+the stored palette: `zabbix-live.html` subscribes inside `buildCharts()` and `caldav-live.html`
+inside `buildChart()`, i.e. only after a successful connect, and the callback runs right there
+with the theme read from `localStorage` — so the canvases come up already themed instead of
+waiting for the next picker click.
+
+One rule in `demo.css` exists purely for these two: **`button[hidden] { display: none }`**.
+The `button` rule sets `display: inline-flex`, and the UA rule implementing the `hidden`
+attribute sits at the lowest possible priority, so any author `display` beats it — without that
+line, both pages' `#reconnect` button (hidden in the markup, unhidden from an error handler)
+showed from the start.
+
+**The nav list**: adding a page means one entry in `PAGES` at the top of `demo-nav.js`; nothing
+else knows the list. An entry comes in two forms — `{href, label}` for a plain pill, or
+`{group, pages: [{href, label, title}]}` for a labelled pill-box holding several. The group form
+is for pages on the **same topic at a different fidelity**, and the two Zabbix pages are the case
+it exists for: as two flat pills ("Zabbix", "Zabbix live") the bar repeats the topic, is wider
+for it, and still never says which one needs a server. Grouped, the topic is named once and the
+labels are only the qualifier (`demo` / `live`). The two CalDAV pages are grouped under
+"Calendar" for the same reason.
+
+Three things about that group are deliberate:
+
+- **`.nav-group` reuses the `--group-*` custom properties** every palette already declares for
+  `.control-group`, so it re-themes without a colour of its own. It is styled as a filled pill
+  box with borderless children because `.theme-picker` beside it in the header already is one —
+  that is the header's existing idiom, not a new one. It is *not* `.control-group` itself: that
+  class gets `flex: 1 1 100%` under 640px, tuned for the `.controls` bars, which would blow the
+  nav apart.
+- **The children's border loses its colour, not its width** (`border-color: transparent`, guarded
+  by `:not([aria-current="page"])` so it can't blank the current page's border), so nothing
+  shifts when a hover or the current page fills one in.
+- **`navLink()` sets `aria-label` inside a group.** The visible text is only `demo`/`live`, which
+  says nothing in a screen reader's list of links, so the full "Zabbix demo" goes on the label —
+  and the visible group label is `aria-hidden`, since `role="group"`'s own `aria-label` already
+  announces it.
 
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
 
@@ -355,9 +394,49 @@ expanded **server-side** via `<C:expand>` — `caldav.js` deliberately does not 
 After init, `source.client` is the CalDAV client and `source.setLayout(l)` re-packs without a
 refetch.
 
-Demo: `demo/caldav.html`. With no server configured it parses the static fixtures in
-`demo/fixtures/` (shifted onto the current week), so the renderer and parser are testable with no
-infrastructure.
+Note the `timeout` key is only forwarded when set. `CalDAV`'s constructor merges via
+`Object.assign`, which overwrites a default with a present-but-`undefined` key, so passing it
+unconditionally replaced the 20 s default with `undefined` — and `caldav.js`'s
+`ctl && config.timeout` then armed no abort timer at all, leaving a hung request pending forever.
+
+Two demos, and the split between them mirrors the two Zabbix pages:
+
+- **`demo/caldav.html`** needs no server. With none configured it parses the static fixtures in
+  `demo/fixtures/` (shifted onto the current week), so the renderer and parser are testable with
+  no infrastructure.
+- **`demo/caldav-live.html`** talks to a *real* server: URL, user, password and an optional
+  proxy prefix go into a connect form, `discover()` doubles as the credential probe and as the
+  calendar list, and a `<select multiple>` picks which calendars are drawn. Credentials land in
+  `sessionStorage` (a password, unlike an API token, cannot be revoked server-side) and only
+  reach `localStorage` if the user ticks the box.
+
+That page does **not** use the built-in `caldav` source, and deliberately so: the source's
+calendar list is fixed once `init()` has run, and it reports failures to `console.warn` only, so
+there is nothing to hang a status line, the per-calendar counts or the legend off. It registers
+a page-local `caldav-live` source instead — the same arrangement `demo/zabbix-live.html` uses
+for `zabbix-problems`/`zabbix-items`. What that source adds over the built-in one is
+`setCalendars(list)` at runtime, backed by a per-calendar event cache keyed to the window
+currently held, so deselecting a calendar costs no request and reselecting one is free unless
+the window has moved since; plus `onUpdate`/`onError`. Everything else — the padded window, the
+sequence guard, the span-plot shape, `setLayout` — mirrors `src/sources.js` on purpose.
+
+**The CORS wall, and `scripts/dev-server.mjs`.** A browser will not talk to a CalDAV server on
+another origin unless that server answers the `OPTIONS` preflight — and most do not: they demand
+authentication for it and answer `401`, which is fatal *regardless of any header*, because a
+preflight must return 2xx. There is no client-side fix; the server has to answer `OPTIONS`
+before its auth layer (Nextcloud behind Apache/nginx/HAProxy, an `Allow-Headers` list that names
+`Authorization` explicitly — a `*` provably does not cover it).
+
+For local development the way around it is the `proxy` option `src/caldav.js` already has:
+`endpoint()` builds `proxy + encodeURIComponent(absoluteURL)`, so a same-origin forwarder makes
+the whole CORS question disappear rather than satisfying it. `npm run serve:proxy`
+(`scripts/dev-server.mjs`) is that forwarder: the same static server as `npm run serve` plus one
+route, `/dav-proxy?url=…`, which replays the request (method, `Authorization`, `Depth`,
+`Content-Type`, body) from Node — where the same-origin policy, a browser rule, does not exist.
+Enter `/dav-proxy?url=` in the page's Proxy field. It binds to 127.0.0.1 only, since a proxy
+that forwards to an arbitrary target URL is an open relay; `DAV_PROXY_ALLOW` narrows it to a
+host list. `npm run serve` stays as it was — the proxy is opt-in, and the deployed Pages copy
+has none, so there the server-side CORS config is the only option.
 
 ### Resolution tiers and the cross-fade (any renderer)
 
@@ -477,10 +556,19 @@ centre. The pure ring helpers (`zabbixPrimaryTier`, `zabbixWindow`, `zabbixClear
 adds nothing to it beyond making sure the data is there: prefetch means the incoming tier is
 already cached, so the dissolve never waits on the network.
 
-Demo: `demo/zabbix.html`. With no server configured it installs a synthetic
-`api_jsonrpc.php` (a fake `XMLHttpRequest` answering `history.get`/`trends.get` with a generated
-signal), so the **real** `zabbix` source — login flow, tiering, prefetch, ring, cross-fade —
-runs unchanged with no infrastructure.
+Two demos, and the split between them is deliberate:
+
+- **`demo/zabbix.html`** needs no server. It installs a synthetic `api_jsonrpc.php` (a fake
+  `XMLHttpRequest` answering `history.get`/`trends.get` with a generated signal), so the
+  **real** `zabbix` source — login flow, tiering, prefetch, ring, cross-fade — runs unchanged
+  with no infrastructure.
+- **`demo/zabbix-live.html`** talks to a *real* Zabbix server: API URL and token go into a
+  connect form (stored in `localStorage` only after one successful authenticated round trip;
+  the page says so in a banner) and it registers two page-local sources of its own,
+  `zabbix-problems` (an `event.get`/`problem.get` gantt) and `zabbix-items` (a picker feeding
+  the history/trends band), on two viewport-synced instances. It carries no credentials in the
+  source, which is why it lives in `demo/` and is deployed like the rest — see the banner for
+  what that means for a token typed into the Pages copy.
 
 ### Public API (TimeSeries instance)
 
@@ -597,7 +685,10 @@ There is still **no `destroy()`** on an instance, and `canvas._tsInstance` is ne
 cleared, so a canvas can never be reused: a second `new TimeSeries` on it warns and
 `return`s, which under `new` yields a half-built object with none of the methods attached.
 A page that needs to rebuild (e.g. after new credentials) has to reload —
-`examples/zabbix.html`'s "Trennen" does exactly that, deliberately.
+`demo/zabbix-live.html`'s and `demo/caldav-live.html`'s "Disconnect" both do exactly that,
+deliberately. Their `window.demoTheme.onChange` subscriptions ride on the same fact: registered
+inside `buildCharts()`/`buildChart()` and never unsubscribed, because the only way out of a
+built chart is that reload.
 
 `test/resize.test.mjs` covers all of the above; `test/helpers/dom.mjs` gained
 `resizeObservers`, `resizeCanvas(canvas, w, h)`, a `_pad`-aware `getComputedStyle` and an

@@ -77,7 +77,36 @@ npm run serve   # static server on :8080
 
 `demo/caldav.html` shows the `gantt` renderer and the `caldav` source; with no
 server configured it parses the static fixtures in `demo/fixtures/` instead,
-so it works with no infrastructure.
+so it works with no infrastructure. `demo/zabbix.html` does the same for the
+`zabbix` source, answering its requests from a synthetic `api_jsonrpc.php`.
+
+Two pages want a **real** server, and both ask for it in a connect form rather
+than in the source:
+
+`demo/zabbix-live.html` enters the API URL and a token (a read-only API user is
+enough) and draws problems as a gantt plus any items you pick as a
+history/trends band, on two viewport-synced charts. The token is kept in
+`localStorage` so a reload keeps the connection.
+
+`demo/caldav-live.html` connects to a CalDAV server with user and password
+(HTTP Basic, plus an optional prefix for a same-origin forwarder if the server
+fails the CORS preflight — most do). It discovers your calendars, lets you pick
+any subset from a multiselect and draws each as one lane of the `gantt`
+renderer. Credentials live in `sessionStorage` by default, so a reload keeps the
+connection but closing the tab forgets it; a checkbox promotes them to
+`localStorage`.
+
+Read the banner on either page before using it against anything you care about.
+
+Most CalDAV servers refuse the CORS preflight (they answer `OPTIONS` with
+`401`, which no header can rescue — a preflight must return 2xx), so the
+CalDAV page will not reach them from another origin until the server is
+configured to answer `OPTIONS` before its auth layer. For local development
+`npm run serve:proxy` sidesteps it: same static server, plus a `/dav-proxy`
+route that replays the request from Node, where the same-origin policy does
+not apply. Put `/dav-proxy?url=` in the page's *Proxy* field. It listens on
+127.0.0.1 only — a proxy to an arbitrary target URL is an open relay — and
+`DAV_PROXY_ALLOW=host1,host2` narrows it further.
 
 ---
 
@@ -89,6 +118,7 @@ npm run build        # bundle → dist/timeseries.js
 npm run build:min    # minified → dist/timeseries.min.js
 npm run watch        # rebuild on file changes
 npm run serve        # static server on :8080
+npm run serve:proxy  # same, plus the /dav-proxy route for demo/caldav-live.html
 npm test             # run the test suite (node's built-in test runner)
 ```
 

@@ -318,6 +318,51 @@ header p { font-size: 0.85rem; color: var(--muted); }
   outline-offset: 2px;
 }
 
+/* A labelled pair of nav links (demo-nav.js's PAGES group form) — same filled
+   pill-box idiom as .theme-picker right below, which is what makes it read as
+   part of the header rather than an extra control. It reuses the --group-*
+   properties every palette already declares for .control-group, so it
+   re-themes without a colour of its own.
+
+   NOT .control-group: that class is tuned for the .controls bars and gets
+   `flex: 1 1 100%` under 640px, which would blow the nav apart. */
+.nav-group {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0.25rem;
+  border-radius: 999px;
+  background: var(--group-bg);
+  border: var(--group-border-w) solid var(--group-border-c);
+}
+
+.nav-group-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--group-label);
+  padding: 0 0.1rem 0 0.45rem;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Tighter than a free-standing pill: the box adds its own padding around them,
+   and this lands the group at the same height as the .theme-picker next to it,
+   so the header's two boxes sit on one line instead of nearly doing so. */
+.demo-nav .nav-group a {
+  padding: 0.22rem 0.55rem;
+}
+
+/* The box supplies the outline, so the links inside drop theirs — the *colour*
+   only, keeping the width, so nothing shifts when :hover or [aria-current]
+   fills one in. Exactly what .theme-btn does with its transparent 2px border.
+   The :not() is load-bearing: without it this would also blank the current
+   page's border, which .demo-nav a[aria-current="page"] sets a few rules up. */
+.demo-nav .nav-group a:not([aria-current="page"]) {
+  border-color: transparent;
+}
+
 .theme-picker {
   display: flex;
   align-items: center;
@@ -442,6 +487,12 @@ button {
   white-space: nowrap;
   user-select: none;
 }
+
+/* The `display` above would otherwise defeat the `hidden` attribute: the UA
+   rule implementing it is at the lowest possible priority, so any author
+   `display` beats it. Both live demo pages keep a button hidden in the markup
+   and unhide it from script (#reconnect), and would show it from the start. */
+button[hidden] { display: none; }
 
 button:hover { background: var(--btn-hover-bg); }
 

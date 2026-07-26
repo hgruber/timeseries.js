@@ -2,10 +2,10 @@
    timeseries.js demo pages — shared navigation bar and theme picker.
 
    A *classic* script on purpose (no import/export): index.html loads the IIFE
-   bundle, while caldav.html and zabbix.html are ES modules importing ../src/
-   directly. A classic script is the one form all three can load, and it runs
-   before every deferred module script, so `window.demoTheme` is defined by the
-   time any page script wants to subscribe.
+   bundle, while caldav.html, zabbix.html and zabbix-live.html are ES modules
+   importing ../src/ directly. A classic script is the one form all of them can
+   load, and it runs before every deferred module script, so `window.demoTheme`
+   is defined by the time any page script wants to subscribe.
 
    Drop `<div id="demo-nav"></div>` inside the page's <header> and load this
    file right after `</header>`, so the theme class lands on <body> before the
@@ -33,10 +33,21 @@
     { name: 'warm',         label: 'Warm',          cls: 'theme-btn-warm'  }
   ];
 
+  // An entry is either a single page, `{href, label}`, or a labelled group of
+  // them, `{group, pages: […]}`. The group form is for several pages on the
+  // *same topic at a different fidelity* — not for two topics. Repeating the
+  // topic in two flat pills ("Zabbix", "Zabbix live") is both wider and vaguer
+  // than naming it once around a pair whose labels are only the qualifier.
   var PAGES = [
     { href: 'index.html',  label: 'Overview' },
-    { href: 'caldav.html', label: 'Calendar' },
-    { href: 'zabbix.html', label: 'Zabbix'   },
+    { group: 'Calendar', pages: [
+      { href: 'caldav.html',      label: 'demo', title: 'CalDAV — fixtures, needs no server' },
+      { href: 'caldav-live.html', label: 'live', title: 'CalDAV — connects to a real server' }
+    ] },
+    { group: 'Zabbix', pages: [
+      { href: 'zabbix.html',      label: 'demo', title: 'Zabbix — synthetic, needs no server' },
+      { href: 'zabbix-live.html', label: 'live', title: 'Zabbix — connects to a real server' }
+    ] },
     { href: 'https://github.com/hgruber/timeseries.js', label: 'GitHub', external: true }
   ];
 
@@ -100,18 +111,47 @@
   // '/demo/index.html' are the same page.
   var here = location.pathname.split('/').pop() || 'index.html';
 
+  // Shared by both the flat and the grouped path, so the current-page and
+  // external handling exists once. `groupName` is set only inside a group.
+  function navLink(p, groupName) {
+    var a = document.createElement('a');
+    a.href = p.href;
+    a.textContent = p.label;
+    if (p.title) a.title = p.title;
+    // In a group the visible text is only the qualifier, so a screen reader's
+    // list of links would read "demo", "live" — useless out of context. The
+    // full name goes on aria-label there; a flat entry already reads whole.
+    if (groupName) a.setAttribute('aria-label', groupName + ' ' + p.label);
+    if (p.external) a.rel = 'noopener';
+    else if (p.href === here) a.setAttribute('aria-current', 'page');
+    return a;
+  }
+
+  function navGroup(g) {
+    var box = document.createElement('span');
+    box.className = 'nav-group';
+    box.setAttribute('role', 'group');
+    box.setAttribute('aria-label', g.group);
+
+    // aria-hidden: role=group's own aria-label already announces the name, so
+    // exposing the visible copy too would say it twice.
+    var label = document.createElement('span');
+    label.className = 'nav-group-label';
+    label.textContent = g.group;
+    label.setAttribute('aria-hidden', 'true');
+    box.appendChild(label);
+
+    g.pages.forEach(function (p) { box.appendChild(navLink(p, g.group)); });
+    return box;
+  }
+
   function buildNav() {
     var nav = document.createElement('nav');
     nav.className = 'demo-nav';
     nav.setAttribute('aria-label', 'Demo pages');
 
     PAGES.forEach(function (p) {
-      var a = document.createElement('a');
-      a.href = p.href;
-      a.textContent = p.label;
-      if (p.external) a.rel = 'noopener';
-      else if (p.href === here) a.setAttribute('aria-current', 'page');
-      nav.appendChild(a);
+      nav.appendChild(p.pages ? navGroup(p) : navLink(p));
     });
     return nav;
   }

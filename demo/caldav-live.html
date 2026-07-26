@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — CalDAV live</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      /* Card frame, controls, buttons, .hint/.status/.pill/code come from
+         demo.css (same palette variables as the other demo pages). Only what
+         is specific to this page lives here: the connect form, the credentials
+         banner, the calendar multiselect and its legend. The tooltip needs no
+         CSS — attachTooltip styles itself from the chart palette. */
+
+      /* The credentials banner is a warning, so deliberately not a themed
+         accent. Promoted to custom properties so a theme could redeclare the
+         pair in one spot; same convention as demo/zabbix-live.html. */
+      body {
+        --danger: #e45959;
+        --danger-bg: rgba(228, 89, 89, 0.12);
+        --danger-border: rgba(228, 89, 89, 0.45);
+      }
+
+      /* Overridden per update from the discovered lane count — see
+         resizeChart() in the page script. The value here only decides how the
+         card looks in the moment between "connected" and the first response. */
+      #calendar-wrap { height: 420px; }
+
+      .password-warning {
+        margin: 0 1.5rem 1rem;
+        padding: 0.8rem 1.2rem;
+        border-radius: 10px;
+        background: var(--danger-bg);
+        border: var(--group-border-w) solid var(--danger-border);
+        color: var(--text);
+        font-size: 0.82rem;
+        line-height: 1.5;
+        max-width: 1300px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .password-warning strong { color: var(--danger); }
+
+      /* ── Connect form ────────────────────────────────────────────────────
+         demo.css styles buttons but no inputs. These numbers match demo.css's
+         `button` rule, so an input and a button on one row line up. */
+      input[type="url"], input[type="password"], input[type="text"] {
+        font-family: inherit;
+        font-size: 0.82rem;
+        padding: 0.42rem 0.6rem;
+        border-radius: 7px;
+        border: var(--group-border-w) solid var(--btn-border);
+        background: var(--btn-bg);
+        color: var(--btn-fg);
+        min-width: 0;          /* so a flex row can actually shrink it */
+      }
+      input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      input::placeholder { color: var(--muted); opacity: 0.7; }
+      input:disabled { opacity: 0.5; }
+
+      .field { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.25rem; }
+      .field-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--group-label);
+      }
+      /* Sits in the same .control-group row as the fields, so it is aligned
+         with their inputs rather than with their labels. */
+      .field-check {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        align-self: flex-end;
+        padding: 0 0.25rem 0.42rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .field-check input { accent-color: var(--accent); cursor: pointer; }
+
+      .connect-error {
+        margin: 0 1.4rem 1rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: var(--text);
+        background: var(--danger-bg);
+        border: var(--group-border-w) solid var(--danger-border);
+      }
+      .connect-error code { word-break: break-all; }
+
+      /* ── Calendar picker ─────────────────────────────────────────────────
+         `select[multiple]` gets its own rule rather than a shared `select`
+         one — this page has no single-choice dropdown to keep it in step
+         with. */
+      .filter-row {
+        display: flex;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        gap: 0.7rem;
+        padding: 0 1.4rem 1rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .filter-row label { padding-top: 0.35rem; }
+      .filter-row select[multiple] {
+        font-family: inherit;
+        font-size: 0.82rem;
+        min-width: 250px;
+        max-width: 380px;
+        padding: 0.25rem;
+        border-radius: 7px;
+        border: 1px solid var(--btn-border);
+        background: var(--btn-bg);
+        color: var(--btn-fg);
+      }
+      .filter-row select[multiple] option { padding: 0.12rem 0.3rem; }
+      .filter-row select[multiple]:disabled { opacity: 0.5; }
+      .filter-note { padding-top: 0.35rem; flex: 1 1 12rem; }
+
+      .calendar-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+        padding: 0.7rem 1.4rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+        border-top: 1px solid var(--hairline);
+      }
+      .cal-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+      .cal-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+      @media (max-width: 640px) {
+        .field { flex: 1 1 100%; }
+        .filter-row select[multiple] { flex: 1 1 100%; max-width: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — CalDAV live</h1>
+      <p>events from a real CalDAV server, one lane per selected calendar</p>
+      <!-- Nav bar + theme picker are built by demo-nav.js -->
+      <div id="demo-nav"></div>
+    </header>
+    <!-- Classic script, loaded here rather than deferred in <head>: the
+         placeholder above already exists, the theme class lands on <body>
+         before the page below paints, and window.demoTheme is defined before
+         the deferred module script runs. -->
+    <script src="./demo-nav.js"></script>
+
+    <div class="password-warning">
+      <strong>Careful:</strong> what you type here is stored <strong>in clear text</strong> —
+      by default in <code>sessionStorage</code>, so a reload keeps the connection but closing the
+      tab forgets it. Tick <em>remember on this device</em> and it goes into
+      <code>localStorage</code> as well: readable by every script on <em>this origin</em> — on a
+      shared host such as GitHub Pages that covers every other page served from it — and it
+      survives a browser restart. Unlike an API token a password cannot be revoked server-side,
+      so use a <em>read-only</em> or app-specific account, and prefer a server that issues app
+      passwords. “Disconnect” only forgets it locally.
+    </div>
+
+    <main>
+      <!-- Starts `hidden` in the markup rather than being shown and then hidden
+           by script: on every reload with stored credentials the auto-connect
+           would otherwise flash the form before removing it again. The state
+           machine in the script is the only thing that ever unhides it. -->
+      <div class="chart-card" id="connect-card" hidden>
+        <form class="controls" id="connect-form">
+          <div class="control-group">
+            <span class="group-label">CalDAV server</span>
+            <label class="field">
+              <span class="field-label">URL</span>
+              <input id="dav-url" type="url" required inputmode="url" spellcheck="false"
+                     autocomplete="off" size="30" placeholder="https://…/dav/">
+            </label>
+            <span class="divider"></span>
+            <label class="field">
+              <span class="field-label">User</span>
+              <input id="dav-user" type="text" required spellcheck="false"
+                     autocomplete="username" size="16">
+            </label>
+            <label class="field">
+              <span class="field-label">Password</span>
+              <input id="dav-pass" type="password" required spellcheck="false"
+                     autocomplete="current-password" size="16">
+            </label>
+            <button type="button" id="pass-reveal" class="btn-ghost"
+                    aria-pressed="false" aria-controls="dav-pass">show</button>
+            <span class="divider"></span>
+            <label class="field">
+              <span class="field-label">Proxy (optional)</span>
+              <input id="dav-proxy" type="text" spellcheck="false"
+                     autocomplete="off" size="18" placeholder="/dav-proxy?url=">
+            </label>
+            <label class="field-check">
+              <input type="checkbox" id="remember">
+              <span>remember on this device</span>
+            </label>
+          </div>
+          <button type="submit" class="btn-primary" id="connect-btn">Connect</button>
+          <span class="spacer"></span>
+          <span class="status">status:<span class="pill" id="connect-status">not connected</span></span>
+        </form>
+        <p class="connect-error" id="connect-error" hidden></p>
+        <p class="hint">
+          The URL is the CalDAV entry point — the server root, your principal or the calendar
+          home all work, since discovery follows <code>current-user-principal</code> →
+          <code>calendar-home-set</code> from wherever it starts. Authentication is HTTP Basic,
+          so an app-specific password is the right credential where the server offers one. The
+          credentials are only stored after discovery has actually returned calendars — see the
+          note above for where they end up.
+          <strong>Cross-origin:</strong> a browser sends an <code>OPTIONS</code> preflight before
+          every <code>PROPFIND</code>/<code>REPORT</code>, and the server must answer it
+          <em>without</em> demanding authentication, listing <code>PROPFIND</code> and
+          <code>REPORT</code> in <code>Access-Control-Allow-Methods</code> and
+          <code>Authorization</code>, <code>Depth</code>, <code>Content-Type</code> in
+          <code>Access-Control-Allow-Headers</code>. Requests go out with
+          <code>credentials: 'omit'</code>, so a wildcard
+          <code>Access-Control-Allow-Origin</code> is enough. Most servers fail that preflight
+          (they answer it with <code>401</code>) — for those, run a same-origin forwarder and put
+          its prefix in <em>Proxy</em>; the absolute target URL is appended URL-encoded, so
+          <code>/dav-proxy?url=</code> becomes
+          <code>/dav-proxy?url=https%3A%2F%2F…</code>.
+        </p>
+      </div>
+
+      <div id="chart-ui" hidden>
+        <div class="chart-card">
+          <div class="controls">
+            <div class="control-group">
+              <span class="group-label">Range</span>
+              <button id="range-day">Today</button>
+              <button id="range-week">This week</button>
+              <button id="range-next">Next week</button>
+              <button id="range-month">Month</button>
+            </div>
+            <div class="control-group">
+              <span class="group-label">Layout</span>
+              <button id="layout-calendar" aria-pressed="true">Lanes per calendar</button>
+              <button id="layout-packed" aria-pressed="false">Packed</button>
+            </div>
+            <span class="spacer"></span>
+            <span class="status">
+              <span class="pill" id="conn-host">–</span>
+              <button id="reconnect" class="btn-ghost" hidden>Reconnect</button>
+              <button id="disconnect" class="btn-ghost">Disconnect</button>
+            </span>
+          </div>
+
+          <div class="canvas-wrap" id="calendar-wrap"><canvas id="calendar-chart"></canvas></div>
+
+          <div class="controls">
+            <span class="status">events:<span class="pill" id="events-status">loading…</span></span>
+          </div>
+
+          <div class="filter-row">
+            <label for="cal-filter">Calendars</label>
+            <select id="cal-filter" multiple size="3"></select>
+            <button id="cal-all" class="btn-ghost">All</button>
+            <button id="cal-none" class="btn-ghost">None</button>
+            <span class="filter-note" id="cal-filter-note"></span>
+          </div>
+
+          <div class="calendar-legend" id="calendar-legend"></div>
+
+          <p class="hint">
+            Every calendar discovered under your principal is listed above; Ctrl/⌘-click picks
+            individual ones. Each selected calendar becomes one lane of the <code>gantt</code>
+            renderer, and the number in brackets is how many events it contributes to the
+            currently fetched window. Deselecting a calendar costs no request, and reselecting one
+            is served from the events already held for this window — only a calendar that has
+            never been fetched for the current window triggers a <code>REPORT</code>. Panning and
+            zooming refetch only once the viewport leaves the window that was fetched (50&nbsp;%
+            wider than the view on either side), and a response that arrives after you have moved
+            on is dropped. Recurring events are expanded <em>server-side</em> via
+            <code>&lt;C:expand&gt;</code> — <code>caldav.js</code> deliberately implements no
+            RRULE engine, so a server that ignores <code>expand</code> shows only the master
+            event.
+          </p>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { registerSource } from '../src/sources.js';
+      import CalDAV from '../src/caldav.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      // ── Stored connection ────────────────────────────────────────────────
+      // Credentials come from the connect form, not from a constant in this
+      // file. Same convention as demo/demo-nav.js and demo/zabbix-live.html: a
+      // `timeseries-demo-*` key, a readStored/writeStored pair, try/catch on
+      // BOTH directions because storage throws in private mode or with cookies
+      // blocked (a demo page must not die over a persistence nicety), and the
+      // read result validated before anything uses it. One try covers getItem
+      // *and* JSON.parse, since either can throw — a hand-edited or
+      // half-written entry must never reach `new CalDAV({ url: undefined })`.
+      //
+      // Unlike the Zabbix page this defaults to sessionStorage: a password is
+      // not revocable server-side, so "survives a reload" is worth having but
+      // "survives a browser restart" should be a deliberate choice. The
+      // checkbox mirrors the same payload into localStorage, and `remember`
+      // travels *inside* the payload so a reload restores the checkbox state
+      // rather than silently downgrading it on the next successful connect.
+      const STORAGE_KEY = 'timeseries-demo-caldav-conn';
+
+      function readFrom(store) {
+        try {
+          const v = JSON.parse(store.getItem(STORAGE_KEY));
+          if (!v || typeof v.url !== 'string' || typeof v.username !== 'string'
+              || typeof v.password !== 'string') return null;
+          if (!v.url || !v.username) return null;
+          return {
+            url: v.url,
+            username: v.username,
+            password: v.password,
+            proxy: typeof v.proxy === 'string' ? v.proxy : '',
+            remember: v.remember === true,
+          };
+        } catch (e) { return null; }
+      }
+      function readStored() {
+        return readFrom(sessionStorage) || readFrom(localStorage);
+      }
+      function writeStored(conn) {
+        const json = JSON.stringify(conn);
+        try { sessionStorage.setItem(STORAGE_KEY, json); } catch (e) { /* ignore */ }
+        try {
+          if (conn.remember) localStorage.setItem(STORAGE_KEY, json);
+          else localStorage.removeItem(STORAGE_KEY);
+        } catch (e) { /* ignore */ }
+      }
+      function clearStored() {
+        try { sessionStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+        try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+      }
+
+      // ── Page-local source: caldav-live ───────────────────────────────────
+      // The built-in `caldav` source (src/sources.js) cannot drive this page:
+      // its calendar list is fixed once init() has run, and it reports
+      // progress and failures to console.warn only, so there is nothing to
+      // hang a status line or a picker off. This is the same arrangement
+      // demo/zabbix-live.html uses for `zabbix-problems`/`zabbix-items` — a
+      // page-local source registered against the public plugin API.
+      //
+      // What it adds over the built-in one:
+      //   • setCalendars(list) at runtime, backed by a per-calendar cache, so
+      //     ticking a calendar off costs nothing and ticking it back on is
+      //     free as long as the window has not moved.
+      //   • onUpdate/onError, for the status pill, the counts in the picker,
+      //     the legend and the chart height.
+      // Everything else — the padded window, the sequence guard, the span-plot
+      // shape, setLayout — mirrors src/sources.js:310-421 deliberately.
+      registerSource({
+        type: 'caldav-live',
+        init(source, callbacks) {
+          // Handed in rather than constructed here: the connect probe has
+          // already built this client and proved its credentials, so there is
+          // no second login and only one object holds the password.
+          const client = source.client;
+          const padding = source.padding != null ? source.padding : 0.5;
+          let layout = source.layout === 'packed' ? 'packed' : 'calendar';
+          let selected = (source.calendars || []).slice();
+          const cache = new Map();    // href -> events, valid for `fetched`
+          const errors = new Map();   // href -> error from the last fetch
+          let fetched = null;         // window currently held, in ms
+          let seq = 0;                // guards against out-of-order responses
+          let plotId = null;
+          let current = null;         // the plot object currently in the chart
+
+          // Fetch a window wider than the viewport so ordinary panning is
+          // served from what we already have.
+          function paddedWindow(viewport) {
+            const span = viewport.tmax - viewport.tmin;
+            const pad = span * padding;
+            return { from: viewport.tmin - pad, to: viewport.tmax + pad };
+          }
+
+          function report() {
+            if (!source.onUpdate) return;
+            source.onUpdate({
+              total: current ? current.data.length : 0,
+              perCalendar: countByCalendar(),
+              plot: current,
+              errors: [...errors.entries()],
+            });
+          }
+
+          // Read off the cache rather than off `selected`, so a calendar that
+          // was just deselected keeps showing its count for as long as its
+          // events are still held. A calendar with no entry reports nothing
+          // rather than zero — after the window moves we genuinely do not know
+          // its count until it is selected and fetched again.
+          function countByCalendar() {
+            const counts = new Map();
+            cache.forEach((events, href) => counts.set(href, events.length));
+            return counts;
+          }
+
+          function rebuild() {
+            // An empty selection is a legitimate state, not an error — but a
+            // span plot with no lanes has no value space at all, so the plot
+            // is removed rather than emptied. releaseSlot() recycles the id,
+            // which is why plotId has to go back to null with it.
+            if (!selected.length || !fetched) {
+              if (plotId !== null) { callbacks.removeData(plotId); plotId = null; }
+              current = null;
+              callbacks.requestRedraw();
+              report();
+              return;
+            }
+            const lanes = selected.map((cal) => ({
+              id: cal.href,
+              label: calendarLabel(cal),
+              color: cal.color,
+            }));
+            const data = [];
+            for (const cal of selected)
+              for (const ev of cache.get(cal.href) || [])
+                data.push({
+                  // Expanded recurrences all carry the master UID, so the
+                  // start time is what makes an instance identifiable.
+                  id: (ev.uid || '') + '@' + ev.start,
+                  lane: cal.href,
+                  start: ev.start,
+                  end: ev.end,
+                  label: ev.summary,
+                  allDay: ev.allDay,
+                  location: ev.location,
+                  status: ev.status,
+                });
+            current = {
+              type: 'gantt',
+              category: 'span',
+              tmin: fetched.from,
+              tmax: fetched.to,
+              layout: layout,
+              lanes: lanes,
+              data: data,
+            };
+            if (plotId === null) plotId = callbacks.pushData(current);
+            else callbacks.replaceData(plotId, current);
+            callbacks.requestRedraw();
+            report();
+          }
+
+          function fetchWindow(viewport) {
+            if (!selected.length) return;
+            const win = paddedWindow(viewport);
+            // A window that still fits inside the one we hold needs nothing
+            // but the calendars that were never fetched for it.
+            const moved = !fetched || win.from < fetched.from || win.to > fetched.to;
+            const need = moved ? selected.slice() : selected.filter((c) => !cache.has(c.href));
+            if (!need.length) return;
+            const mine = ++seq;
+            client.queryAll(need, win.from, win.to).then((results) => {
+              // A newer request has already been issued; this answer is for a
+              // window the user has panned away from.
+              if (mine !== seq) return;
+              // Dropped only now, not before the request: until the response
+              // is in, what we hold is still the best answer available, and a
+              // superseded request must not have blanked it.
+              if (moved) { cache.clear(); errors.clear(); }
+              fetched = win;
+              for (const res of results) {
+                cache.set(res.calendar.href, res.events || []);
+                if (res.error) errors.set(res.calendar.href, res.error);
+                else errors.delete(res.calendar.href);
+              }
+              rebuild();
+            }, (e) => {
+              // queryAll captures per-calendar failures rather than throwing,
+              // so this is the batch itself going wrong.
+              if (mine !== seq) return;
+              console.warn('caldav_failure', e);
+              if (source.onError) source.onError(e);
+            });
+          }
+
+          source.setCalendars = function (list) {
+            selected = (list || []).slice();
+            if (!selected.length) { rebuild(); return; }
+            // Serve from cache when we can: deselecting never needs a request,
+            // and reselecting only does if that calendar has not been fetched
+            // for the window currently held.
+            if (fetched && selected.every((c) => cache.has(c.href))) rebuild();
+            else fetchWindow(callbacks.getViewport());
+          };
+
+          source.setLayout = function (next) {
+            layout = next === 'packed' ? 'packed' : 'calendar';
+            if (!current) return;
+            // Row assignment is derived state — clearing the stamp is enough
+            // for prepare_grid to repack on the next frame. No refetch needed.
+            current.layout = layout;
+            current._laidOut = null;
+            callbacks.requestRedraw();
+          };
+
+          callbacks.onViewportChange(() => fetchWindow(callbacks.getViewport()));
+          fetchWindow(callbacks.getViewport());
+        },
+      });
+
+      // ── Calendar helpers ─────────────────────────────────────────────────
+      // discover() returns `displayName`; a hand-configured calendar would
+      // carry `label`. Same fallback chain as caldavPlot() in src/sources.js.
+      function calendarLabel(cal) {
+        return cal.label || cal.displayName || cal.href;
+      }
+
+      // What the gantt renderer will actually paint for this lane: its own
+      // colour if the server published one, otherwise the same hash-derived
+      // hue eventColor() falls back to in src/gantt.js. Deriving it here
+      // rather than inventing a second palette is what keeps the legend dots
+      // and the bars in agreement.
+      function calendarColor(cal) {
+        return cal.color || TimeSeries.seriesColor(String(cal.href), 1);
+      }
+
+      function formatDuration(ms) {
+        const m = Math.round(ms / 60000);
+        if (m < 60) return m + ' min';
+        const h = m / 60;
+        if (h < 48) return (Math.round(h * 10) / 10) + ' h';
+        return Math.round(h / 24) + ' d';
+      }
+
+      // ── Chart, built after a successful connect ──────────────────────────
+      // Nothing here is constructed at load time: the source needs a proven
+      // client, so the instance cannot exist before the connect has returned
+      // one. Everything below is therefore `let`, filled in by buildChart().
+      let ts = null;
+      let source = null;
+      let calendars = [];              // everything discover() returned
+      let selectedHrefs = new Set();   // subset currently drawn
+      let built = false;
+
+      const calFilterEl = document.getElementById('cal-filter');
+      const calFilterNote = document.getElementById('cal-filter-note');
+      const calLegendEl = document.getElementById('calendar-legend');
+      const eventsStatus = document.getElementById('events-status');
+      const calendarWrap = document.getElementById('calendar-wrap');
+
+      // Fixed per-ROW height rather than squeezing every calendar into one
+      // static container: the ResizeObserver in src/timeseries.js watches the
+      // canvas's parent element (this wrap div), so changing its CSS height is
+      // enough to make the library resize and redraw on its own.
+      //
+      // It scales with plot.laneCount — the TOTAL packed row count
+      // layoutSpans() derives across all lanes, not the number of calendars.
+      // A calendar with several overlapping events needs one row per
+      // concurrent event, and sizing off the calendar count alone would squash
+      // them all into one calendar-sized slot: bars a few px tall, too thin to
+      // tell apart and too short for a label to draw.
+      const ROW_HEIGHT = 30;      // px per packed row
+      const CHROME = 70;          // time axis / margins outside the row area
+      const MIN_HEIGHT = 200;
+
+      function resizeChart(rowCount) {
+        const h = Math.max(MIN_HEIGHT, (rowCount || 0) * ROW_HEIGHT + CHROME);
+        calendarWrap.style.height = h + 'px';
+      }
+
+      // The option list is fixed for the lifetime of a connection (discovery
+      // runs exactly once), so it is built here and only ever relabelled
+      // afterwards — rebuilding it under a user who is mid-selection would be
+      // disruptive for no gain.
+      function buildCalendarOptions() {
+        calFilterEl.replaceChildren();
+        calendars.forEach((cal) => {
+          const o = new Option(calendarLabel(cal), cal.href);
+          o.selected = selectedHrefs.has(cal.href);
+          calFilterEl.appendChild(o);
+        });
+        // Exactly as tall as the list, so it neither scrolls nor shows empty
+        // rows. Below two a multiple-select starts looking like a dropdown.
+        calFilterEl.size = Math.min(9, Math.max(2, calendars.length));
+        calFilterEl.disabled = !calendars.length;
+      }
+
+      function updateCounts(perCalendar) {
+        for (const o of calFilterEl.options) {
+          const cal = calendars.find((c) => c.href === o.value);
+          const n = perCalendar && perCalendar.get(o.value);
+          o.textContent = calendarLabel(cal) + (n == null ? '' : ' (' + n + ')');
+        }
+      }
+
+      function renderLegend() {
+        calLegendEl.replaceChildren();
+        calendars.filter((c) => selectedHrefs.has(c.href)).forEach((cal) => {
+          const item = document.createElement('span');
+          item.className = 'cal-item';
+          const dot = document.createElement('span');
+          dot.className = 'cal-dot';
+          dot.style.background = calendarColor(cal);
+          item.append(dot, document.createTextNode(calendarLabel(cal)));
+          calLegendEl.appendChild(item);
+        });
+      }
+
+      function updateFilterNote() {
+        calFilterNote.textContent = selectedHrefs.size + ' of ' + calendars.length
+          + ' calendars — Ctrl/⌘-click picks individual ones';
+      }
+
+      // The one place the selection reaches the chart. Called by the
+      // multiselect, by All/None, and once at build time.
+      function applySelection() {
+        for (const o of calFilterEl.options) o.selected = selectedHrefs.has(o.value);
+        updateFilterNote();
+        renderLegend();
+        if (!selectedHrefs.size) eventsStatus.textContent = 'no calendar selected';
+        source.setCalendars(calendars.filter((c) => selectedHrefs.has(c.href)));
+      }
+
+      calFilterEl.onchange = () => {
+        selectedHrefs = new Set([...calFilterEl.selectedOptions].map((o) => o.value));
+        applySelection();
+      };
+      document.getElementById('cal-all').onclick = () => {
+        selectedHrefs = new Set(calendars.map((c) => c.href));
+        applySelection();
+      };
+      document.getElementById('cal-none').onclick = () => {
+        selectedHrefs = new Set();
+        applySelection();
+      };
+
+      function onSourceUpdate(info) {
+        updateCounts(info.perCalendar);
+        resizeChart(info.plot && info.plot.laneCount);
+        if (!selectedHrefs.size) { eventsStatus.textContent = 'no calendar selected'; return; }
+        let text = info.total + ' event(s)';
+        if (info.errors.length) {
+          const names = info.errors.map(([href]) => {
+            const cal = calendars.find((c) => c.href === href);
+            return cal ? calendarLabel(cal) : href;
+          });
+          text += ' · failed: ' + names.join(', ');
+          console.warn('caldav_failure', info.errors);
+        }
+        eventsStatus.textContent = text;
+      }
+
+      function buildChart(conn, client, discovered) {
+        if (built) return;   // belt and braces: auto-connect and form submit both land here
+        built = true;
+
+        calendars = discovered;
+        selectedHrefs = new Set(calendars.map((c) => c.href));
+
+        // Unhide the chart UI FIRST: the constructor reads canvas.clientWidth
+        // synchronously, so the canvas has to have its real box by then or it
+        // would start out 0×0 and only recover on the ResizeObserver's next
+        // callback. Nothing paints in between — this whole function runs in
+        // one task.
+        chartUi.hidden = false;
+        buildCalendarOptions();
+        updateFilterNote();
+        renderLegend();
+
+        source = {
+          'source-type': 'caldav-live',
+          client: client,
+          calendars: calendars,
+          layout: 'calendar',
+          padding: 0.5,
+          onUpdate: onSourceUpdate,
+          onError(e) {
+            eventsStatus.textContent = 'error: ' + (e && (e.message || e.data) || e);
+            // A mid-session failure (expired password, server restart) cannot
+            // rebuild the form in place — see the disconnect comment below —
+            // so offer the reload that re-runs the auto-connect instead.
+            reconnectBtn.hidden = false;
+          },
+        };
+
+        ts = new TimeSeries({
+          canvas: 'calendar-chart',
+          sources: [source],
+          // A week is the useful default for a calendar. Note it *animates*
+          // from the built-in last24 window, so connecting costs more than one
+          // REPORT batch: the source fetches once for the last24 window as it
+          // starts, and onViewportChange is a 300 ms throttle rather than a
+          // debounce (see scheduleViewportChange in src/timeseries.js), so a
+          // long zoom also reports an intermediate window on the way. Each
+          // report that widens past what is held fetches. Harmless — the
+          // sequence guard keeps the answers in order and every window is a
+          // real one the chart passed through — and the built-in `caldav`
+          // source behaves identically, which is why this page does not
+          // out-clever it.
+          initialView: 'thisWeek',
+        });
+        window.ts = ts;
+
+        // The library's default already renders an event's title and its
+        // start → end range for span plots. Only the calendar-specific bits
+        // are appended, so this extends the standard body rather than
+        // replacing it.
+        attachTooltip(ts, {
+          labelFor: (key, plot, value) => (value && value.label) || '(no title)',
+          formatter(ctx) {
+            const nodes = ctx.defaultContent();
+            const v = ctx.value;
+            if (v) {
+              const meta = [];
+              if (v.allDay) meta.push('all day');
+              else meta.push(formatDuration(v.end - v.start));
+              if (v.location) meta.push(v.location);
+              if (v.status && v.status !== 'CONFIRMED') meta.push(v.status.toLowerCase());
+              const el = document.createElement('div');
+              el.textContent = meta.join(' · ');
+              el.style.color = ctx.colors.tooltipMuted;
+              el.style.fontSize = '11px';
+              nodes.push(el);
+            }
+            return nodes;
+          },
+        });
+
+        // Subscribed here rather than at module scope: `ts` only exists after
+        // a successful connect. onChange fires immediately with the current
+        // theme, so a palette restored from localStorage lands on the canvas
+        // as it is built — not only on the next picker click. No unsubscribe:
+        // "Disconnect" reloads the page (an instance has no destroy()), so
+        // nothing outlives the chart.
+        window.demoTheme.onChange((name) => ts.setColors(TimeSeries.themes[name]));
+
+        document.getElementById('range-day').onclick   = () => ts.today();
+        document.getElementById('range-week').onclick  = () => ts.thisWeek();
+        document.getElementById('range-next').onclick  = () => ts.nextWeek();
+        document.getElementById('range-month').onclick = () => ts.thisMonth();
+
+        const btnCal = document.getElementById('layout-calendar');
+        const btnPacked = document.getElementById('layout-packed');
+        function setLayout(next) {
+          btnCal.setAttribute('aria-pressed', String(next === 'calendar'));
+          btnPacked.setAttribute('aria-pressed', String(next === 'packed'));
+          source.setLayout(next);
+        }
+        btnCal.onclick = () => setLayout('calendar');
+        btnPacked.onclick = () => setLayout('packed');
+
+        connectCard.hidden = true;
+        try { connHost.textContent = new URL(conn.url).host; }
+        catch (e) { connHost.textContent = conn.url; }
+      }
+
+      // ── Connect state machine ────────────────────────────────────────────
+      const connectCard   = document.getElementById('connect-card');
+      const connectForm   = document.getElementById('connect-form');
+      const connectStatus = document.getElementById('connect-status');
+      const connectError  = document.getElementById('connect-error');
+      const connectBtn    = document.getElementById('connect-btn');
+      const chartUi       = document.getElementById('chart-ui');
+      const urlInput      = document.getElementById('dav-url');
+      const userInput     = document.getElementById('dav-user');
+      const passInput     = document.getElementById('dav-pass');
+      const proxyInput    = document.getElementById('dav-proxy');
+      const rememberInput = document.getElementById('remember');
+      const connHost      = document.getElementById('conn-host');
+      const reconnectBtn  = document.getElementById('reconnect');
+
+      document.getElementById('pass-reveal').onclick = function () {
+        const show = passInput.type === 'password';
+        passInput.type = show ? 'text' : 'password';
+        this.setAttribute('aria-pressed', show ? 'true' : 'false');
+        this.textContent = show ? 'hide' : 'show';
+      };
+
+      // One authenticated round trip that both proves the credentials and
+      // returns exactly the list the picker needs, so a successful connect
+      // costs no extra request — the same double duty host.get does on
+      // demo/zabbix-live.html.
+      //
+      // No Promise.race for the timeout here, unlike that page: CalDAV's dav()
+      // wires a real AbortController (src/caldav.js), so a hung request
+      // rejects with code 0 on its own. The Zabbix client only sets
+      // req.timeout without an ontimeout handler, which settles nothing.
+      const PROBE_TIMEOUT = 20000;
+
+      function probe(conn) {
+        const client = new CalDAV({
+          url: conn.url,
+          username: conn.username,
+          password: conn.password,
+          proxy: conn.proxy || null,
+          timeout: PROBE_TIMEOUT,
+        });
+        return client.discover().then((found) => ({ client: client, calendars: found || [] }));
+      }
+
+      // CalDAV rejections are { code, message, data } (src/caldav.js). code 0
+      // means the request never reached the server — on this page almost
+      // always the CORS preflight rather than a dead host.
+      function describeError(e) {
+        if (!e) return 'Unknown error.';
+        const msg = e.message || String(e);
+        if (e.code === 0) {
+          return msg + '. The usual cause is the CORS preflight, not an unreachable server: '
+            + 'the OPTIONS request must be answered WITHOUT authentication, and must list '
+            + 'PROPFIND and REPORT in Access-Control-Allow-Methods plus Authorization, Depth '
+            + 'and Content-Type in Access-Control-Allow-Headers. Most CalDAV servers answer it '
+            + 'with 401 instead — for those, run a same-origin forwarder and enter its prefix '
+            + 'in the Proxy field. The other possibility: the URL is unreachable or wrong.';
+        }
+        if (e.code === 401 || e.code === 403)
+          return 'The server rejected these credentials (HTTP ' + e.code + '). '
+            + 'Note that authentication is HTTP Basic — where the server offers app-specific '
+            + 'passwords, an account password often will not work.';
+        if (e.code === -1)
+          return 'The server answered, but not with XML. The URL most likely points at a web '
+            + 'page rather than at a DAV endpoint.';
+        // e.data is the response body's first 500 characters. For a DAV error
+        // that is often a short, useful explanation — but an ordinary HTTP
+        // error page is a whole HTML document, which is only noise in a
+        // one-line box. Print it when it is short and not markup.
+        const detail = (e.data || '').trim();
+        const useful = detail && detail[0] !== '<' && detail.length <= 200;
+        return msg + (e.code > 0 ? ' (HTTP ' + e.code + ')' : '') + (useful ? ' — ' + detail : '');
+      }
+
+      function showForm(conn, err) {
+        urlInput.value = (conn && conn.url) || '';
+        userInput.value = (conn && conn.username) || '';
+        passInput.value = (conn && conn.password) || '';
+        proxyInput.value = (conn && conn.proxy) || '';
+        rememberInput.checked = !!(conn && conn.remember);
+        connectCard.hidden = false;
+        connectBtn.disabled = false;
+        [urlInput, userInput, passInput, proxyInput, rememberInput]
+          .forEach((el) => { el.disabled = false; });
+        connectStatus.textContent = err ? 'failed' : 'not connected';
+        connectError.hidden = !err;
+        if (err) connectError.textContent = typeof err === 'string' ? err : describeError(err);
+      }
+
+      function connect(conn, fromForm) {
+        connectStatus.textContent = 'connecting…';
+        connectError.hidden = true;
+        connectBtn.disabled = true;
+        [urlInput, userInput, passInput, proxyInput, rememberInput]
+          .forEach((el) => { el.disabled = true; });
+        probe(conn).then(({ client, calendars: found }) => {
+          if (!found.length) {
+            // Authentication itself worked, but the URL does not lead to any
+            // calendar collection — a configuration error, not a credential
+            // one, so nothing is stored and the form stays up with the URL to
+            // correct.
+            showForm(conn, 'Authenticated, but no calendar collections were found under this '
+              + 'URL. Try the principal URL or the calendar home directly — discovery follows '
+              + 'current-user-principal and calendar-home-set from whatever you enter, and some '
+              + 'servers expose neither.');
+            return;
+          }
+          // Persist only on success, so a typo is never stored.
+          writeStored(conn);
+          connectStatus.textContent = 'connected';
+          buildChart(conn, client, found);
+        }, (e) => {
+          console.warn('caldav_connect_failure', e);
+          // Deliberately does NOT clearStored(): a CORS hiccup or a server
+          // reboot must not silently discard credentials the user typed. Only
+          // "Disconnect" forgets.
+          showForm(conn, e);
+          if (!fromForm) urlInput.focus();
+        });
+      }
+
+      connectForm.onsubmit = (e) => {
+        e.preventDefault();
+        const conn = {
+          url: urlInput.value.trim(),
+          username: userInput.value.trim(),
+          password: passInput.value,
+          proxy: proxyInput.value.trim(),
+          remember: rememberInput.checked,
+        };
+        if (!conn.url || !conn.username || !conn.password) return;
+        connect(conn, true);
+      };
+
+      // A reload, not an in-place teardown: an instance has no destroy(), and
+      // canvas._tsInstance is never cleared, so a second `new TimeSeries` on
+      // the same canvas warns and returns a half-built object. The tooltip
+      // also holds document-level listeners with no handle kept here.
+      document.getElementById('disconnect').onclick = () => {
+        clearStored();
+        location.reload();
+      };
+      // Same reload, but keeps the credentials, so the auto-connect below runs
+      // again and — if it fails — brings the form back with the error.
+      reconnectBtn.onclick = () => location.reload();
+
+      // Auto-connect. On this path the card is never shown, only the pill
+      // state exists, so a reload with stored credentials does not flash the
+      // form.
+      const stored = readStored();
+      if (stored) connect(stored, false);
+      else showForm(null, null);
+    </script>
+  </body>
+</html>

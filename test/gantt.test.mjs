@@ -137,7 +137,7 @@ test('group: a foreign event cannot wedge into a gap the group needs again', () 
 });
 
 test('group: the door-sensor shape — many brief firings plus a long problem', () => {
-  // What examples/zabbix.html hits: one trigger firing briefly all day while an
+  // What demo/zabbix-live.html hits: one trigger firing briefly all day while an
   // unrelated problem stays open across the whole window.
   const door = [0, 2, 4, 6, 8, 10].map((h, i) => gmk('d' + i, 'A', h, h + 0.01, 'door'));
   const plot = lanePlot([mk('long', 'A', 0, 12), ...door]);

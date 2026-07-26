@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — Zabbix live</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      /* Card frame, controls, buttons, .hint/.status/.pill/code come from
+         demo.css (same palette variables as the other demo pages). Only the bits
+         specific to this page — chart heights, the tab strip, the connect form,
+         the token banner, the item chip list and the severity legend — live
+         here. */
+
+      /* Both red boxes on this page use Zabbix's own Disaster red — a severity
+         colour, so deliberately *not* themed. Promoted to custom properties so
+         the pair stays in step and a theme could redeclare it in one spot. */
+      body {
+        --danger: #e45959;
+        --danger-bg: rgba(228, 89, 89, 0.12);
+        --danger-border: rgba(228, 89, 89, 0.45);
+      }
+
+      #problems-wrap { height: 320px; }
+      #items-wrap { height: 380px; }
+
+      .token-warning {
+        margin: 0 1.5rem 1rem;
+        padding: 0.8rem 1.2rem;
+        border-radius: 10px;
+        background: var(--danger-bg);
+        border: var(--group-border-w) solid var(--danger-border);
+        color: var(--text);
+        font-size: 0.82rem;
+        line-height: 1.5;
+        max-width: 1300px;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      .token-warning strong { color: var(--danger); }
+
+      select {
+        font-family: inherit;
+        font-size: 0.82rem;
+        padding: 0.42rem 0.6rem;
+        border-radius: 7px;
+        border: 1px solid var(--btn-border);
+        background: var(--btn-bg);
+        color: var(--btn-fg);
+        max-width: 260px;
+      }
+      select:disabled { opacity: 0.5; }
+
+      /* Host multiselect for the problems chart. `select[multiple]` outranks
+         the plain `select` rule above on specificity, so the width cap there
+         does not apply. */
+      .filter-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.7rem;
+        padding: 0 1.4rem 1rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .filter-row label { padding-top: 0.35rem; }
+      .filter-row select[multiple] {
+        min-width: 250px;
+        max-width: 360px;
+        padding: 0.25rem;
+      }
+      .filter-row select[multiple] option { padding: 0.12rem 0.3rem; }
+      .filter-note { padding-top: 0.35rem; flex: 1; }
+
+      .severity-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.9rem;
+        padding: 0.7rem 1.4rem;
+        font-size: 0.75rem;
+        color: var(--muted);
+        border-top: 1px solid var(--hairline);
+      }
+      .sev-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+      .sev-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0 1.4rem 1rem;
+      }
+      .chip-row:empty::before {
+        content: 'No items added yet.';
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.78rem;
+        padding: 0.3rem 0.4rem 0.3rem 0.6rem;
+        border-radius: 999px;
+        background: var(--group-bg);
+        border: 1px solid var(--group-border-c);
+      }
+      .chip-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .chip-remove {
+        border: none;
+        background: transparent;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1;
+        padding: 0.1rem 0.3rem;
+        border-radius: 50%;
+        cursor: pointer;
+      }
+      .chip-remove:hover { background: var(--btn-hover-bg); color: var(--text); }
+
+      /* ── Tab strip ───────────────────────────────────────────────────────
+         demo.css has no tab styling, so this is new — but it borrows .controls'
+         geometry and background so the strip reads as the card's header rather
+         than a second control bar. Border widths go through --group-border-w
+         (2px in theme-highContrast), never a literal 1px. */
+      .tabbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.7rem 1.4rem;
+        background: var(--controls-bg);
+        border-bottom: var(--group-border-w) solid var(--group-border-c);
+      }
+      .tablist { display: flex; gap: 0.25rem; }
+      /* NOT reusing demo.css's toggle rule: that one is deliberately scoped
+         `button[aria-pressed="true"]:not([class])`, so a .tab could never match
+         it — and a tab is aria-selected, not aria-pressed, anyway. */
+      .tab { border-radius: 8px 8px 0 0; }
+      .tab[aria-selected="true"] {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+      .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      /* Belt and braces: [hidden] is only a UA rule at the lowest possible
+         specificity, so any `display` landing on .tab-panel would silently
+         defeat tab switching. */
+      .tab-panel[hidden] { display: none; }
+
+      /* ── Connect form ────────────────────────────────────────────────────
+         demo.css styles buttons but no inputs. These numbers are copied from
+         the `select` rule above (which in turn matches demo.css's `button`), so
+         an input, a select and a button on one row line up. */
+      input[type="url"], input[type="password"], input[type="text"] {
+        font-family: inherit;
+        font-size: 0.82rem;
+        padding: 0.42rem 0.6rem;
+        border-radius: 7px;
+        border: var(--group-border-w) solid var(--btn-border);
+        background: var(--btn-bg);
+        color: var(--btn-fg);
+        min-width: 0;          /* so a flex row can actually shrink it */
+      }
+      input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      input::placeholder { color: var(--muted); opacity: 0.7; }
+      input:disabled { opacity: 0.5; }
+
+      .field { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.25rem; }
+      .field-label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--group-label);
+      }
+      .connect-error {
+        margin: 0 1.4rem 1rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 8px;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: var(--text);
+        background: var(--danger-bg);
+        border: var(--group-border-w) solid var(--danger-border);
+      }
+      .connect-error code { word-break: break-all; }
+
+      @media (max-width: 640px) {
+        .tabbar { padding: 0.6rem 0.75rem; gap: 0.5rem; }
+        .tablist { flex: 1 1 100%; }
+        .field { flex: 1 1 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — Zabbix live</h1>
+      <p>problems and items in two tabs — one shared, synchronised time viewport</p>
+      <!-- Nav bar + theme picker are built by demo-nav.js -->
+      <div id="demo-nav"></div>
+    </header>
+    <!-- Classic script, loaded here rather than deferred in <head>: the
+         placeholder above already exists, the theme class lands on <body>
+         before the page below paints, and window.demoTheme is defined before
+         the deferred module script runs. -->
+    <script src="./demo-nav.js"></script>
+
+    <div class="token-warning">
+      <strong>Careful:</strong> the API token you enter is stored <strong>in clear text</strong> in
+      <code>localStorage</code>, so that a reload keeps the connection. It is therefore readable by
+      every script on <em>this origin</em> — and on a shared host such as GitHub Pages that origin
+      covers every other page served from it — and it survives a browser restart. So: use a
+      <em>read-only</em> Zabbix API user, and revoke the token server-side once you no longer need
+      it. “Disconnect” only forgets it locally.
+    </div>
+
+    <main>
+      <!-- Starts `hidden` in the markup rather than being shown and then hidden
+           by script: on every reload with stored credentials the auto-connect
+           would otherwise flash the form before removing it again. The state
+           machine in the script is the only thing that ever unhides it. -->
+      <div class="chart-card" id="connect-card" hidden>
+        <form class="controls" id="connect-form">
+          <div class="control-group">
+            <span class="group-label">Zabbix server</span>
+            <label class="field">
+              <span class="field-label">API URL</span>
+              <input id="api-url" type="url" required inputmode="url" spellcheck="false"
+                     autocomplete="off" size="38" placeholder="https://…/api_jsonrpc.php">
+            </label>
+            <span class="divider"></span>
+            <label class="field">
+              <span class="field-label">API token</span>
+              <input id="api-token" type="password" required spellcheck="false"
+                     autocomplete="off" size="30">
+            </label>
+            <button type="button" id="token-reveal" class="btn-ghost"
+                    aria-pressed="false" aria-controls="api-token">show</button>
+          </div>
+          <button type="submit" class="btn-primary" id="connect-btn">Connect</button>
+          <span class="spacer"></span>
+          <span class="status">status:<span class="pill" id="connect-status">not connected</span></span>
+        </form>
+        <p class="connect-error" id="connect-error" hidden></p>
+        <p class="hint">
+          The URL has to be the <strong>JSON-RPC endpoint</strong>, i.e.
+          <code>…/api_jsonrpc.php</code> — not <code>…/zabbix.php</code>, which is the frontend.
+          API tokens are created in Zabbix under <em>Users → API tokens</em>; a <em>read-only</em>
+          user is entirely sufficient for this page. The credentials are only stored after a
+          successful, real API call — see the note above for where they end up. If the connection
+          fails with a network/CORS error, the message names the headers you need; the long
+          explanation is in the Items tab once connected.
+        </p>
+      </div>
+
+      <div id="chart-ui" hidden>
+        <!-- One card, not two: a frame around something that is only ever half
+             visible would be wrong, and .chart-card's `overflow: hidden` clips
+             the tab strip to the card radius for free. -->
+        <div class="chart-card">
+          <div class="tabbar">
+            <div class="tablist" role="tablist" aria-label="View">
+              <button role="tab" class="tab" id="tab-problems" aria-selected="true"
+                      aria-controls="panel-problems" tabindex="0">Problems</button>
+              <button role="tab" class="tab" id="tab-items" aria-selected="false"
+                      aria-controls="panel-items" tabindex="-1">Items</button>
+            </div>
+            <span class="divider"></span>
+            <!-- Shared, outside both panels: the viewports are synced, so one set
+                 of buttons is correct for both — and with tabs the Items panel
+                 would otherwise have no way to change the range at all. -->
+            <div class="control-group">
+              <span class="group-label">Range</span>
+              <button id="range-24h">24 h</button>
+              <button id="range-day">Today</button>
+              <button id="range-week">Week</button>
+              <button id="range-month">Month</button>
+            </div>
+            <span class="spacer"></span>
+            <span class="status">
+              <span class="pill" id="conn-host">–</span>
+              <button id="reconnect" class="btn-ghost" hidden>Reconnect</button>
+              <button id="disconnect" class="btn-ghost">Disconnect</button>
+            </span>
+          </div>
+
+          <section role="tabpanel" class="tab-panel" id="panel-problems" aria-labelledby="tab-problems">
+        <div class="canvas-wrap" id="problems-wrap"><canvas id="problems-chart"></canvas></div>
+        <div class="controls">
+          <span class="status">problems:<span class="pill" id="problems-status">connecting…</span></span>
+        </div>
+        <div class="filter-row">
+          <label for="host-filter">Hosts</label>
+          <select id="host-filter" multiple size="3">
+            <option value="" selected>All hosts</option>
+          </select>
+          <span class="filter-note" id="host-filter-note">all hosts</span>
+        </div>
+        <div class="severity-legend" id="severity-legend"></div>
+        <p class="hint">
+          Draws every Zabbix problem in the currently visible window as a gantt bar (one lane per
+          host). The history comes from <code>event.get</code> (<code>value: 1</code>, i.e. each
+          PROBLEM event individually — not <code>problem.get</code>, which only mirrors Zabbix'
+          <em>current</em> problem view and drops older repetitions of the same trigger); problems
+          still open, of any age, are fetched additionally from <code>problem.get</code> with
+          <code>recent: false</code>. Open problems run up to “now”, resolved ones up to their
+          recovery time — which is <em>not</em> in the <code>event.get</code> response
+          (<code>r_clock</code> only exists on <code>problem.get</code>) and has to be looked up via
+          <code>r_eventid</code> as the <code>clock</code> of the corresponding OK event. Host names
+          for the <code>problem.get</code> rows are likewise looked up via the trigger id
+          (<code>objectid</code>), since <code>problem.get</code> has no <code>selectHosts</code>.
+          Repetitions of one trigger share a row via <code>group</code> instead of scattering across
+          the lane. The host selection filters purely client-side out of the events already loaded
+          (hence instantly, with no request, and with each host's problem count in brackets);
+          <em>All hosts</em> clears the filter and is mutually exclusive with picking individual
+          ones. Refreshes on every pan/zoom and, as long as the window touches the leading edge,
+          automatically every 20&nbsp;s. Colour = severity (legend above). The Items tab shares this
+          viewport (the <code>group</code> option) — panning/zooming here moves it along, even while
+          it is invisible.
+        </p>
+          </section>
+
+          <!-- Deliberately NOT `hidden` here, unlike #connect-card above:
+               buildCharts() constructs both charts while both panels are still
+               visible, so each canvas measures its real box once, and only then
+               calls selectTab() to hide this one. -->
+          <section role="tabpanel" class="tab-panel" id="panel-items" aria-labelledby="tab-items">
+        <div class="canvas-wrap" id="items-wrap"><canvas id="items-chart"></canvas></div>
+        <div class="controls">
+          <select id="host-select" disabled><option value="">loading hosts…</option></select>
+          <select id="item-select" disabled><option value="">–</option></select>
+          <button id="add-item" disabled>Add item</button>
+          <span class="spacer"></span>
+          <button id="clear-items">Remove all</button>
+        </div>
+        <div class="chip-row" id="chips"></div>
+        <p class="hint">
+          Pick a host, then an item — only numeric items (float/unsigned) can be drawn as a
+          history/trends band, so text/log/char items are filtered out of the list. Any number of
+          items can be added; each gets its own colour and appears as its own series in the same
+          history/trends band (cross-fading on zoom just like the plain <code>zabbix</code> source).
+          The legend in the chart's top right hides an item; the × on its chip removes it entirely.
+          <strong>Mind the scale:</strong> all items share one linear y-axis — items of very
+          different magnitude (say a percentage next to a byte counter) should not be added at the
+          same time, or the smaller one vanishes visually next to the larger.
+        </p>
+        <p class="hint">
+          <strong>CORS:</strong> <code>jpZabbix.js</code> sends <code>Content-Type:
+          application/json</code> and (since Zabbix 6.4/7.0, where the <code>auth</code> parameter is
+          no longer allowed in the body) the API token as an <code>Authorization: Bearer …</code>
+          header. Together those are not a “simple request”, so every call triggers an OPTIONS
+          preflight. For this page to work from a different origin, the web server in front of
+          <code>api_jsonrpc.php</code> must answer <code>OPTIONS</code> with at least
+          <code>Access-Control-Allow-Origin</code> (this page's origin, or <code>*</code>),
+          <code>Access-Control-Allow-Methods: POST, OPTIONS</code> and
+          <code>Access-Control-Allow-Headers: Content-Type, Authorization</code>. An
+          <code>Access-Control-Allow-Headers: *</code> is <em>not</em> enough: per the Fetch
+          specification a wildcard explicitly excludes the <code>Authorization</code> header — it has
+          to be named in the list, or the request hangs in the browser / is rejected as a CORS error.
+        </p>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import {
+        registerSource, zabbixPrimaryTier, zabbixWindow,
+        zabbixClearRange, zabbixFold, zabbixEvict, zabbixPlot,
+      } from '../src/sources.js';
+      import jpZabbix from '../src/jpZabbix.js';
+      import { attachTooltip } from '../src/tooltip.js';
+      import { attachLegend } from '../src/legend.js';
+      import { layoutSpans } from '../src/gantt.js';
+
+      // ── Stored connection ────────────────────────────────────────────────
+      // Credentials come from the connect form, not from a constant in this
+      // file, and are kept in localStorage so a reload does not ask again.
+      //
+      // Same convention as demo/demo-nav.js: a `timeseries-demo-*` key, a
+      // readStored/writeStored pair, try/catch on BOTH directions because
+      // storage throws in private mode or with cookies blocked (a demo page
+      // must not die over a persistence nicety), and the read result validated
+      // before anything uses it. One try covers getItem *and* JSON.parse, since
+      // either can throw — a hand-edited or half-written entry must never reach
+      // `new jpZabbix({ url: undefined })`.
+      const STORAGE_KEY = 'timeseries-demo-zabbix-conn';
+
+      function readStored() {
+        try {
+          const v = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          if (!v || typeof v.url !== 'string' || typeof v.token !== 'string') return null;
+          if (!v.url || !v.token) return null;
+          return v;
+        } catch (e) { return null; }
+      }
+      function writeStored(url, token) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ url: url, token: token })); }
+        catch (e) { /* ignore — the page works fine without persistence */ }
+      }
+      // No precedent in demo-nav.js (it never forgets a theme); same shape.
+      function clearStored() {
+        try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+      }
+
+      // ── Zabbix severity palette (frontend defaults) ─────────────────────
+      const SEVERITY = [
+        { label: 'Not classified', color: '#97AAB3' },
+        { label: 'Information',    color: '#7499FF' },
+        { label: 'Warning',        color: '#FFC859' },
+        { label: 'Average',        color: '#FFA059' },
+        { label: 'High',           color: '#E97659' },
+        { label: 'Disaster',       color: '#E45959' },
+      ];
+      function severityColor(sev) { return (SEVERITY[sev] || SEVERITY[0]).color; }
+      function severityLabel(sev) { return (SEVERITY[sev] || SEVERITY[0]).label; }
+
+      const sevLegendEl = document.getElementById('severity-legend');
+      SEVERITY.forEach((s) => {
+        const item = document.createElement('span');
+        item.className = 'sev-item';
+        const dot = document.createElement('span');
+        dot.className = 'sev-dot';
+        dot.style.background = s.color;
+        item.append(dot, document.createTextNode(s.label));
+        sevLegendEl.appendChild(item);
+      });
+
+      // ── Custom source: zabbix-problems ───────────────────────────────────
+      // All problems overlapping the (padded) viewport, one gantt lane per
+      // host. Rebuilt wholesale on every fetch and pushed via
+      // pushData/replaceData — same pattern as the built-in caldav source
+      // (src/sources.js), since a problem's own start/end can't be mutated
+      // in place without re-deriving lanes anyway.
+      //
+      // problem.get does NOT support selectHosts (that only exists on
+      // trigger.get/event.get) — asking for it errors with "unexpected
+      // parameter selectHosts". Host names are resolved in a second call,
+      // trigger.get(selectHosts), keyed by the trigger id every trigger-based
+      // problem carries as objectid (object === '0'). Problems from another
+      // source type (discovery, internal, …) fall back to an "unknown" lane.
+      //
+      // Flattens the two query shapes into one event list with the host already
+      // resolved, *independent of the viewport and of any host filter*. Keeping
+      // this separate from buildProblemsPlot() below is what lets the host
+      // multiselect re-layout the chart from cached data, with no request.
+      //
+      // `endOf(p)` returns a problem's resolution time in ms, or null while it
+      // is still open, and `now` is the single timestamp every open bar ends
+      // on — both are passed in rather than re-derived here, so a bar always
+      // agrees with the overlap filter that let its row through.
+      function normalizeProblems(rows, hostByTrigger, endOf, now) {
+        return rows.map((p) => {
+          const host = hostByTrigger.get(p.objectid) || { hostid: '0', name: 'unbekannt' };
+          const severityRank = +p.severity;
+          const resolvedAt = endOf(p);
+          const resolved = resolvedAt != null;
+          return {
+            id: p.eventid,
+            lane: host.hostid,
+            hostName: host.name,
+            // Every occurrence of the same trigger shares a `group`, so
+            // pack()/layoutSpans() (src/gantt.js) keeps them in one row
+            // instead of scattering them across the lane whenever some
+            // unrelated problem on the same host happens to occupy whatever
+            // row would otherwise be free — exactly the case for a trigger
+            // that flaps briefly on/off many times (e.g. a door sensor).
+            group: p.objectid,
+            start: +p.clock * 1000,
+            end: resolved ? resolvedAt : now,
+            label: p.name,
+            color: severityColor(severityRank),
+            severity: severityLabel(severityRank),
+            severityRank,
+            resolved,
+            ack: p.acknowledged === '1',
+          };
+        });
+      }
+
+      // Wraps an already-filtered event list into a span plot, deriving one
+      // lane per host that actually occurs in it.
+      //
+      // Lanes (hosts) are ordered worst-severity-first, ties broken by
+      // problem count — "the host with the most triggers first" only kicks
+      // in among hosts that are otherwise equally severe. Rows *within* one
+      // host's lane are reordered the same way after layoutSpans() assigns
+      // them (see reorderRowsBySeverity below), for the rarer case where a
+      // single host has several genuinely overlapping problems.
+      function buildProblemsPlot(events, from, to) {
+        const lanes = [];
+        const seen = new Set();
+        const laneStats = new Map();   // hostid -> { maxSeverity, count }
+        for (const ev of events) {
+          if (!seen.has(ev.lane)) {
+            seen.add(ev.lane);
+            lanes.push({ id: ev.lane, label: ev.hostName });
+          }
+          const stat = laneStats.get(ev.lane) || { maxSeverity: -1, count: 0 };
+          stat.maxSeverity = Math.max(stat.maxSeverity, ev.severityRank);
+          stat.count += 1;
+          laneStats.set(ev.lane, stat);
+        }
+        lanes.sort((a, b) => {
+          const sa = laneStats.get(a.id), sb = laneStats.get(b.id);
+          if (sb.maxSeverity !== sa.maxSeverity) return sb.maxSeverity - sa.maxSeverity;
+          if (sb.count !== sa.count) return sb.count - sa.count;
+          return a.label.localeCompare(b.label);
+        });
+        return { type: 'gantt', category: 'span', tmin: from, tmax: to, layout: 'calendar', lanes, data: events };
+      }
+
+      // layoutSpans() packs a lane's overlapping events into rows by start
+      // time (chronological, greedy interval packing — see src/gantt.js), not
+      // by any priority field, since it is shared with CalDAV/generic spans
+      // that have no concept of severity. This reorders the ROW NUMBERS
+      // *within* each lane afterward so the row holding the most severe
+      // event ends up topmost — it only ever permutes which row number a
+      // group of already-non-overlapping events shares, so the packer's
+      // overlap-avoidance guarantee is untouched. Idempotent like
+      // layoutSpans() itself is not needed here since this always runs once,
+      // right after the one layoutSpans() call, before the plot is pushed.
+      function reorderRowsBySeverity(plot) {
+        layoutSpans(plot);
+        const byLane = new Map();   // lane -> Map(row -> events[])
+        for (const ev of plot.data) {
+          if (!byLane.has(ev.lane)) byLane.set(ev.lane, new Map());
+          const rows = byLane.get(ev.lane);
+          if (!rows.has(ev._row)) rows.set(ev._row, []);
+          rows.get(ev._row).push(ev);
+        }
+        byLane.forEach((rows) => {
+          const rowIds = [...rows.keys()];
+          const baseRow = Math.min(...rowIds);
+          const ordered = rowIds.slice().sort((a, b) => {
+            const maxA = Math.max(...rows.get(a).map((e) => e.severityRank));
+            const maxB = Math.max(...rows.get(b).map((e) => e.severityRank));
+            return maxB - maxA;
+          });
+          ordered.forEach((oldRow, i) => {
+            const newRow = baseRow + i;
+            if (newRow === oldRow) return;
+            for (const ev of rows.get(oldRow)) ev._row = newRow;
+          });
+        });
+      }
+
+      registerSource({
+        type: 'zabbix-problems',
+        init(source, callbacks) {
+          const padding = source.padding != null ? source.padding : 0.25;
+          const pollMs = source.pollMs != null ? source.pollMs : 20000;
+          const lookbackMs = source.lookback != null ? source.lookback : 7 * 86400 * 1000;
+          let plotId = null;
+          let fetched = null;
+          let seq = 0;
+          let server = null;
+          let lastEvents = [];     // normalized, host-resolved, overlap-filtered
+          let hostFilter = null;   // null = every host; else a Set of hostids
+
+          // Hosts occurring in the last fetch, in the same worst-first order
+          // buildProblemsPlot gives the lanes, so a picker lists them in the
+          // order they appear in the chart.
+          function hostsInData() {
+            const byId = new Map();
+            for (const ev of lastEvents) {
+              const h = byId.get(ev.lane) || { id: ev.lane, label: ev.hostName, maxSeverity: -1, count: 0 };
+              h.maxSeverity = Math.max(h.maxSeverity, ev.severityRank);
+              h.count += 1;
+              byId.set(ev.lane, h);
+            }
+            return [...byId.values()].sort((a, b) =>
+              b.maxSeverity - a.maxSeverity || b.count - a.count || a.label.localeCompare(b.label));
+          }
+
+          // Re-derive the plot from `lastEvents`. Split out of the fetch so the
+          // host filter is a pure re-layout: no request, no ring, just a
+          // different subset of the same cached events.
+          function rebuild() {
+            if (!fetched) return;
+            const events = hostFilter ? lastEvents.filter((e) => hostFilter.has(e.lane)) : lastEvents.slice();
+            const plot = buildProblemsPlot(events, fetched.from, fetched.to);
+            reorderRowsBySeverity(plot);
+            if (plotId === null) plotId = callbacks.pushData(plot);
+            else callbacks.replaceData(plotId, plot);
+            callbacks.requestRedraw();
+            if (source.onUpdate)
+              source.onUpdate({ shown: events.length, total: lastEvents.length, hosts: hostsInData(), plot });
+          }
+
+          // Client-side host filter: `null` or an empty list means every host.
+          // Filtering here rather than via the API's `hostids` keeps switching
+          // instant and lets the picker show per-host problem counts, which it
+          // could not do if the unselected hosts were never fetched.
+          source.setHostFilter = function (hostids) {
+            hostFilter = (hostids && hostids.length) ? new Set(hostids.map(String)) : null;
+            rebuild();
+          };
+
+          function fetchWindow(viewport, force) {
+            if (!server) return;
+            const span = viewport.tmax - viewport.tmin;
+            const pad = span * padding;
+            const win = { from: viewport.tmin - pad, to: viewport.tmax + pad };
+            if (!force && fetched && win.from >= fetched.from && win.to <= fetched.to) return;
+            const mine = ++seq;
+            // Two queries, merged by eventid.
+            //
+            // "windowed" uses event.get, not problem.get: problem.get only
+            // reflects Zabbix's *current* problems view (open problems, plus
+            // resolved ones for as long as its own housekeeping keeps them —
+            // often much shorter than the visible window), so a trigger that
+            // flapped on/off several times inside the window would have its
+            // older occurrences silently pruned before we ever see them.
+            // event.get reads the full historical event log instead, bounded
+            // only by event-history retention (normally far longer), and
+            // every PROBLEM event (value: 1) is its own row with its own
+            // eventid — so every single on/off cycle inside the window comes
+            // back as its own bar, not just the latest one. It also supports
+            // selectHosts directly (problem.get does not).
+            //
+            // time_from is widened past the window's own start, because
+            // event.get's time_from/time_till still only filter on when a
+            // problem STARTED (clock): a problem that started before the
+            // window and resolved inside it would otherwise be missed by both
+            // queries (started too early for "windowed", already resolved so
+            // excluded from "stillOpen"). The overlap check right after the
+            // fetch drops anything this wider bound pulls in that doesn't
+            // actually overlap the viewport.
+            //
+            // The widening is at least `lookbackMs` but never less than the
+            // window's own span: on a wide view (a month) a fixed 7-day
+            // lookback is easily shorter than the window itself, so a problem
+            // that ran for three weeks and resolved mid-window would drop out
+            // — precisely the long-running problem this widening exists for.
+            const lookback = Math.max(lookbackMs, win.to - win.from);
+            const windowed = server.api('event.get', {
+              output: 'extend',
+              source: 0, object: 0, value: 1,
+              selectHosts: ['hostid', 'name'],
+              selectTags: 'extend',
+              time_from: Math.floor((win.from - lookback) / 1000),
+              time_till: Math.ceil(win.to / 1000),
+              sortfield: ['clock'],
+              sortorder: 'DESC',
+            });
+            // Still-open (any age, unresolved): problem.get(recent:false) is
+            // the efficient, correctly bounded way to ask "everything
+            // currently unresolved" — Zabbix keeps a problem in this table
+            // for as long as it stays open, so there is no windowing/
+            // housekeeping concern here the way there is for resolved ones.
+            // It has no selectHosts though, so its rows are resolved via
+            // trigger.get below.
+            const stillOpen = server.api('problem.get', {
+              output: 'extend', selectTags: 'extend', recent: false,
+              sortfield: ['eventid'], sortorder: 'DESC',
+            });
+            Promise.all([windowed, stillOpen]).then(([windowedRows, openRows]) => {
+              if (mine !== seq) return;   // superseded by a later request
+              windowedRows = windowedRows || [];
+              openRows = openRows || [];
+
+              // Two things the first pair of calls cannot deliver on its own,
+              // fetched together so they cost one extra round trip, not two.
+              //
+              // 1. Recovery timestamps. event.get does NOT return `r_clock` —
+              //    that field exists only on problem.get. What an event.get row
+              //    carries is `r_eventid`: the id of the OK event (value: 0)
+              //    that closed the problem, whose own `clock` is the
+              //    resolution time. Reading `r_clock` off these rows therefore
+              //    always yielded undefined, so every historical problem
+              //    looked unresolved and its bar was drawn running all the way
+              //    to "now". That is what made a trigger firing for a few
+              //    seconds many times a day (a door sensor) render as one bar
+              //    that had apparently been open for days: with every
+              //    occurrence stretched to now they all overlapped, and since
+              //    they share a `group` they were packed into the one row and
+              //    fused into a single continuous bar.
+              // 2. Host names for the still-open problems, since problem.get
+              //    has no selectHosts (see above).
+              const recoveryIds = [...new Set(windowedRows
+                .map((p) => p.r_eventid)
+                .filter((id) => id && id !== '0'))];
+              const recoveries = recoveryIds.length
+                ? server.api('event.get', { eventids: recoveryIds, output: ['eventid', 'clock'] })
+                : Promise.resolve([]);
+              const triggerIds = [...new Set(openRows.filter((p) => p.object === '0').map((p) => p.objectid))];
+              const hostLookup = triggerIds.length
+                ? server.api('trigger.get', { triggerids: triggerIds, output: ['triggerid'], selectHosts: ['hostid', 'name'] })
+                : Promise.resolve([]);
+
+              Promise.all([recoveries, hostLookup]).then(([recoveryRows, triggers]) => {
+                if (mine !== seq) return;
+                const recoveryClock = new Map();
+                (recoveryRows || []).forEach((r) => recoveryClock.set(r.eventid, +r.clock * 1000));
+
+                // One `now` for the whole batch: every open problem's bar must
+                // end on the same pixel, and the overlap filter has to agree
+                // with the bar built from the row it let through.
+                const now = Date.now();
+                // Resolution time in ms, or null while still open. problem.get
+                // rows answer directly via r_clock; event.get rows go through
+                // the recovery-event lookup above.
+                const endOf = (p) => {
+                  if (+p.r_clock > 0) return +p.r_clock * 1000;
+                  const rec = recoveryClock.get(p.r_eventid);
+                  return rec != null ? rec : null;
+                };
+
+                const hostByTrigger = new Map();
+                (triggers || []).forEach((t) => {
+                  if (t.hosts && t.hosts[0]) hostByTrigger.set(t.triggerid, t.hosts[0]);
+                });
+                // event.get rows already carry their host inline.
+                windowedRows.forEach((ev) => {
+                  if (ev.hosts && ev.hosts[0] && !hostByTrigger.has(ev.objectid)) hostByTrigger.set(ev.objectid, ev.hosts[0]);
+                });
+
+                // Merge by eventid, problem.get last so it wins: it is the
+                // authority on what is still open right now.
+                const byId = new Map();
+                windowedRows.concat(openRows).forEach((p) => byId.set(p.eventid, p));
+                const rows = [...byId.values()].filter((p) => {
+                  const pStart = +p.clock * 1000;
+                  const pEnd = endOf(p);
+                  return pStart < win.to && (pEnd == null ? now : pEnd) > win.from;
+                });
+
+                fetched = win;
+                lastEvents = normalizeProblems(rows, hostByTrigger, endOf, now);
+                rebuild();
+              }, (e) => {
+                if (mine !== seq) return;
+                console.warn('zabbix_problems_failure', e);
+                if (source.onError) source.onError(e);
+              });
+            }, (e) => {
+              if (mine !== seq) return;
+              console.warn('zabbix_problems_failure', e);
+              if (source.onError) source.onError(e);
+            });
+          }
+
+          const client = new jpZabbix({ url: source.url });
+          client.setAuth(source['auth-token']).then(() => {
+            server = client;
+            source.server = server;
+            fetchWindow(callbacks.getViewport(), true);
+            callbacks.onViewportChange(() => fetchWindow(callbacks.getViewport(), false));
+            // Live refresh, but only while the fetched window can still gain
+            // anything: a new event's clock is >= now, so once now has passed
+            // the padded window's right edge, nothing new can land inside it
+            // and the three API calls would return the same rows every 20 s.
+            // Panning back to the trailing edge still refetches, via
+            // onViewportChange above.
+            setInterval(() => {
+              if (fetched && Date.now() > fetched.to) return;
+              fetchWindow(callbacks.getViewport(), true);
+            }, pollMs);
+          });
+        },
+      });
+
+      // ── Custom source: zabbix-items ──────────────────────────────────────
+      // ONE shared quantile-bands plot PER TIER (history/trends), carrying
+      // every added item as its own series inside plot.data[slot][itemid] —
+      // the same shape the built-in `zabbix` source uses. This is not a
+      // style choice: pushData() in src/timeseries.js treats "same plot
+      // type + same interval + overlapping time range" as one logical
+      // stream and trims/removes whatever else already occupies that space
+      // when a new block lands there (the `concatable` branch, meant for a
+      // polling source replacing its own previous fetch). An earlier version
+      // of this source gave every item its own plot object; since all items
+      // share type 'quantile-bands' and the same interval and viewport,
+      // adding item B silently wiped item A's block — only the
+      // most-recently-added item ever survived. Items are added/removed at
+      // runtime, unlike the built-in source (whose itemids array can't
+      // change after construction without forcing a refetch).
+      const ITEM_MIN_PX = 2;   // mirrors ZBX_MIN_PX in src/sources.js
+      const ITEM_MAX_SLOTS = 5000;
+
+      function itemRelevantTiers(tiers, ppms) {
+        const prim = zabbixPrimaryTier(tiers, ppms);
+        const rel = [];
+        for (let i = 0; i < tiers.length; i++) {
+          const px = tiers[i].interval * 1000 * ppms;
+          if (i === prim || (px > ITEM_MIN_PX * 0.375 && px < ITEM_MIN_PX * 2)) rel.push(i);
+        }
+        return rel;
+      }
+
+      registerSource({
+        type: 'zabbix-items',
+        init(source, callbacks) {
+          const padding = source.padding != null ? source.padding : 0.5;
+          const tiers = [
+            { interval: source['history-interval'] || 60, kind: 'history' },
+            { interval: 3600, kind: 'trends' },
+          ].sort((a, b) => a.interval - b.interval);
+          const state = tiers.map(() => ({ ring: new Map(), plotId: null, fetched: null, seq: 0 }));
+          const items = new Map();   // itemid -> { color, label, valueType }
+          let server = null;
+
+          function rebuildPlot(idx) {
+            const colors = {};
+            items.forEach((it, id) => { colors[id] = it.color; });
+            const plot = zabbixPlot(tiers[idx], state[idx].ring, 'zabbix-items', colors);
+            plot.series = [...items].map(([id, it]) => ({ id, name: it.label }));
+            const st = state[idx];
+            if (st.plotId === null) st.plotId = callbacks.pushData(plot);
+            else callbacks.replaceData(st.plotId, plot);
+            callbacks.requestRedraw();
+          }
+
+          function fetchTier(idx, viewport, force) {
+            if (!server || !items.size) return;
+            const st = state[idx];
+            const win = zabbixWindow(viewport, padding);
+            if (!force && st.fetched && viewport.tmin >= st.fetched.from && viewport.tmax <= st.fetched.to) return;
+            const mine = ++st.seq;
+            const trend = tiers[idx].kind === 'trends';
+            const timeParams = {
+              time_from: Math.floor(win.from / 1000),
+              time_till: Math.ceil(win.to / 1000),
+              sortfield: 'clock',
+              sortorder: 'ASC',
+            };
+            let requests;
+            if (trend) {
+              // trends.get is value-type-agnostic — every item in one call.
+              requests = [server.api('trends.get', Object.assign(
+                { output: 'extend', itemids: [...items.keys()] }, timeParams))];
+            } else {
+              // history.get reads one value-type table per call, so items
+              // are grouped by value type rather than assumed to match (the
+              // built-in `zabbix` source only supports a single, source-wide
+              // value type for exactly this reason).
+              const byType = new Map();
+              items.forEach((it, id) => {
+                if (!byType.has(it.valueType)) byType.set(it.valueType, []);
+                byType.get(it.valueType).push(id);
+              });
+              requests = [...byType].map(([valueType, ids]) => server.api('history.get', Object.assign(
+                { output: 'extend', itemids: ids, history: valueType }, timeParams)));
+            }
+            Promise.all(requests).then((resultSets) => {
+              if (mine !== st.seq) return;   // superseded by a later request
+              st.fetched = win;
+              zabbixClearRange(st.ring, tiers[idx].interval, win.from, win.to);
+              resultSets.forEach((rows) => zabbixFold(st.ring, rows || [], tiers[idx].interval, trend));
+              zabbixEvict(st.ring, tiers[idx].interval, (viewport.tmin + viewport.tmax) / 2, ITEM_MAX_SLOTS);
+              rebuildPlot(idx);
+            }, (e) => {
+              if (mine === st.seq) console.warn('zabbix_items_failure', e);
+            });
+          }
+
+          function refreshAll(force) {
+            if (!server) return;
+            const vp = callbacks.getViewport();
+            itemRelevantTiers(tiers, vp.ppms).forEach((i) => fetchTier(i, vp, force));
+          }
+
+          source.addItem = function (itemid, opts) {
+            itemid = String(itemid);
+            if (items.has(itemid)) return;
+            items.set(itemid, {
+              color: (opts && opts.color) || '#2d6a9f',
+              label: (opts && opts.label) || itemid,
+              valueType: (opts && opts.valueType != null) ? opts.valueType : 0,
+            });
+            refreshAll(true);
+          };
+
+          source.removeItem = function (itemid) {
+            itemid = String(itemid);
+            if (!items.has(itemid)) return;
+            items.delete(itemid);
+            // No refetch needed — drop the item's cells from every tier's
+            // ring directly and redraw with what is already cached.
+            state.forEach((st, idx) => {
+              st.ring.forEach((cell) => { delete cell[itemid]; });
+              rebuildPlot(idx);
+            });
+          };
+
+          source.hasItem = (itemid) => items.has(String(itemid));
+
+          const client = new jpZabbix({ url: source.url });
+          client.setAuth(source['auth-token']).then(() => {
+            server = client;
+            source.server = server;
+            callbacks.onViewportChange(() => refreshAll(false));
+            // Live view: pick up new samples at the trailing edge even while
+            // the user isn't panning.
+            setInterval(() => refreshAll(true), 30000);
+          });
+        },
+      });
+
+      // ── Charts ────────────────────────────────────────────────────────────
+      const problemsStatus = document.getElementById('problems-status');
+      const problemsWrap = document.getElementById('problems-wrap');
+
+      // Fixed per-ROW height rather than squeezing every host into one static
+      // container: the ResizeObserver in src/timeseries.js watches the
+      // canvas's parent element (canvas.parentElement, i.e. this wrap div), so
+      // changing its CSS height here is enough to make the library resize and
+      // redraw the canvas on its own — no direct canvas API needed.
+      //
+      // This must scale with plot.laneCount (the TOTAL packed row count
+      // layoutSpans() computes across all lanes), not plot.lanes.length (the
+      // number of distinct hosts) — a host with several problems open at
+      // once needs one row per problem, since two bars that both still run
+      // to "now" always overlap in time and layoutSpans() can never pack them
+      // into the same row. Sizing off the host count alone squeezed all of a
+      // busy host's rows into one host-sized slot, each a few px tall — bars
+      // too thin to tell apart and short of MIN_LABEL_HEIGHT, so no label
+      // ever drew.
+      const PROBLEMS_ROW_HEIGHT = 34;   // px per packed row, kept constant
+      const PROBLEMS_CHROME = 70;       // time axis / margins outside the row area
+      const PROBLEMS_MIN_HEIGHT = 160;
+
+      function resizeProblemsChart(rowCount) {
+        const h = Math.max(PROBLEMS_MIN_HEIGHT, rowCount * PROBLEMS_ROW_HEIGHT + PROBLEMS_CHROME);
+        problemsWrap.style.height = h + 'px';
+      }
+
+      // ── Host filter (problems chart) ─────────────────────────────────────
+      // Native <select multiple>, no custom popup. The "Alle Hosts" entry
+      // (value "") means *no* filter and is mutually exclusive with the
+      // individual hosts: whichever side the user just clicked wins, which is
+      // why the previous selection is tracked rather than read fresh. An empty
+      // selection also counts as "Alle", so the control can never leave the
+      // chart blank by accident.
+      const hostFilterEl = document.getElementById('host-filter');
+      const hostFilterNote = document.getElementById('host-filter-note');
+      const hostLabels = new Map();        // hostid -> name, kept across fetches
+      let filterSel = new Set(['']);       // '' = Alle Hosts
+      let hostOptionsSig = '';
+
+      function renderHostOptions(hosts) {
+        hosts.forEach((h) => hostLabels.set(h.id, h.label));
+        // Union of "has problems in this window" and "currently selected": a
+        // selected host that has no problems in the new window must stay
+        // listed, or panning would drop it from the filter with no way to see
+        // or undo it — the chart would just be empty.
+        const ids = hosts.map((h) => h.id);
+        for (const id of filterSel) if (id && !ids.includes(id)) ids.push(id);
+        const counts = new Map(hosts.map((h) => [h.id, h.count]));
+
+        // The 20 s poll calls this on every refresh; rebuilding the <option>s
+        // under a user who is mid-selection is disruptive, so skip when nothing
+        // about the list actually changed.
+        const sig = ids.map((id) => id + ':' + (counts.get(id) || 0)).join('|')
+          + '#' + [...filterSel].sort().join(',');
+        if (sig === hostOptionsSig) return;
+        hostOptionsSig = sig;
+
+        hostFilterEl.replaceChildren();
+        const all = new Option('All hosts', '');
+        all.selected = filterSel.has('');
+        hostFilterEl.appendChild(all);
+        ids.forEach((id) => {
+          const o = new Option((hostLabels.get(id) || id) + ' (' + (counts.get(id) || 0) + ')', id);
+          o.selected = filterSel.has(id);
+          hostFilterEl.appendChild(o);
+        });
+        hostFilterEl.size = Math.min(9, Math.max(3, ids.length + 1));
+      }
+
+      function updateFilterNote(hosts) {
+        hostFilterNote.textContent = filterSel.has('')
+          ? 'all ' + hosts.length + ' hosts — Ctrl/⌘-click picks individual ones'
+          : filterSel.size + ' of ' + hosts.length + ' hosts';
+      }
+
+      hostFilterEl.onchange = () => {
+        if (!problemsSource) return;   // unreachable while the chart UI is hidden
+        const sel = new Set([...hostFilterEl.selectedOptions].map((o) => o.value));
+        const added = [...sel].filter((v) => !filterSel.has(v));
+        if (added.includes('')) { sel.clear(); sel.add(''); }   // "All hosts" just clicked
+        else if (sel.has('') && sel.size > 1) sel.delete('');   // a host just clicked
+        if (!sel.size) sel.add('');
+        filterSel = sel;
+        for (const o of hostFilterEl.options) o.selected = filterSel.has(o.value);
+        hostOptionsSig = '';   // selection changed; let the next render refresh counts
+        const ids = [...filterSel].filter((v) => v);
+        problemsSource.setHostFilter(ids.length ? ids : null);
+      };
+
+      // ── Charts, built after a successful connect ──────────────────────────
+      // Nothing here is constructed at load time: a source reads its
+      // credentials inside init(), i.e. when the TimeSeries is constructed, so
+      // the instances cannot exist before the connect has proved a URL and a
+      // token. Everything below is therefore `let`, filled in by buildCharts().
+      let problemsSource = null;
+      let itemsSource = null;
+      let tsProblems = null;
+      let tsItems = null;
+      let built = false;
+
+      function formatDuration(ms) {
+        const s = Math.floor(ms / 1000);
+        if (s < 60) return s + 's';
+        const m = Math.floor(s / 60);
+        if (m < 60) return m + 'min';
+        const h = Math.floor(m / 60);
+        if (h < 48) return h + 'h';
+        return Math.floor(h / 24) + 'd';
+      }
+
+      function makeProblemsSource(url, token) {
+        return {
+        'source-type': 'zabbix-problems',
+        url: url,
+        'auth-token': token,
+        onUpdate(info) {
+          problemsStatus.textContent = info.shown === info.total
+            ? info.total + ' problem(s)'
+            : info.shown + ' of ' + info.total + ' problem(s)';
+          renderHostOptions(info.hosts);
+          updateFilterNote(info.hosts);
+          resizeProblemsChart(info.plot.laneCount);
+        },
+        onError(e) {
+          problemsStatus.textContent = 'error: ' + (e && (e.message || e.data) || e);
+          // A mid-session failure (expired token, server restart) cannot rebuild
+          // the form in place — see the disconnect comment below — so offer the
+          // reload that re-runs the auto-connect instead.
+          reconnectBtn.hidden = false;
+        },
+        };
+      }
+
+      function buildCharts(url, token, uiClient, hosts) {
+        if (built) return;   // belt and braces: auto-connect and form submit both land here
+        built = true;
+
+        // Unhide the chart UI FIRST, with BOTH panels still visible (which is
+        // why #panel-items carries no `hidden` in the markup). The constructor
+        // reads canvas.clientWidth synchronously, so each canvas measures its
+        // real box exactly once — the chart that is about to be hidden therefore
+        // starts life with correct geometry and a correct ppms, and asks its
+        // source for the right resolution tier rather than the coarsest one. The
+        // ResizeObserver's zero-size early-out in src/timeseries.js then
+        // *preserves* that geometry for as long as the panel stays hidden, so
+        // opening the Items tab shows warm data instead of a refetch.
+        // Constructing inside a hidden panel would be safe — that guard makes it
+        // so — but it would be strictly worse. Nothing paints in between: this
+        // whole function runs in one task, and selectTab() below hides the
+        // inactive panel before the browser gets a chance to render.
+        chartUi.hidden = false;
+
+        problemsSource = makeProblemsSource(url, token);
+        itemsSource = {
+          'source-type': 'zabbix-items',
+          url: url,
+          'auth-token': token,
+          'history-interval': 60,
+        };
+
+        // Both instances are constructed here, together, and never lazily per
+        // tab: the declarative `group` option only registers the handle — unlike
+        // joinGroup(), it does NOT adopt the group's current viewport. A lazily
+        // built second instance would broadcast its own default window
+        // (now - 24 h) on its first frame and yank the user out of whatever
+        // range they were looking at.
+        tsProblems = new TimeSeries({
+          canvas: 'problems-chart',
+          sources: [problemsSource],
+          group: 'zbx-sync',
+        });
+
+        tsItems = new TimeSeries({
+          canvas: 'items-chart',
+          sources: [itemsSource],
+          group: 'zbx-sync',
+        });
+
+        attachProblemsTooltip();
+        attachTooltip(tsItems);
+        attachLegend(tsItems);
+
+        // Subscribed here rather than at module scope: tsProblems/tsItems only
+        // exist after a successful connect. onChange fires immediately with the
+        // current theme, so a palette restored from localStorage lands on both
+        // canvases as they are built — not only on the next picker click. No
+        // unsubscribe: "Disconnect" reloads the page (an instance has no
+        // destroy()), so nothing outlives the charts.
+        window.demoTheme.onChange((name) => {
+          const palette = TimeSeries.themes[name];
+          tsProblems.setColors(palette);
+          tsItems.setColors(palette);
+        });
+
+        // The range buttons live in the shared tab bar and drive whichever
+        // instance is handy — the two are viewport-synced, so either works.
+        document.getElementById('range-24h').onclick  = () => tsProblems.last24();
+        document.getElementById('range-day').onclick   = () => tsProblems.today();
+        document.getElementById('range-week').onclick  = () => tsProblems.thisWeek();
+        document.getElementById('range-month').onclick = () => tsProblems.thisMonth();
+
+        renderHosts(uiClient, hosts);
+
+        tsProblems.last24();     // after BOTH exist, so the group lands on one window
+        selectTab('problems');   // only now does a panel get hidden
+        connectCard.hidden = true;
+        try { connHost.textContent = new URL(url).host; }
+        catch (e) { connHost.textContent = url; }
+      }
+
+      function attachProblemsTooltip() {
+      attachTooltip(tsProblems, {
+        labelFor: (key, plot, value) => (value && value.label) || '(unnamed)',
+        formatter(ctx) {
+          const nodes = ctx.defaultContent();
+          const v = ctx.value;
+          if (v) {
+            const info = document.createElement('div');
+            info.style.color = ctx.colors.tooltipMuted;
+            info.style.fontSize = '11px';
+            // v.end is the recovery time for resolved problems and the fetch's
+            // "now" for open ones, so this is the real duration either way —
+            // worth printing for both, since a resolved problem's length is
+            // exactly what a bar too short to read cannot show (a door sensor
+            // firing for four seconds draws as a 2px sliver).
+            const durMs = (v.end || Date.now()) - v.start;
+            info.textContent = v.severity
+              + (v.ack ? ' · acknowledged' : ' · unacknowledged')
+              + (v.resolved ? ' · resolved after ' : ' · open for ') + formatDuration(durMs);
+            nodes.push(info);
+          }
+          return nodes;
+        },
+      });
+      }
+
+      // ── Host / item pickers ─────────────────────────────────────────────
+      // The client is the one the connect probe already built and proved, handed
+      // in rather than created here: a second client would repeat the same login
+      // for no benefit, and its failure mode would be a silently empty dropdown
+      // instead of the form's error box.
+      const hostSelect = document.getElementById('host-select');
+      const itemSelect = document.getElementById('item-select');
+      const addBtn = document.getElementById('add-item');
+      const chipsEl = document.getElementById('chips');
+
+      const ITEM_COLORS = ['#2d6a9f', '#c0392b', '#27ae60', '#8e44ad', '#d68910', '#16a085', '#2c3e50', '#e84393'];
+      let colorCursor = 0;
+      function nextItemColor() { return ITEM_COLORS[colorCursor++ % ITEM_COLORS.length]; }
+
+      let uiClient = null;   // set by renderHosts(), the probe's proven client
+
+      function loadItems(hostid) {
+        itemSelect.innerHTML = '';
+        itemSelect.disabled = true;
+        addBtn.disabled = true;
+        if (!hostid || !uiClient) return;
+        uiClient.api('item.get', {
+          hostids: [hostid],
+          output: ['itemid', 'name', 'key_', 'value_type'],
+          filter: { status: 0 },
+          sortfield: 'name',
+        }).then((items) => {
+          // Only float (0) and unsigned (3) items carry a history/trends
+          // number band; text/log/char items (1, 2, 4) can't be charted here.
+          const numeric = items.filter((i) => ['0', '3'].includes(String(i.value_type)));
+          if (!numeric.length) {
+            itemSelect.appendChild(new Option('(no numeric items on this host)', ''));
+            return;
+          }
+          numeric.forEach((i) => {
+            const o = new Option(i.name + ' (' + i.key_ + ')', i.itemid);
+            o.dataset.valueType = i.value_type;
+            itemSelect.appendChild(o);
+          });
+          itemSelect.disabled = false;
+          addBtn.disabled = false;
+        }, (e) => {
+          console.warn('zabbix_items_failure', e);
+          itemSelect.appendChild(new Option('(failed to load)', ''));
+        });
+      }
+
+      // A pure renderer now, not a fetch: the connect probe already had to make
+      // one authenticated round trip to prove the credentials, and host.get is
+      // exactly the list this needs — so a successful connect costs no extra
+      // request and this has no failure path of its own any more (the probe's
+      // error box is the failure path).
+      function renderHosts(client, hosts) {
+        uiClient = client;
+        hostSelect.innerHTML = '';
+        if (!hosts.length) {
+          hostSelect.appendChild(new Option('(no hosts found)', ''));
+          return;
+        }
+        hosts.forEach((h) => hostSelect.appendChild(new Option(h.name, h.hostid)));
+        hostSelect.disabled = false;
+        loadItems(hostSelect.value);
+      }
+
+      hostSelect.onchange = () => loadItems(hostSelect.value);
+
+      function makeChip(itemid, label, color) {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        const dot = document.createElement('span');
+        dot.className = 'chip-dot';
+        dot.style.background = color;
+        const text = document.createElement('span');
+        text.textContent = label;
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'chip-remove';
+        remove.textContent = '×';
+        remove.setAttribute('aria-label', 'Remove: ' + label);
+        remove.onclick = () => {
+          itemsSource.removeItem(itemid);
+          chip.remove();
+        };
+        chip.append(dot, text, remove);
+        return chip;
+      }
+
+      addBtn.onclick = () => {
+        const opt = itemSelect.selectedOptions[0];
+        if (!opt || !opt.value) return;
+        const itemid = opt.value;
+        if (itemsSource.hasItem(itemid)) return;
+        const hostOpt = hostSelect.selectedOptions[0];
+        const label = (hostOpt ? hostOpt.textContent : '') + ': ' + opt.textContent;
+        const color = nextItemColor();
+        itemsSource.addItem(itemid, { color, label, valueType: Number(opt.dataset.valueType) || 0 });
+        chipsEl.appendChild(makeChip(itemid, label, color));
+      };
+
+      document.getElementById('clear-items').onclick = () => {
+        Array.from(chipsEl.querySelectorAll('.chip-remove')).forEach((btn) => btn.click());
+      };
+
+      // ── Tabs ─────────────────────────────────────────────────────────────
+      // Plain `hidden` (i.e. display:none), which measures the inactive canvas
+      // at 0×0. src/timeseries.js guards that: the ResizeObserver keeps the last
+      // good geometry rather than recomputing a NEGATIVE plotWidth from it, and
+      // plotAll() skips a zero-area frame while still broadcasting its viewport
+      // to the sync group. Before those guards this one attribute put both
+      // charts into a ~250 fps repaint loop and their sources into an endless
+      // refetch. Read that guard before replacing this with anything cleverer.
+      //
+      // No redraw() on unhide is needed either: the panel going from
+      // display:none to displayed changes the observed .canvas-wrap box from 0×0
+      // to its real size, which fires the library's own ResizeObserver — and
+      // that both repaints and calls scheduleViewportChange(), so the tab that
+      // just became visible refetches for the current viewport by itself.
+      const TABS = [
+        { tab: 'tab-problems', panel: 'panel-problems' },
+        { tab: 'tab-items', panel: 'panel-items' },
+      ];
+      const tablist = document.querySelector('.tablist');
+
+      function selectTab(name) {
+        const want = 'tab-' + name;
+        TABS.forEach((t) => {
+          const on = t.tab === want;
+          const btn = document.getElementById(t.tab);
+          btn.setAttribute('aria-selected', on ? 'true' : 'false');
+          // Roving tabindex: only the selected tab is in the tab order, so one
+          // Tab press moves *into* the panel (onto the chart canvas, which the
+          // library made focusable) instead of along the tab strip.
+          btn.tabIndex = on ? 0 : -1;
+          document.getElementById(t.panel).hidden = !on;
+        });
+      }
+
+      TABS.forEach((t, i) => {
+        document.getElementById(t.tab).onclick = () => {
+          selectTab(t.tab.slice(4));
+          document.getElementById(TABS[i].tab).focus();
+        };
+      });
+
+      // Left/Right/Home/End with automatic activation (the panels are already
+      // built, so switching is free and the ARIA-practices default applies).
+      // Bound on the tablist, not the document: the chart canvas binds its OWN
+      // arrow keys for panning and is not a descendant of this element, so the
+      // two handlers can never see the same event.
+      tablist.onkeydown = (e) => {
+        const idx = TABS.findIndex((t) => document.getElementById(t.tab).tabIndex === 0);
+        let next = -1;
+        if (e.key === 'ArrowRight') next = (idx + 1) % TABS.length;
+        else if (e.key === 'ArrowLeft') next = (idx - 1 + TABS.length) % TABS.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = TABS.length - 1;
+        if (next < 0) return;
+        e.preventDefault();
+        selectTab(TABS[next].tab.slice(4));
+        document.getElementById(TABS[next].tab).focus();
+      };
+
+      // ── Connect ──────────────────────────────────────────────────────────
+      const connectCard = document.getElementById('connect-card');
+      const connectForm = document.getElementById('connect-form');
+      const connectStatus = document.getElementById('connect-status');
+      const connectError = document.getElementById('connect-error');
+      const connectBtn = document.getElementById('connect-btn');
+      const chartUi = document.getElementById('chart-ui');
+      const urlInput = document.getElementById('api-url');
+      const tokenInput = document.getElementById('api-token');
+      const revealBtn = document.getElementById('token-reveal');
+      const connHost = document.getElementById('conn-host');
+      const reconnectBtn = document.getElementById('reconnect');
+
+      revealBtn.onclick = () => {
+        const show = tokenInput.type === 'password';
+        tokenInput.type = show ? 'text' : 'password';
+        revealBtn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        revealBtn.textContent = show ? 'hide' : 'show';
+      };
+
+      // setAuth() is NOT a connect: src/jpZabbix.js only stores the token in a
+      // closure variable and resolves — it never touches the network. So
+      // setAuth().then() says nothing about whether the URL exists, whether it
+      // is the JSON-RPC endpoint rather than the frontend, whether CORS is
+      // configured, or whether the token is valid. Only an authenticated round
+      // trip does, and host.get is both that round trip AND the list the item
+      // picker needs, so a successful connect costs no extra request.
+      //
+      // The timeout is done here rather than through jpZabbix's own `timeout`
+      // option, which is a trap: it sets req.timeout but wires only onload and
+      // onerror — an XHR timeout fires NEITHER, so the promise would never
+      // settle and the form would sit at "connecting…" forever.
+      const PROBE_TIMEOUT = 20000;
+
+      function probe(url, token) {
+        const client = new jpZabbix({ url: url });
+        const call = client.setAuth(token)
+          .then(() => client.api('host.get', {
+            output: ['hostid', 'name'], filter: { status: 0 }, sortfield: 'name',
+          }))
+          .then((hosts) => ({ client: client, hosts: hosts || [] }));
+        return Promise.race([call, new Promise((_res, rej) => {
+          setTimeout(() => rej({
+            code: 0,
+            message: 'Timed out after ' + (PROBE_TIMEOUT / 1000) + ' s — no response.',
+          }), PROBE_TIMEOUT);
+        })]);
+      }
+
+      // Rejections are {code, data, message} from three places: a Zabbix API
+      // `error` object, a non-200 response, and a network failure. code 0 is the
+      // network shape, and on this page that is almost always the CORS preflight
+      // rather than a dead server — worth naming, because the browser console
+      // shows only an opaque CORS error. Its `data` is the POST body (nothing
+      // secret, the token travels in a header, but pure noise), so it is not
+      // printed; a real Zabbix rejection puts the useful detail there
+      // ("Not authorised.") and that one is.
+      function describeError(e) {
+        if (!e) return 'Unknown error.';
+        const msg = e.message || String(e);
+        if (e.code === 0) {
+          // Self-contained on purpose: the long CORS section lives in the Items
+          // tab, which is unreachable precisely when this message appears.
+          return msg + ' The most common cause is the CORS preflight, not a dead server: '
+            + 'the web server in front of api_jsonrpc.php must answer OPTIONS with '
+            + 'Access-Control-Allow-Origin, Access-Control-Allow-Methods: POST, OPTIONS and '
+            + 'Access-Control-Allow-Headers: Content-Type, Authorization — '
+            + '"Authorization" has to be named in that list, a * does not cover it. '
+            + 'The other possibility: the URL is unreachable or wrong.';
+        }
+        return e.data ? msg + ' — ' + e.data : msg;
+      }
+
+      function showForm(url, token, err) {
+        urlInput.value = url || '';
+        tokenInput.value = token || '';
+        connectCard.hidden = false;
+        connectBtn.disabled = false;
+        urlInput.disabled = false;
+        tokenInput.disabled = false;
+        connectStatus.textContent = err ? 'failed' : 'not connected';
+        connectError.hidden = !err;
+        if (err) connectError.textContent = describeError(err);
+      }
+
+      function connect(url, token, fromForm) {
+        connectStatus.textContent = 'connecting…';
+        connectError.hidden = true;
+        connectBtn.disabled = true;
+        urlInput.disabled = true;
+        tokenInput.disabled = true;
+        probe(url, token).then(({ client, hosts }) => {
+          // Persist only on success, so a typo is never stored.
+          writeStored(url, token);
+          connectStatus.textContent = 'connected';
+          buildCharts(url, token, client, hosts);
+        }, (e) => {
+          console.warn('zabbix_connect_failure', e);
+          // Deliberately does NOT clearStored(): a CORS hiccup or a server
+          // reboot must not silently discard a token the user pasted. The
+          // requirement is that the *form* comes back, not that the credentials
+          // are forgotten — only "Disconnect" forgets.
+          showForm(url, token, e);
+          if (!fromForm) urlInput.focus();
+        });
+      }
+
+      connectForm.onsubmit = (e) => {
+        e.preventDefault();
+        const url = urlInput.value.trim();
+        const token = tokenInput.value.trim();
+        if (!url || !token) return;
+        connect(url, token, true);
+      };
+
+      // There is no destroy() on a TimeSeries instance and canvas._tsInstance is
+      // never cleared, so a canvas can never be reused: a second `new
+      // TimeSeries` on it warns and returns, which from a constructor called with
+      // `new` yields a half-built object with none of the methods attached.
+      // Rebuilding in place is therefore not on the table. And even with a
+      // destroy() there would be three more leaks to unwind — each source arms a
+      // setInterval poller that would keep hammering the API with a dead token,
+      // the viewport-group entry only comes off via leaveGroup(), and
+      // tooltip/legend hold document-level listeners with no handle kept here.
+      // Clearing storage and reloading is not a workaround; it is the only
+      // correct teardown available, and it is one line.
+      document.getElementById('disconnect').onclick = () => {
+        clearStored();
+        location.reload();
+      };
+      // Same reload, but keeps the credentials, so the auto-connect below runs
+      // again and — if it fails — brings the form back with the error.
+      reconnectBtn.onclick = () => location.reload();
+
+      // Auto-connect. On this path the card is never shown, only the pill state
+      // exists, so a reload with stored credentials does not flash the form.
+      const stored = readStored();
+      if (stored) connect(stored.url, stored.token, false);
+      else showForm('', '', null);
+    </script>
+  </body>
+</html>
