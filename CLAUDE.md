@@ -117,6 +117,28 @@ Three things about that group are deliberate:
 
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
 
+The Pages deploy publishes both bundles, and the README documents them as the no-build
+drop-in (`https://hgruber.github.io/timeseries.js/dist/timeseries.min.js`, served with
+`Access-Control-Allow-Origin: *`). They are rebuilt on every push to `main`, so that URL
+pins nothing — the README says so, and says to self-host a copy if a fixed build matters.
+README's *Connect to a real server* hangs two single-file recipes off it (Zabbix, CalDAV),
+whose whole CORS story is "put the file on the host that serves the API" — an origin is
+scheme+host+port, so the path is free. Two traps those recipes encode, both verified by
+constructing them headlessly against `test/helpers/dom.mjs`:
+
+- **CalDAV's `url` must be absolute.** `absolute()` in `src/caldav.js` is
+  `new URL(href, config.url)`, and a relative *base* is not a valid URL — it throws in the
+  browser exactly as it does in Node. The recipe therefore uses `location.origin + '/…'`,
+  which stays same-origin without hard-coding a host. Calendar hrefs, resolved *against*
+  that base, may be relative.
+- **Zabbix's `url` may be relative** (`/zabbix/api_jsonrpc.php`): `jpZabbix.api()` hands it
+  to `XMLHttpRequest.open()`, which resolves against the document base.
+
+`src/jpZabbix.js` has **no `proxy` option** (unlike `src/caldav.js`), so `serve:proxy`'s
+forwarder is a CalDAV-only escape hatch; the README's CORS section says so rather than
+papering over it. That was a deliberate call — the recipes solve CORS by placement, not by
+proxying.
+
 ### Testing (`test/`)
 
 Plain `node:test` + `node:assert/strict`, no dependency. `test/helpers/dom.mjs` stubs

@@ -24,6 +24,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Opt-in tooltip & legend** — one call each for a themed hover card and a click-to-toggle series legend that follow the palette; override the label, the formatting, or the whole body
 - **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`), calendar/Gantt spans (`gantt`)
 - **Built-in data sources** — Zabbix JSON-RPC API, CalDAV calendars, static/generated data
+- **Drop-in via CDN** — one `<script>` line, no build step, no npm ([recipes](#connect-to-a-real-server))
 
 ---
 
@@ -34,7 +35,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 ```html
 <canvas id="chart" style="width: 900px; height: 360px"></canvas>
 
-<script src="dist/timeseries.js"></script>
+<script src="https://hgruber.github.io/timeseries.js/dist/timeseries.min.js"></script>
 <script>
   // A minimal stacked-bar dataset: 24 hourly slots, two series each.
   const today0 = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
@@ -63,11 +64,160 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 </script>
 ```
 
+That is the whole setup — no npm, no build, no checkout. A locally hosted copy
+works identically: run `npm run build` and point the tag at `dist/timeseries.js`.
+
 The canvas must have a non-zero CSS width/height — the library reads
 `clientWidth`/`clientHeight` once at construction and sizes its backing
 store from them.
 
-### Development
+### Download
+
+| File | |
+|---|---|
+| [`timeseries.min.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.min.js) | minified, ~73 kB — what the tag above loads |
+| [`timeseries.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.js) | unminified, readable in devtools |
+
+Both are IIFE bundles exposing a global `TimeSeries`, served with
+`Access-Control-Allow-Origin: *`, and rebuilt from `src/` on **every push to
+`main`** — so there is no version pinning. If you need a fixed build, download
+the file once and host it yourself. `TimeSeries.VERSION` tells you which one is
+loaded.
+
+---
+
+## Connect to a real server
+
+Two recipes, one HTML file each, no npm and no checkout. Both put the file on the
+**same web server that serves the API** — an origin is scheme + host + port, so
+the path does not matter and the browser makes no cross-origin check at all. If
+that is not possible, see [Cross-origin (CORS)](#cross-origin-cors) below.
+
+### Zabbix
+
+1. **Get a token** — Zabbix frontend → *User settings → API tokens → Create API
+   token*. A read-only user is enough.
+2. **Get an item id** — *Monitoring → Latest data*, open the item; the URL
+   carries `itemid=…`.
+3. **Drop the file next to the frontend** — save it as `ts.html` anywhere on the
+   host serving Zabbix (e.g. `/usr/share/zabbix/ts.html`) and open
+   `https://<zabbix-host>/ts.html`.
+
+```html
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Zabbix — timeseries.js</title>
+<canvas id="chart" style="width:100%;height:360px"></canvas>
+
+<script src="https://hgruber.github.io/timeseries.js/dist/timeseries.min.js"></script>
+<script>
+  const ts = new TimeSeries({
+    canvas: 'chart',
+    initialView: 'last24',
+    yAxisLabel: 'value',
+    sources: [{
+      'source-type': 'zabbix',
+      url: '/zabbix/api_jsonrpc.php',   // relative = same origin = no CORS
+      'auth-token': 'PASTE_YOUR_API_TOKEN',
+      itemids: [12345],                 // from step 2
+      'value-type': 0,                  // 0 = float, 3 = unsigned — must match the item
+      name: 'CPU load',
+    }],
+  });
+
+  TimeSeries.attachTooltip(ts);
+  TimeSeries.attachLegend(ts);
+</script>
+```
+
+Panning and zooming refetch as needed: the source keeps a 60 s `history` and a
+1 h `trends` tier side by side and dissolves one into the other as you zoom —
+see [Zabbix (history and trends)](#zabbix-history-and-trends) for the tier and
+prefetch options.
+
+`'value-type'` is the usual reason for an empty chart: if it does not match the
+item, `history.get` returns an empty list without an error (trends still arrive,
+so the chart fills in as soon as you zoom out).
+
+A username and password work too — swap `'auth-token'` for `username`/`password`
+— but a token can be revoked server-side, which a password cannot.
+
+### CalDAV
+
+1. **Create an app password** — e.g. Nextcloud: *Settings → Security → Create new
+   app password*. Do not use your login password.
+2. **Note the DAV base URL** — Nextcloud: `/remote.php/dav/`. With no `calendars`
+   list the source discovers every calendar of that user itself.
+3. **Drop the file on the same host** — anywhere on the server answering the DAV
+   URL (the path is irrelevant, only scheme/host/port count) and open it.
+
+```html
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>CalDAV — timeseries.js</title>
+<canvas id="chart" style="width:100%;height:420px"></canvas>
+
+<script src="https://hgruber.github.io/timeseries.js/dist/timeseries.min.js"></script>
+<script>
+  const ts = new TimeSeries({
+    canvas: 'chart',
+    initialView: 'thisWeek',
+    sources: [{
+      'source-type': 'caldav',
+      url: location.origin + '/remote.php/dav/',   // same origin as this page = no CORS
+      username: 'me',
+      password: 'APP_PASSWORD',     // from step 1
+      layout: 'calendar',           // one row block per calendar; 'packed' compacts them
+      // calendars: ['/remote.php/dav/calendars/me/personal/'],   // else: discover()
+                                    // (calendar hrefs may be relative — `url` may not)
+    }],
+  });
+
+  TimeSeries.attachTooltip(ts);
+</script>
+```
+
+`url` must be **absolute** — every calendar href the server returns is resolved
+against it, and a relative base is not a valid URL — hence `location.origin +
+…`, which keeps it same-origin without hard-coding the host.
+
+Recurring events are expanded **server-side** — see
+[Calendar spans (Gantt) and CalDAV](#calendar-spans-gantt-and-caldav) for the
+plot shape and the remaining options.
+
+The password sits in the page in clear text, so do not serve this file where
+others can read it. `demo/caldav-live.html` asks for the credentials in a form
+instead and keeps them in `sessionStorage`.
+
+### Cross-origin (CORS)
+
+If the page cannot live on the same host as the API, the server has to allow the
+request explicitly. In order of effort:
+
+1. **Same origin** — serve the page from the web server that answers the API.
+   No preflight, no server change. That is what both recipes above do.
+2. **Set the response headers**, if it cannot:
+   - *Zabbix* — `api_jsonrpc.php` must answer `OPTIONS` with
+     `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods: POST, OPTIONS`
+     and `Access-Control-Allow-Headers: Content-Type, Authorization`. A `*` in
+     `Allow-Headers` does **not** cover `Authorization` — per the Fetch standard
+     it has to be named.
+   - *CalDAV* — additionally `PROPFIND`, `REPORT` in `Allow-Methods` and `Depth`
+     in `Allow-Headers`, and `OPTIONS` must be answered **before** the auth layer.
+     Most servers answer it with `401`, which no header can rescue: a preflight
+     must return 2xx. Requests go out with `credentials: 'omit'`, so a wildcard
+     `Allow-Origin` is enough.
+3. **A local forwarder while developing** (CalDAV only, needs the repo checkout) —
+   `npm run serve:proxy` adds a `/dav-proxy` route to the static server that
+   replays the request from Node, where the same-origin policy does not exist.
+   Put `/dav-proxy?url=` in the source's `proxy` option or in the *Proxy* field of
+   `demo/caldav-live.html`; the absolute target URL is appended URL-encoded. It
+   listens on 127.0.0.1 only — a proxy to an arbitrary target is an open relay —
+   and `DAV_PROXY_ALLOW=host1,host2` narrows it further.
+
+---
+
+## Development
 
 ```bash
 npm run build   # build dist/timeseries.js first
@@ -81,7 +231,8 @@ so it works with no infrastructure. `demo/zabbix.html` does the same for the
 `zabbix` source, answering its requests from a synthetic `api_jsonrpc.php`.
 
 Two pages want a **real** server, and both ask for it in a connect form rather
-than in the source:
+than in the source — nothing to edit, unlike the two recipes
+[above](#connect-to-a-real-server), but they do need this checkout:
 
 `demo/zabbix-live.html` enters the API URL and a token (a read-only API user is
 enough) and draws problems as a gantt plus any items you pick as a
@@ -98,15 +249,10 @@ connection but closing the tab forgets it; a checkbox promotes them to
 
 Read the banner on either page before using it against anything you care about.
 
-Most CalDAV servers refuse the CORS preflight (they answer `OPTIONS` with
-`401`, which no header can rescue — a preflight must return 2xx), so the
-CalDAV page will not reach them from another origin until the server is
-configured to answer `OPTIONS` before its auth layer. For local development
-`npm run serve:proxy` sidesteps it: same static server, plus a `/dav-proxy`
-route that replays the request from Node, where the same-origin policy does
-not apply. Put `/dav-proxy?url=` in the page's *Proxy* field. It listens on
-127.0.0.1 only — a proxy to an arbitrary target URL is an open relay — and
-`DAV_PROXY_ALLOW=host1,host2` narrows it further.
+Served from `localhost`, both pages are cross-origin to whatever server you
+point them at — see [Cross-origin (CORS)](#cross-origin-cors) for what that
+needs, including the `/dav-proxy` route `npm run serve:proxy` adds for the
+CalDAV page.
 
 ---
 
@@ -470,6 +616,40 @@ methods and the `Authorization` header in their CORS response, or you can set
 `proxy` to front the server through a same-origin forwarder. See
 `demo/caldav.html` for a working example (it falls back to parsing the static
 fixtures in `demo/fixtures/` when no server is configured).
+
+### Zabbix (history and trends)
+
+The `zabbix` source builds its own plots: it fetches per item and hands the
+result to the `quantile-bands` renderer as a `[min, avg, max]` band. Raw
+`history` (binned into buckets) and Zabbix's hourly `trends` share that one
+shape, so a fine tier draws as a single line and a coarse one as a filled band.
+
+```js
+{
+  'source-type': 'zabbix',
+  url: 'https://zabbix.example.org/api_jsonrpc.php',
+  'auth-token': '…',                 // or username/password to log in
+  itemids: [12345, 12346],           // one band series per item
+  'value-type': 0,                   // history.get value type: 0 float, 3 unsigned
+  'history-interval': 60,            // fine tier bucket seconds (default 60)
+  // tiers: [{ interval: 60, kind: 'history' },
+  //         { interval: 3600, kind: 'trends' }],   // the default ladder
+  padding: 0.5,                      // extra window prefetched either side
+  series_colors: { 12345: '#2d6a9f' },
+  name: 'CPU load',
+}
+```
+
+Both tiers are held at once and dissolved into each other as the buckets shrink
+past ~2 px, so a zoom crosses the history/trends boundary without a pop; each
+tier keeps its own ring cache, prefetches ±`padding` around the viewport and
+refetches only when panning nears the fetched edge. `ts.setRenderInterval(iv)`
+pins one interval and switches the cross-fade off.
+
+After init, `source.server` is the [`jpZabbix`](src/jpZabbix.js) client, so a
+page can issue its own API calls on the same connection. See
+[Connect to a real server](#zabbix) for a complete page, and `demo/zabbix.html`
+for one that runs the whole source against a synthetic API with no server at all.
 
 ---
 
