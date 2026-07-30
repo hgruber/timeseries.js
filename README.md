@@ -1,6 +1,9 @@
 # timeseries.js
 
 [![Test & Deploy](https://github.com/hgruber/timeseries.js/actions/workflows/deploy.yml/badge.svg)](https://github.com/hgruber/timeseries.js/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/commits/main)
+[![Release](https://img.shields.io/github/v/release/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/releases)
 
 A lightweight, dependency-free JavaScript library for interactive time series visualization on HTML canvas. Designed for fluid navigation at any time scale — from minutes to years — with correct daylight saving time handling and calendar-aware labeling.
 
