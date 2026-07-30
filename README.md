@@ -78,10 +78,6 @@ store from them.
 
 ### Via npm
 
-> **Not published yet.** The npm package and the pinned CDN URLs below arrive with
-> release `0.9.0`; until then the always-latest URL above is the only one that
-> resolves.
-
 ```bash
 npm i timeseries.js
 ```
