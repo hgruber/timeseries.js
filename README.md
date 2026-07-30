@@ -5,9 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/releases)
 
-Interactive time series on an HTML canvas. No dependencies, no build step, one `<script>`
-tag. Fluid navigation from minutes to years, with correct DST handling and a calendar-aware
-time axis.
+A lightweight, dependency-free JavaScript library for interactive time series visualization
+on HTML canvas. Designed for fluid navigation at any time scale — from minutes to years —
+with correct daylight saving time handling and calendar-aware labeling.
+
+No build step, no checkout: one `<script>` tag and you have a chart.
 
 **[▶ Live demo](https://hgruber.github.io/timeseries.js/demo/)** · **[📖 Documentation](doc/)**
 
