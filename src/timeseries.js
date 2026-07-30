@@ -16,7 +16,7 @@ import { lttb } from './lttb.js';
 import { rollupBinned } from './rollup.js';
 import { attachTooltip } from './tooltip.js';
 import { attachLegend } from './legend.js';
-import { VERSION } from './version.js';
+import { VERSION, BUILD } from './version.js';
 
 // ── Viewport group registry ───────────────────────────────────────────────────
 // Maps group name → Set of handles, one per instance.
@@ -2586,7 +2586,10 @@ export default function TimeSeries(options) {
   // sits on, but *before* frame()'s vertical time labels, so those overprint the
   // pill (its background never hides a "now"-adjacent time reading).
   function versionTag() {
-    var tag = 'timeseries.js ' + VERSION;
+    // BUILD is empty in a released bundle and names the build otherwise, so the
+    // pill reads "0.9.0" from npm but "0.9.0+g1a2b3c4" on a Pages deploy. The box
+    // is measured from this string below, so the longer form cannot overflow it.
+    var tag = 'timeseries.js ' + VERSION + (BUILD ? '+' + BUILD : '');
     c.save();
     c.font = '8px sans-serif';
     var padX = 6, padY = 3, r = 4;
@@ -2914,6 +2917,7 @@ TimeSeries.lttb = lttb;
 TimeSeries.rollupBinned = rollupBinned;
 TimeSeries.siFormat = siFormat;
 TimeSeries.VERSION = VERSION;
+TimeSeries.BUILD = BUILD;
 
 // ── Named colour themes ───────────────────────────────────────────────────────
 // Each theme is a complete colors object suitable for new TimeSeries({ colors: … })

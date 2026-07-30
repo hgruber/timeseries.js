@@ -18,6 +18,7 @@ npm run serve:proxy  # same, but node — adds the /dav-proxy route (see below)
 npm test             # run test/*.test.mjs with node's built-in test runner
 npm run lint         # eslint; must stay at 0 errors
 npm run lint:strict  # same, but warnings fail too (--max-warnings 0); currently green
+npm run release -- X.Y.Z   # cut a release (see "Versioning" below)
 ```
 
 ### Linting
@@ -117,10 +118,17 @@ Three things about that group are deliberate:
 
 **Production**: `dist/timeseries.js` is an IIFE bundle; include it via `<script src="dist/timeseries.js">` and use `new TimeSeries(...)` globally.
 
-The Pages deploy publishes both bundles, and the README documents them as the no-build
-drop-in (`https://hgruber.github.io/timeseries.js/dist/timeseries.min.js`, served with
-`Access-Control-Allow-Origin: *`). They are rebuilt on every push to `main`, so that URL
-pins nothing — the README says so, and says to self-host a copy if a fixed build matters.
+**Three distribution channels, and the README is careful about which is which.** npm is
+the pinnable one: a published version is immutable, which also gives pinned CDN URLs
+(`https://cdn.jsdelivr.net/npm/timeseries.js@0.9.0/dist/timeseries.min.js`; unpkg serves
+the same paths) — that is what the README's `<script>` examples use, and what the recipes
+below use. GitHub releases carry the same two bundles as attachments for self-hosting a
+fixed copy. The Pages deploy still publishes `dist/` at
+`https://hgruber.github.io/timeseries.js/dist/timeseries.min.js` (served with
+`Access-Control-Allow-Origin: *`), rebuilt on every push to `main` — it pins nothing **on
+purpose** and the README labels it as for trying things out, not production. Do not
+present that URL as the production drop-in again; that framing predates npm publishing.
+
 README's *Connect to a real server* hangs two single-file recipes off it (Zabbix, CalDAV),
 whose whole CORS story is "put the file on the host that serves the API" — an origin is
 scheme+host+port, so the path is free. Two traps those recipes encode, both verified by
@@ -215,7 +223,11 @@ the whole band, the hit test returning raw values, and the unit-swap dissolve), 
 geometry to fall back on, no non-positive timer delay ever reaching `setTimeout`, a hidden
 chart neither repainting nor re-arming, a hidden peer not dragging a visible one while still
 tracking the viewport, geometry preserved across hide/unhide, `attachLegend` surviving a
-0×0 construction, and a hidden follow leader still driving the group). The
+0×0 construction, and a hidden follow leader still driving the group), and
+`test/version.test.mjs` (that `package.json` and `src/version.js` still agree — nothing
+enforces that at commit time since the auto-bump hook was removed — that `BUILD` is safe
+to concatenate into the drawn pill, and `changelogSection()`'s slicing, which both
+`scripts/release.mjs` and the release workflow depend on). The
 renderer-level assertions there
 use a **recording 2D context** defined in the test file — the Proxy context in
 `test/helpers/dom.mjs` is a pure no-op and cannot report the alpha a draw call ran at.
@@ -244,11 +256,33 @@ target instead of needing the full `zoomDuration`.
 
 ## Versioning
 
-The project is on a fixed `0.8.x` line; the patch number increments by exactly 1 on
-**every** commit — it's a build counter, not a semver signal. `package.json`'s `version`
-is the source of truth; `src/version.js` mirrors it (`export const VERSION`) and is
-bundled as `TimeSeries.VERSION`, and the canvas itself draws a small `timeseries.js
-0.8.N` tag in a rounded pill in the bottom margin, just inside the plot's right edge
+**The version is a semver signal, and it used not to be.** Until 0.9.0 the patch number
+incremented by exactly 1 on every commit — a build counter, explicitly documented here as
+carrying no compatibility meaning. That is incompatible with consumers pinning a version,
+which they now can (npm, and pinned jsDelivr/unpkg URLs), so it was replaced:
+
+- The project is pre-1.0 and follows the **0.x convention**: a *minor* bump may break the
+  public API, a *patch* bump never does. `^0.9.0` and `@0.9` therefore mean something.
+- The version changes **only at a release**, via `npm run release -- X.Y.Z`. Nothing
+  bumps it automatically any more; the pre-commit hook, `scripts/bump-version.mjs` and
+  `scripts/install-hooks.sh` are gone, along with the npm `"prepare"` script that
+  installed the hook. Do not reintroduce an auto-bump — it would silently move a number
+  that consumers now depend on.
+- **Do not hand-edit the version** in either file. `package.json`'s `version` is the
+  source of truth and `src/version.js` mirrors it (`export const VERSION`);
+  `test/version.test.mjs` asserts they agree, since no hook keeps them in step now.
+
+**`BUILD` is the other half of the split.** Because `VERSION` no longer moves per commit,
+it cannot say *which* build you are looking at — so `src/version.js` also exports
+`BUILD`, bundled as `TimeSeries.BUILD`, and the canvas pill draws
+`VERSION + (BUILD ? '+' + BUILD : '')`. It is `'dev'` in the repo and overwritten in CI
+by `scripts/stamp-build.mjs`: `deploy.yml` stamps the short commit SHA (so a Pages demo
+names its exact build, `0.9.0+g320a993`), `release.yml` stamps `''` (a published bundle
+*is* an exact version, `0.9.0`). Neither commits the change — only the CI working tree
+moves. `stamp-build.mjs` rejects anything outside `[A-Za-z0-9.-]`, because whatever it
+writes gets drawn.
+
+The canvas draws that string as a small tag in a rounded pill in the bottom margin, just inside the plot's right edge
 (`versionTag()` in `timeseries.js`) — 8px, low-alpha, unobtrusive by design. The pill's
 fill is a translucent white wash (reads as "slightly lighter" over whatever `frameBg`
 the theme paints) with a faint `colors.text` outline, so it re-themes for free.
@@ -261,16 +295,44 @@ own text and stores the pill box in `versionTagRect`; `hitVersionTag()` (used by
 `onmousemove` for the cursor and `onmouseup` for the click) reads that same rect rather
 than re-deriving it, so hit area and drawn box can't drift apart.
 
-The bump is automatic: `hooks/pre-commit` runs `node scripts/bump-version.mjs`, which
-increments the patch component in `package.json` and rewrites `src/version.js` to
-match, then stages both so the bump rides along with the commit that triggered it.
-`scripts/install-hooks.sh` symlinks `hooks/*` into `.git/hooks/*` and runs
-automatically via the npm `"prepare"` script, so a plain `npm install` wires the hook
-up in a fresh checkout — no extra dependency (no husky). Do not hand-edit the patch
-number in either file; if you need to jump the minor version (e.g. `0.8.x` → `0.9.0`),
-edit `package.json` and `src/version.js` together in that commit and the hook will
-continue incrementing patch from there. `git commit --no-verify` skips the bump like
-any other hook.
+### Releasing
+
+`RELEASING.md` is the maintainer's runbook — the account/token setup, the per-release
+handgriffe, and the recovery cases (a tag pushed with a broken changelog, a bad version
+already on npm). It is written **in German**, unlike the rest of the docs, because it is
+a personal operator checklist rather than public API documentation — and for the same
+reason it is **gitignored**, existing only in the maintainer's working copy. Do not link
+to it from the README (the link would 404 on GitHub) and do not assume it is present.
+Keep the two in step: this section explains the machinery, `RELEASING.md` the steps.
+
+`CHANGELOG.md` (Keep a Changelog) is written **first** — a section
+`## [X.Y.Z] - YYYY-MM-DD`, date mandatory so an entry can't be left a placeholder. Then
+`npm run release -- X.Y.Z` (`scripts/release.mjs`) validates everything *before* writing
+anything: plain semver ahead of the current version, clean tree, on `main`, tag free,
+changelog section present, `npm test` and `npm run lint:strict` green. It then sets both
+version files, commits `Release X.Y.Z` and tags `vX.Y.Z` — and **pushes nothing**, so a
+mistake stays local. Pushing the tag fires `.github/workflows/release.yml`, which
+re-runs the suite, re-checks that tag ↔ `package.json` ↔ `src/version.js` ↔ changelog all
+agree (`scripts/release-notes.mjs`, whose `changelogSection()` the release script shares
+so the two can't disagree on what counts as a section), stamps `BUILD = ''`, builds, then
+`npm publish --provenance` and `gh release create` with both bundles attached.
+
+That gate is what makes a hand-cut release safe, and it is the reason nothing is pushed
+by the script: everything that could be wrong is caught either locally or before the
+publish step runs.
+
+Three things worth knowing about the publish:
+
+- **`dist/` is gitignored**, so the tarball only has bundles because the workflow builds
+  them first; `"prepublishOnly"` in `package.json` repeats that build as a safety net for
+  an accidental local `npm publish`. `files` ships `dist/`, `src/` and `CHANGELOG.md`.
+- **`npm publish` needs the `NPM_TOKEN` secret.** npm's trusted publishing (OIDC) can only
+  be configured for a package that already exists, so the first release uses a granular
+  token; switching afterwards means deleting the secret and the `env:` block.
+  `--provenance` works either way, since the workflow already has `id-token: write`.
+- The `test`/`lint` steps in `release.yml` are **deliberately duplicated** from
+  `deploy.yml`'s `test` job rather than factored into a `workflow_call` file — six lines
+  of copy against a rework of a deploy that already works.
 
 ## Architecture
 

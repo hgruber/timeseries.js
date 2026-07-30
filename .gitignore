@@ -1,3 +1,8 @@
 node_modules/
 dist/
 *.tgz
+
+# Personal maintainer runbook (accounts, tokens, per-release handgriffe) — stays
+# local. Ignored rather than merely untracked so it can't trip the clean-tree
+# check in scripts/release.mjs.
+RELEASING.md

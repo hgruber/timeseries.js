@@ -13,10 +13,12 @@
   },
   "files": [
     "dist/",
-    "src/"
+    "src/",
+    "CHANGELOG.md"
   ],
   "scripts": {
-    "prepare": "sh scripts/install-hooks.sh",
+    "release": "node scripts/release.mjs",
+    "prepublishOnly": "npm run build && npm run build:min",
     "build": "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js",
     "build:min": "esbuild src/timeseries.js --bundle --minify --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.min.js",
     "watch": "esbuild src/timeseries.js --bundle --format=iife --global-name=TimeSeries \"--footer:js=TimeSeries=TimeSeries.default??TimeSeries;\" --outfile=dist/timeseries.js --watch",

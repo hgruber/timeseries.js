@@ -46,6 +46,13 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # Pages is always the tip of main, i.e. never a released version — stamp
+      # the commit so the canvas version pill names the exact build. This reaches
+      # both dist/ and the src/ copied below, which the module demo pages import
+      # directly. Not committed; only the CI working tree changes.
+      - run: node scripts/stamp-build.mjs "g$(git rev-parse --short HEAD)"
+
       - run: npm run build
       - run: npm run build:min
 

@@ -1,0 +1,55 @@
+name: Release
+
+# Fired by pushing a tag that scripts/release.mjs created. Publishes to npm and
+# creates the GitHub release; see CLAUDE.md "Versioning" for the whole flow.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write      # create the release and upload the bundles
+  id-token: write      # npm provenance attestation
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      # The same four steps as deploy.yml's `test` job. Deliberately duplicated
+      # rather than factored into a reusable workflow: six lines of copy weigh
+      # less than a rework of the deploy that is already running.
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint:strict
+
+      # The gate that makes a hand-cut release safe: the tag, both version files
+      # and CHANGELOG.md must name the same version. Nothing is published if not.
+      - name: Verify the tag against the version files and changelog
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > RELEASE_NOTES.md
+
+      # A published bundle is an exact version, so it carries no build id.
+      - run: node scripts/stamp-build.mjs ''
+      - run: npm run build
+      - run: npm run build:min
+
+      # dist/ is gitignored and only exists because of the two steps above;
+      # `files` in package.json ships it alongside src/.
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create the GitHub release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md \
+            dist/timeseries.js dist/timeseries.min.js
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

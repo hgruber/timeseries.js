@@ -1,6 +1,7 @@
 # timeseries.js
 
 [![Test & Deploy](https://github.com/hgruber/timeseries.js/actions/workflows/deploy.yml/badge.svg)](https://github.com/hgruber/timeseries.js/actions/workflows/deploy.yml)
+[![npm](https://img.shields.io/npm/v/timeseries.js)](https://www.npmjs.com/package/timeseries.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/commits/main)
 [![Release](https://img.shields.io/github/v/release/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/releases)
@@ -27,7 +28,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Opt-in tooltip & legend** — one call each for a themed hover card and a click-to-toggle series legend that follow the palette; override the label, the formatting, or the whole body
 - **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`), calendar/Gantt spans (`gantt`)
 - **Built-in data sources** — Zabbix JSON-RPC API, CalDAV calendars, static/generated data
-- **Drop-in via CDN** — one `<script>` line, no build step, no npm ([recipes](#connect-to-a-real-server))
+- **Drop-in via CDN** — one `<script>` line, no build step, no checkout ([recipes](#connect-to-a-real-server)); or `npm i timeseries.js` if you have a bundler
 
 ---
 
@@ -67,25 +68,58 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 </script>
 ```
 
-That is the whole setup — no npm, no build, no checkout. A locally hosted copy
-works identically: run `npm run build` and point the tag at `dist/timeseries.js`.
+That is the whole setup — no build, no checkout. That URL always serves the latest
+build; for production, pin a version instead — see
+[Which URL to use](#which-url-to-use) below.
 
 The canvas must have a non-zero CSS width/height — the library reads
 `clientWidth`/`clientHeight` once at construction and sizes its backing
 store from them.
 
-### Download
+### Via npm
 
-| File | |
+> **Not published yet.** The npm package and the pinned CDN URLs below arrive with
+> release `0.9.0`; until then the always-latest URL above is the only one that
+> resolves.
+
+```bash
+npm i timeseries.js
+```
+
+```js
+import TimeSeries from 'timeseries.js';        // ES modules, from src/
+const TimeSeries = require('timeseries.js');   // the IIFE bundle, from dist/
+```
+
+### Which URL to use
+
+| | |
 |---|---|
-| [`timeseries.min.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.min.js) | minified, ~73 kB — what the tag above loads |
-| [`timeseries.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.js) | unminified, readable in devtools |
+| `…/npm/timeseries.js@0.9.0/dist/timeseries.min.js` | **one exact version.** Immutable — npm never lets a published version change. Use this in production. |
+| `…/npm/timeseries.js@0.9/dist/timeseries.min.js` | **the latest 0.9.x.** Picks up fixes, never a breaking change (see [Versioning](#versioning)). |
+| [`hgruber.github.io/timeseries.js/dist/timeseries.min.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.min.js) | **always the tip of `main`.** Rebuilt on every push, deliberately unpinned — for trying things out, not for production. |
 
-Both are IIFE bundles exposing a global `TimeSeries`, served with
-`Access-Control-Allow-Origin: *`, and rebuilt from `src/` on **every push to
-`main`** — so there is no version pinning. If you need a fixed build, download
-the file once and host it yourself. `TimeSeries.VERSION` tells you which one is
-loaded.
+Prefix the first two with `https://cdn.jsdelivr.net`; `https://unpkg.com` serves
+the same paths. Both bundles — `timeseries.min.js` (~73 kB) and the unminified
+`timeseries.js`, readable in devtools — are available at every version, and are
+also attached to each [GitHub release](https://github.com/hgruber/timeseries.js/releases)
+if you would rather host a fixed copy yourself. All are IIFE bundles exposing a
+global `TimeSeries`, served with `Access-Control-Allow-Origin: *`.
+
+`TimeSeries.VERSION` tells you which version is loaded, and `TimeSeries.BUILD`
+identifies the build when it is not a release — it is empty for a published
+version and carries the commit for the always-latest URL above.
+
+### Versioning
+
+The project is pre-1.0 and follows the usual 0.x convention:
+
+- a **minor** bump (`0.9.0` → `0.10.0`) may break the public API,
+- a **patch** bump (`0.9.0` → `0.9.1`) never does.
+
+So `^0.9.0` in a `package.json`, or `@0.9` in a CDN URL, gets you fixes without
+surprises. Every release is listed in [CHANGELOG.md](CHANGELOG.md), and breaking
+changes are called out there under *Changed* or *Removed*.
 
 ---
 
@@ -269,7 +303,23 @@ npm run watch        # rebuild on file changes
 npm run serve        # static server on :8080
 npm run serve:proxy  # same, plus the /dav-proxy route for demo/caldav-live.html
 npm test             # run the test suite (node's built-in test runner)
+npm run lint:strict  # eslint, warnings fail too — kept at zero
 ```
+
+### Cutting a release
+
+Write the notes into `CHANGELOG.md` under a `## [X.Y.Z] - YYYY-MM-DD` heading
+first, then:
+
+```bash
+npm run release -- 0.9.1        # validates, sets both version files, commits, tags
+git push && git push origin v0.9.1
+```
+
+Pushing the tag runs `.github/workflows/release.yml`, which re-checks that the
+tag, both version files and the changelog agree, then publishes to npm and
+creates the GitHub release with both bundles attached. `npm run release` pushes
+nothing itself, so a mistake stays local and fixable.
 
 ---
 
