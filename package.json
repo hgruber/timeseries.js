@@ -9,7 +9,10 @@
     ".": {
       "import": "./src/timeseries.js",
       "default": "./dist/timeseries.js"
-    }
+    },
+    "./src/*": "./src/*",
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/",
