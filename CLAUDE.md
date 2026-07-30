@@ -6,6 +6,46 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A vanilla JavaScript canvas-based time series visualization library. The live demo is at https://hgruber.github.io/timeseries.js/index.html.
 
+## Documentation layout
+
+**`README.md` is for the impatient and is kept that way on purpose**: badges, a one-paragraph
+pitch, a screenshot strip, one copy-paste quickstart, the feature list, and a table pointing
+into `doc/`. Reference material does **not** go back into it — if a section starts growing an
+options table or a second example, it belongs in `doc/`.
+
+`doc/` is the reference set, one topic per file, each with its own scannable heading
+structure so a reader (or an agent) can load just the page it needs instead of the whole
+manual:
+
+| File | Covers |
+|---|---|
+| `doc/README.md` | The index: a "what do I want to do → read this" table, plus the cross-file conventions (ms vs. seconds, local time, series ids) |
+| `doc/getting-started.md` | Installing, the CDN/npm/self-host choice, version pinning, versioning policy, first chart, the three common pitfalls |
+| `doc/data-formats.md` | Every plot object shape with a field table each: binned, point, quantile-bands, span |
+| `doc/configuration.md` | Constructor options, palette keys and themes, holidays, keyboard, mobile, hidden containers |
+| `doc/api.md` | Every instance method and static, grouped by task; also what is deliberately *not* in the API |
+| `doc/overlays.md` | `attachTooltip` / `attachLegend`, their override layers and controllers |
+| `doc/sources.md` | Built-in sources with option tables, the two complete single-file server recipes, CORS |
+| `doc/tiers.md` | Resolution tiers, the cross-fade, `rollupBinned`, the rate axis |
+| `doc/plugins.md` | The renderer and source contracts, with a complete working example of each |
+| `doc/recipes.md` | Task-shaped copy-paste examples |
+| `doc/development.md` | Build, demo pages, testing, linting, releasing |
+
+Three rules that keep this from rotting:
+
+- **Every code block in `doc/` was executed before being committed**, headlessly against
+  `dist/` in a real browser — not eyeballed. That is how the `extensive` trap below was
+  found. Re-verify any example you edit; a doc example that silently no-ops is worse than
+  no example.
+- **`doc/img/*.png` are screenshots of the actual demo pages**, captured over CDP at
+  `deviceScaleFactor: 2` and clipped to the canvas element, so they re-shoot reproducibly
+  when the rendering changes. The old hand-made `demo.png` is gone. Regenerate by driving
+  a headless Chromium's `Page.captureScreenshot` with a clip from
+  `getBoundingClientRect()` — note the clip's `scale` must stay `1` when
+  `deviceScaleFactor` is already 2, or the capture doubles up.
+- **`RELEASING.md` stays out of both** — it is gitignored and German-only, see the
+  Releasing section below.
+
 ## Development
 
 ```bash
@@ -334,6 +374,21 @@ Three things worth knowing about the publish:
   `deploy.yml`'s `test` job rather than factored into a `workflow_call` file — six lines
   of copy against a rework of a deploy that already works.
 
+**The `exports` map, and what it does and does not support.** `"."` resolves `import` to
+`src/timeseries.js` and everything else to the IIFE in `dist/`. Alongside it,
+`"./src/*"`, `"./dist/*"` and `"./package.json"` are exported so the standalone clients can
+be imported on their own (`@hgruber/timeseries.js/src/caldav.js`,
+`.../src/jpZabbix.js`) — `files` has always shipped `src/`, and both clients are documented
+as independently reusable, but before those entries an `exports` map with only `"."` made
+every subpath an `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+**CommonJS `require()` does not work and the README used to claim it did.**
+`require('@hgruber/timeseries.js')` resolves to the IIFE bundle, whose
+`var TimeSeries = (() => {…})()` is module-scoped under CJS, so nothing is ever assigned to
+`module.exports` — the caller gets `{}`, with no error. `doc/getting-started.md` says so
+explicitly and points CJS consumers at `await import()` or a script tag. Fixing it properly
+means emitting a real CJS build; do not "fix" it by re-adding the claim.
+
 ## Architecture
 
 ### Source files (`src/`)
@@ -402,7 +457,9 @@ TimeSeries.registerRenderer({
 TimeSeries.registerSource({
   type: 'my-source',
   init(source, callbacks) {
-    /* callbacks: { pushData(plotObj), requestRedraw(), getViewport() → {tmin,tmax} } */
+    /* callbacks: { pushData(plotObj) → id, replaceData(id, plotObj), removeData(id),
+                    requestRedraw(), getViewport() → {tmin, tmax, ppms},
+                    onViewportChange(fn) } */
   }
 });
 ```
@@ -590,6 +647,13 @@ nothing changes for a consumer that does not ask.
 - **Opt-in per block**, via `plot.extensive = true`. The host is the only one who knows whether a
   value is extensive (a count, a sum) or already intensive (an average, a percentile, a gauge) —
   scaling an average by the bin length would be simply wrong. Point/span blocks are never scaled.
+  **`rollupBinned` deliberately does not carry `extensive` over** to the derived block, unlike
+  `name`/`category`/`series_colors`/`series_directions`: whether the *result* is extensive
+  depends on the `agg`, not on the input — a `'sum'` of counts still is, a `'mean'` of the same
+  counts is not. The trap is that the two features are otherwise made for each other, so the
+  obvious `rollupBinned(fine, 3600, {agg:'sum'})` + `setRateUnit()` pairing silently leaves the
+  coarse tier unscaled (the axis then reads the hourly sum, ~60× too high) with no warning. The
+  worked examples in `doc/tiers.md` and `doc/recipes.md` set the flag explicitly and say why.
 - **Applied centrally**, exactly like `_fade`: `prepare_grid` stamps `plot._vscale` and measures
   the y-extent in drawn space; `plotData()` (`src/renderers.js`) hands each renderer a render
   context with `Y` and `ppv` scaled by it. Every renderer, including third-party ones, gets the
