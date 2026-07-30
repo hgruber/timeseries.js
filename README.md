@@ -1,7 +1,7 @@
 # timeseries.js
 
 [![Test & Deploy](https://github.com/hgruber/timeseries.js/actions/workflows/deploy.yml/badge.svg)](https://github.com/hgruber/timeseries.js/actions/workflows/deploy.yml)
-[![npm](https://img.shields.io/npm/v/timeseries.js)](https://www.npmjs.com/package/timeseries.js)
+[![npm](https://img.shields.io/npm/v/@hgruber/timeseries.js)](https://www.npmjs.com/package/@hgruber/timeseries.js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/commits/main)
 [![Release](https://img.shields.io/github/v/release/hgruber/timeseries.js)](https://github.com/hgruber/timeseries.js/releases)
@@ -28,7 +28,7 @@ A lightweight, dependency-free JavaScript library for interactive time series vi
 - **Opt-in tooltip & legend** — one call each for a themed hover card and a click-to-toggle series legend that follow the palette; override the label, the formatting, or the whole body
 - **Built-in chart types** — stacked bars (`multibar`), lines (`multiline`), points (`multipoint`), scatter (`scatter`), percentile bands (`quantile-bands`), calendar/Gantt spans (`gantt`)
 - **Built-in data sources** — Zabbix JSON-RPC API, CalDAV calendars, static/generated data
-- **Drop-in via CDN** — one `<script>` line, no build step, no checkout ([recipes](#connect-to-a-real-server)); or `npm i timeseries.js` if you have a bundler
+- **Drop-in via CDN** — one `<script>` line, no build step, no checkout ([recipes](#connect-to-a-real-server)); or `npm i @hgruber/timeseries.js` if you have a bundler
 
 ---
 
@@ -79,20 +79,20 @@ store from them.
 ### Via npm
 
 ```bash
-npm i timeseries.js
+npm i @hgruber/timeseries.js
 ```
 
 ```js
-import TimeSeries from 'timeseries.js';        // ES modules, from src/
-const TimeSeries = require('timeseries.js');   // the IIFE bundle, from dist/
+import TimeSeries from '@hgruber/timeseries.js';       // ES modules, from src/
+const TimeSeries = require('@hgruber/timeseries.js');  // the IIFE bundle, from dist/
 ```
 
 ### Which URL to use
 
 | | |
 |---|---|
-| `…/npm/timeseries.js@0.9.0/dist/timeseries.min.js` | **one exact version.** Immutable — npm never lets a published version change. Use this in production. |
-| `…/npm/timeseries.js@0.9/dist/timeseries.min.js` | **the latest 0.9.x.** Picks up fixes, never a breaking change (see [Versioning](#versioning)). |
+| `…/npm/@hgruber/timeseries.js@0.9.0/dist/timeseries.min.js` | **one exact version.** Immutable — npm never lets a published version change. Use this in production. |
+| `…/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js` | **the latest 0.9.x.** Picks up fixes, never a breaking change (see [Versioning](#versioning)). |
 | [`hgruber.github.io/timeseries.js/dist/timeseries.min.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.min.js) | **always the tip of `main`.** Rebuilt on every push, deliberately unpinned — for trying things out, not for production. |
 
 Prefix the first two with `https://cdn.jsdelivr.net`; `https://unpkg.com` serves

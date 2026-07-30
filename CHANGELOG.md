@@ -23,11 +23,13 @@ Pages.
 
 ### Added
 
-- **npm package** — `npm i timeseries.js`, which also makes pinned CDN URLs
-  available via jsDelivr and unpkg (`…/npm/timeseries.js@0.9.0/dist/timeseries.min.js`).
-  Both the ES modules under `src/` and the IIFE bundles under `dist/` ship in the
-  tarball; `exports` resolves `import` to the former and everything else to the
-  latter.
+- **npm package** — `npm i @hgruber/timeseries.js`, which also makes pinned CDN
+  URLs available via jsDelivr and unpkg
+  (`…/npm/@hgruber/timeseries.js@0.9.0/dist/timeseries.min.js`). The package is
+  scoped because the unscoped name collides with the existing `timeseries-js`,
+  which npm's name-similarity check rejects. Both the ES modules under `src/` and
+  the IIFE bundles under `dist/` ship in the tarball; `exports` resolves `import`
+  to the former and everything else to the latter.
 - **GitHub releases** carrying `timeseries.js` and `timeseries.min.js` as
   attachments, for hosting a fixed build yourself.
 - `TimeSeries.BUILD` alongside `TimeSeries.VERSION`, identifying the exact build

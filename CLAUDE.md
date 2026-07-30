@@ -120,7 +120,7 @@ Three things about that group are deliberate:
 
 **Three distribution channels, and the README is careful about which is which.** npm is
 the pinnable one: a published version is immutable, which also gives pinned CDN URLs
-(`https://cdn.jsdelivr.net/npm/timeseries.js@0.9.0/dist/timeseries.min.js`; unpkg serves
+(`https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9.0/dist/timeseries.min.js`; unpkg serves
 the same paths) — that is what the README's `<script>` examples use, and what the recipes
 below use. GitHub releases carry the same two bundles as attachments for self-hosting a
 fixed copy. The Pages deploy still publishes `dist/` at
