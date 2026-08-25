@@ -111,6 +111,13 @@ export function rollupBinned(plot, coarseInterval, opts) {
   };
   // Carry the descriptive metadata; deliberately not `_fade`, `_laidOut` or
   // `intervals`, which are render state the core recomputes per frame.
+  //
+  // Nor `data_until`, for the same reason `extensive` is left behind: whether
+  // the *result* has an incomplete bin is a property of the aggregation, not of
+  // the input. Copying it would silently make the coarse tier partial too, at a
+  // quite different fraction of its own longer interval, and so change the
+  // cross-fade for callers who never asked for any of that. A host that wants
+  // it there sets `coarse.data_until = fine.data_until` itself.
   if (plot.name != null) result.name = plot.name;
   if (plot.category != null) result.category = plot.category;
   if (plot.series_colors) result.series_colors = plot.series_colors;

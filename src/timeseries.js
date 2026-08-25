@@ -273,6 +273,15 @@ export default function TimeSeries(options) {
     // the canvas still draws another.
     fadeHi: 2,
     fadeLo: 1,
+    // How the bin holding a block's `data_until` is drawn — the bin the data
+    // only partly covers, because that is as far as the source has loaded.
+    //   'full'  — ignore data_until entirely; the bin is drawn full width
+    //   'clip'  — right edge on data_until, height unchanged
+    //   'scale' — right edge on data_until *and* height / f, so the bar's AREA
+    //             still equals the value it holds. Only for `extensive` blocks;
+    //             an average or a percentile clips but never scales.
+    // See partialOf() and doc/data-formats.md.
+    partialBins: 'full',
     yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
     yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
     // Copied so that a per-instance override never writes through to the shared
@@ -1658,12 +1667,25 @@ export default function TimeSeries(options) {
         );
         var slot = data[i].data[n];
         if (!slot) continue;
+        // The bar holding data_until does NOT tile its bin: right of the
+        // high-water mark nothing is drawn, so nothing may be hit either. Every
+        // other bin does tile, which is what lets this whole loop get away with
+        // arithmetic — a slot index alone is enough to name a bar.
+        var part = data[i]._partial;
+        var pk = 1;
+        if (part && part.slot === n) {
+          if (part.skip) continue;               // not drawn → not hittable
+          var binStart = (data[i].interval_start + n * data[i].interval) * 1000;
+          if (+t > binStart + data[i].interval * 1000 * part.frac) continue;
+          pk = part.scale;
+        }
         var dirs = data[i].series_directions;
         // Stack arithmetic happens in drawn value space, so it carries the
-        // block's rate scale — but the value handed back is the raw one, so a
-        // tooltip or drill-down still reports the amount in the bin rather than
-        // whatever unit the axis happens to be showing.
-        var vs = data[i]._vscale != null ? data[i]._vscale : 1;
+        // block's rate scale and, on a partial bin, its area-true factor — but
+        // the value handed back is the raw one, so a tooltip or drill-down
+        // still reports the amount in the bin rather than whatever unit or
+        // extrapolation the axis happens to be showing.
+        var vs = (data[i]._vscale != null ? data[i]._vscale : 1) * pk;
         var hUp = 0, hDown = 0;
         for (const [k, v] of Object.entries(slot)) {
           if (dirs && dirs[k] === 'down') {
@@ -1739,6 +1761,57 @@ export default function TimeSeries(options) {
     return rateUnit / plot.interval;
   }
 
+  // Smallest filled fraction of a bin that still gets drawn. Below this the
+  // extrapolation is noise rather than data: at f = 0.01 the area-true height is
+  // 100× the value, so thirty seconds of a full hour would own the whole y-axis.
+  // A property of the data, not of the view, so the same bin behaves the same at
+  // every zoom — unlike a pixel-width rule, which would make the bar flip
+  // representation (and the axis jump) while the user merely zooms.
+  //
+  // The bin reappearing at this threshold does not pop vertically: a bin filling
+  // at a steady rate arrives at its area-true height, which is roughly the rate
+  // of its neighbours. The step is in width (0 → 10%), not in height.
+  var PARTIAL_MIN_FRAC = 0.1;
+
+  // Geometry override for the bin holding `plot.data_until` — the point past
+  // which this block simply has no data yet (a source's high-water mark).
+  // Stamped as `plot._partial` by prepare_grid and read by the renderer, by the
+  // y-extent scan and by the hit test, so all three agree on one number.
+  //
+  // `frac` is how much of the bin is filled: the bar is drawn that much narrower
+  // so its right edge lands on the high-water mark instead of in a future that
+  // holds no data. `scale` is what its values are multiplied by — 1/frac for a
+  // block whose values are amounts accumulated over the bin, so the bar's *area*
+  // still equals the value and its visual density matches its neighbours.
+  //
+  // That factor is also exactly the rate-correct one: a value accumulated over
+  // interval*f seconds is a rate of value/(interval*f), which is `_vscale / f`.
+  // The two coincide, so nothing special happens under setRateUnit.
+  //
+  // Only an extensive value (a count, a sum) grows with the length of the window
+  // it was accumulated over, so only it may be extrapolated. An average or a
+  // percentile over a short window is already the right number for what the axis
+  // shows; dividing it by f would invent a spike. Those clip but never scale.
+  function partialOf(plot, maxSlot) {
+    if (settings.partialBins === 'full') return null;
+    if (!plot || typeof plot.data_until !== 'number') return null;
+    if (!(plot.interval > 0) || !plot.data) return null;
+    var rel = plot.data_until - plot.interval_start;
+    var slot = Math.floor(rel / plot.interval);
+    // Only a block's LAST populated bin can be the incomplete one. This guard is
+    // what makes a stale data_until inert: pushData trims a block in place and
+    // may leave its high-water mark pointing at a slot that has since been
+    // deleted, or far behind slots the block still holds. Reading the truth
+    // every frame beats bookkeeping it across every path that edits a block.
+    if (slot !== maxSlot || !plot.data[slot]) return null;
+    var frac = (rel - slot * plot.interval) / plot.interval;
+    if (!(frac > 0) || frac >= 1) return null;   // exactly on a boundary: not partial
+    if (frac < PARTIAL_MIN_FRAC)
+      return { slot: slot, frac: frac, scale: 0, skip: true };
+    var scale = (settings.partialBins === 'scale' && plot.extensive) ? 1 / frac : 1;
+    return { slot: slot, frac: frac, scale: scale, skip: false };
+  }
+
   // create grid array containing all time labels
   function prepare_grid() {
     ppms = plotWidth / (tmax - tmin);
@@ -1753,6 +1826,10 @@ export default function TimeSeries(options) {
       data.forEach((plot, i) => {
         if (!plot) return;
         plot._vscale = vscaleOf(plot);
+        // Reset unconditionally, for every block: a record left over from an
+        // earlier frame would otherwise survive setPartialBins('full') and keep
+        // clipping a bar nobody asked to clip.
+        plot._partial = null;
         var ptmin, ptmax;
         if (plot.category === 'span') {
           // Rows and the vertical extent come from the packing, which the
@@ -1770,6 +1847,10 @@ export default function TimeSeries(options) {
           plot.intervals = maxSlot + 1;
           plot.interval_end =
             plot.interval_start + plot.interval * plot.intervals;
+          plot._partial = partialOf(plot, maxSlot);
+          // ptmin/ptmax deliberately keep the full bin: the difference is
+          // sub-bin, but plotpercentage() feeds the tier pick and the
+          // blendExtents weights, and moving those would change the cross-fade.
           ptmin = plot.interval_start * 1000;
           ptmax = plot.interval_end * 1000;
         }
@@ -1818,8 +1899,19 @@ export default function TimeSeries(options) {
           } else if (plot.data) {
             for (var sk in plot.data) {
               var slotTime = (plot.interval_start + +sk * plot.interval) * 1000;
-              if (slotTime + plot.interval * 1000 > tmin && slotTime < tmax) {
+              // The partial bin ends at data_until, not at the bin boundary, and
+              // is drawn scaled — measure the bar the renderer actually paints.
+              // `+sk`: object keys are strings, the stamped slot is a number.
+              var part = (plot._partial && +sk === plot._partial.slot)
+                ? plot._partial : null;
+              if (part && part.skip) continue;   // not drawn → not measured
+              var slotEnd = slotTime + plot.interval * 1000 * (part ? part.frac : 1);
+              if (slotEnd > tmin && slotTime < tmax) {
                 var upSum = 0, downSum = 0;
+                // `_partial.scale` lives in value space and is applied to `val`
+                // here; `_vscale` lives in axis space and is applied exactly
+                // once, below. Neither is applied twice.
+                var ks = part ? part.scale : 1;
                 var slot = plot.data[sk];
                 for (var key in slot) {
                   // A hidden series is not drawn, so it must not stretch the
@@ -1828,12 +1920,17 @@ export default function TimeSeries(options) {
                   if (hiddenSeries.has(key)) continue;
                   var val = slot[key];
                   if (banded) {
+                    // val is an *array* of percentile values here, so `ks` has
+                    // to go on each entry — `array * number` would be NaN.
                     for (var qi = 0; qi < val.length; qi++) {
-                      var qv = val[qi];
+                      var qv = val[qi] * ks;
                       if (qv >= 0) { if (qv > upSum) upSum = qv; }
                       else if (-qv > downSum) downSum = -qv;
                     }
-                  } else if (stacked) {
+                    continue;
+                  }
+                  val = val * ks;
+                  if (stacked) {
                     if (dirs && dirs[key] === 'down') downSum += val;
                     else                              upSum   += val;
                   } else if (val >= 0) {
@@ -2832,6 +2929,35 @@ export default function TimeSeries(options) {
     settings.fadeLo = lo;
     plotAll();
   };
+
+  /**
+   * Choose how the bin holding a block's `data_until` is drawn — the bin the
+   * data only partly covers, because that is as far as the source has loaded.
+   *
+   *   'full'  — the default, and what every version before 0.9.1 did: the bin is
+   *             drawn at full width, which makes it both too short (it holds
+   *             part of a bin's worth of data) and too long (it reaches into a
+   *             future that holds none).
+   *   'clip'  — the bar's right edge lands on `data_until`. Honest, and the
+   *             height never claims anything: it is still the raw value.
+   *   'scale' — clip, and additionally divide the height by the filled fraction,
+   *             so the bar's *area* equals the value it holds and its visual
+   *             density matches the full bins beside it. Applies only to blocks
+   *             marked `extensive`; an average or a percentile is already
+   *             per-unit and falls back to 'clip'.
+   *
+   * A block without a numeric `data_until` is unaffected in every mode.
+   */
+  this.setPartialBins = function (mode) {
+    if (mode !== 'full' && mode !== 'clip' && mode !== 'scale') {
+      console.warn('TimeSeries: ignoring setPartialBins(' + mode + ') — expected "full", "clip" or "scale"');
+      return;
+    }
+    settings.partialBins = mode;
+    plotAll();
+  };
+
+  this.getPartialBins = function () { return settings.partialBins; };
 
   this.setYAxisLabel = function (lbl) {
     _yLabel = lbl || '';

@@ -53,10 +53,17 @@ Values already aggregated into fixed `interval`-wide slots. This is the default 
 | `name` | string | | Block label |
 | `series_colors` | object | | `{ seriesId: cssColor }` — overrides the automatic palette |
 | `extensive` | boolean | | Values are amounts accumulated over the bin (counts, sums) rather than per-unit rates. Only read when [`setRateUnit`](tiers.md#the-rate-axis) is in use |
+| `data_until` | number | | Unix **seconds**. The block's data only reaches this far; the bin holding it is incomplete. Only read when [`setPartialBins`](api.md#partial-bins) is not `'full'` |
 
 `data` is **sparse** — a slot with no data is simply absent, and renders as a gap rather
 than as zero. Series keys are stable across slots and drive both the stacking order and the
 legend.
+
+`data_until` is for a source that is still catching up — an ETL high-water mark, a feed with
+a known lag. Only the block's **last populated bin** can be the incomplete one; a
+`data_until` pointing anywhere else is ignored, which is what keeps a stale value harmless
+once a block has been trimmed. A source replacing a block sets `data_until` on the new
+block; it is never inherited from the old one.
 
 ### Stacked bars vs. lines
 

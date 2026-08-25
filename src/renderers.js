@@ -21,6 +21,11 @@ export function registerRenderer(plugin) {
  * line/area renderer draws across fetch-block margins instead of leaving a
  * one-slot hole at each boundary. Color/label metadata is taken from the
  * blocks (series_colors merged, first non-empty name/percentiles win).
+ *
+ * `_partial` is not carried, and multibar — the only type that reads it — does
+ * not register `coalesce`, so today the two never meet. Were a bar type to opt
+ * in, its `_partial.slot` would have to be rebased onto this slot numbering
+ * along with the data.
  */
 function coalesceBlocks(group, data) {
   if (group.length === 1) return data[group[0]];
@@ -66,6 +71,24 @@ function fadeOf(plot) {
  */
 function vscaleOf(plot) {
   return (plot && plot._vscale != null) ? plot._vscale : 1;
+}
+
+/**
+ * Geometry override for the bin holding a block's `data_until`, stamped as
+ * `plot._partial` by prepare_grid — null on every other slot, and null
+ * everywhere while `partialBins` is 'full'. See partialOf() in timeseries.js.
+ *
+ * Unlike `_fade` and `_vscale`, this is NOT applied centrally in plotData().
+ * Those are properties of a whole block and so ride on globalAlpha and on a
+ * scaled render context; this one touches a single slot out of thousands, and a
+ * per-slot context would mean an allocation per slot per frame. Since `Y(v)` is
+ * affine in `v`, multiplying the value is the very same arithmetic at no cost.
+ * It is not the double-application the block-wide factors warn about, because
+ * `scale` lives in value space and `_vscale` in axis space.
+ */
+function partialAt(plot, n) {
+  var p = plot && plot._partial;
+  return (p && p.slot === n) ? p : null;
 }
 
 /**
@@ -241,21 +264,28 @@ function highlight_multibar(plot, n, item, rctx) {
   var { c, X, Y, ppms, ppv } = rctx;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
-  var barWidth = ppms * step;
+  // The same geometry the draw pass used for this slot. A highlight at full
+  // width over a clipped bar is exactly the mismatch this second copy of the
+  // arithmetic exists to get wrong, so it has to be carried here too.
+  var part = partialAt(plot, +n);
+  if (part && part.skip) return;
+  var barWidth = ppms * step * (part ? part.frac : 1);
+  var k = part ? part.scale : 1;
   var dirs = plot.series_directions;
   var heightUp = 0;
   var heightDown = 0;
   var x = X(start + n * step);
   for (const [i, bar] of Object.entries(plot.data[n])) {
     var down = dirs && dirs[i] === 'down';
+    var v = bar * k;
     if (i === item) {
       c.fillStyle = resolveColor(plot, i, 0.8);
-      if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * bar);
-      else      c.fillRect(x, Y(heightUp),    barWidth, -ppv * bar);
+      if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
+      else      c.fillRect(x, Y(heightUp),    barWidth, -ppv * v);
       return;
     }
-    if (down) heightDown += bar;
-    else      heightUp   += bar;
+    if (down) heightDown += v;
+    else      heightUp   += v;
   }
 }
 
@@ -263,24 +293,35 @@ function multibar(plot, rctx) {
   var { c, X, Y, ppms, ppv, margin, plotWidth, hidden } = rctx;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
-  var barWidth = ppms * step;
+  var fullWidth = ppms * step;
   var dirs = plot.series_directions;
   for (const [t, bars] of Object.entries(plot.data)) {
     var heightUp = 0;
     var heightDown = 0;
+    // Object.entries hands back string keys; the stamped slot is a number.
+    var part = partialAt(plot, +t);
+    if (part && part.skip) continue;
+    // A bin only partly covered by data is drawn `frac` as wide, so its right
+    // edge sits on data_until rather than reaching into a future that holds no
+    // data, and `1/frac` as tall, so the area it covers is still the value it
+    // holds — same ink and same visual density as the full bin beside it,
+    // instead of a full-width bar that is both too low and too long.
+    var barWidth = part ? fullWidth * part.frac : fullWidth;
+    var k = part ? part.scale : 1;
     var x = X(start + t * step);
     if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
       for (const [i, bar] of Object.entries(bars)) {
         // Skipped entirely, not drawn transparent: a hidden series must not
         // occupy stack height either, or the visible bars float off the axis.
         if (hidden && hidden.has(i)) continue;
+        var v = bar * k;
         c.fillStyle = resolveColor(plot, i, 0.8);
         if (dirs && dirs[i] === 'down') {
-          c.fillRect(x, Y(-heightDown), barWidth, ppv * bar);
-          heightDown += bar;
+          c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
+          heightDown += v;
         } else {
-          c.fillRect(x, Y(heightUp), barWidth, -ppv * bar);
-          heightUp += bar;
+          c.fillRect(x, Y(heightUp), barWidth, -ppv * v);
+          heightUp += v;
         }
       }
   }

@@ -87,6 +87,11 @@ const coarse = TimeSeries.rollupBinned(fine, 3600, { agg: 'sum' });
 coarse.extensive = true;                 // a sum of counts is still a count
 ```
 
+[`data_until`](data-formats.md) is left behind for the same reason. Whether the *result* has
+an incomplete bin is a property of the aggregation, and carrying it over would silently make
+the coarse tier partial too, at a quite different fraction of its own longer interval. Set
+it yourself if it applies: `coarse.data_until = fine.data_until;`
+
 ### Choosing `agg`
 
 `'sum'` is right for counts — but it changes the effective unit across the dissolve

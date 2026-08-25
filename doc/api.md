@@ -175,6 +175,33 @@ ts.setRateUnit(1, { label: 'req/s', transition: 400 });   // per-second axis, di
 ts.setRateUnit(null);                                     // back to per-bin values
 ```
 
+## Partial bins
+
+A block may carry `data_until` (Unix seconds): its data reaches only that far, so the bin
+holding that point is incomplete. Drawn at full width such a bar is both too short — it
+holds a fraction of a bin's worth — and too long, reaching into a span that holds no data.
+
+```js
+ts.setPartialBins('scale');   // 'full' (default) | 'clip' | 'scale'
+ts.getPartialBins();
+```
+
+| Mode | Effect |
+|---|---|
+| `'full'` | Ignore `data_until`; the bin is drawn full width. What every version before 0.9.1 did. |
+| `'clip'` | The bar's right edge lands on `data_until`. The height stays the raw value. |
+| `'scale'` | Clip, and divide the height by the filled fraction, so the bar's **area** equals the value it holds and its density matches the full bins beside it. |
+
+`'scale'` applies only to blocks marked [`extensive`](data-formats.md); an average or a
+percentile is already per-unit and falls back to `'clip'`. A bin filled to less than 10 % is
+left out entirely — of the drawing, of the y-axis extent and of hit-testing — because
+below that the extrapolation is noise. Tooltips and drill-down keep reporting the **raw**
+value in the bin, never the extrapolated one.
+
+The resolved geometry is readable as `_partial` on the blocks from `getActiveData()`, in
+case an overlay wants to annotate the bar. Treat it as read-only render state, like `_fade`
+and `_vscale`: it is recomputed every frame.
+
 ## Statics on the constructor
 
 ```js

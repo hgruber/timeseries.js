@@ -15,6 +15,7 @@ const ts = new TimeSeries({
   keyboard:       true,          // focusable canvas + arrow-key paging
   fadeHi:         2,             // resolution-tier switch point, px of bar width
   fadeLo:         1,             // dissolve band lower edge, px of bar width
+  partialBins:    'full',        // 'full' | 'clip' | 'scale' — how an incomplete bin is drawn
   yAxisFormat:    null,          // (value) => string; defaults to SI prefixes
   yAxisLabel:     '',            // unit text above the y-axis, e.g. 'txn/s'
   colors:         { … },         // full palette object — see below
@@ -38,6 +39,7 @@ const ts = new TimeSeries({
 | `autoFollow` | boolean | `false` | Start rolling once the right edge reaches the present. |
 | `keyboard` | boolean | `true` | Focusable canvas and arrow-key paging — see [below](#keyboard). |
 | `fadeHi` / `fadeLo` | number (px) | `2` / `1` | Resolution-tier switch point and dissolve band — see [Resolution tiers](tiers.md). |
+| `partialBins` | string | `'full'` | How the bin holding a block's `data_until` is drawn — see [Partial bins](api.md#partial-bins). |
 | `yAxisFormat` | function | SI format | `(value) => string` for y-axis tick labels. |
 | `yAxisLabel` | string | `''` | Unit caption above the axis. |
 | `colors` | object | light theme | A **full palette object**, not a name — see below. |

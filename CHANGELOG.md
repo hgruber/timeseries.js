@@ -14,6 +14,26 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+### Added
+
+- **Partial bins.** A block can now declare `data_until` — the point past which
+  it simply has no data yet, such as an ETL high-water mark. The bin holding
+  that point is only partly covered, and drawn at full width it is both too
+  short (it holds a fraction of a bin's worth) and too long (it reaches into a
+  span that holds nothing). `ts.setPartialBins('clip')` puts the bar's right
+  edge on the mark; `'scale'` additionally divides its height by the filled
+  fraction, so the bar's *area* still equals the value it holds and its density
+  matches the full bins beside it. That factor is also the rate-correct one, so
+  it composes cleanly with `setRateUnit`.
+
+  Only blocks marked `extensive` are ever scaled — an average or a percentile is
+  already per-unit and falls back to clipping. A bin filled to less than 10 % is
+  left out of the drawing, of the y-axis extent and of hit-testing alike, since
+  below that the extrapolation is noise rather than data. Tooltips and
+  drill-down keep reporting the raw value in the bin.
+
+  The default is `'full'`: without opting in, not a pixel changes.
+
 ## [0.9.0] - 2026-07-30
 
 First published release. The library has been developed and deployed from `main`

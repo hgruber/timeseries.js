@@ -670,6 +670,49 @@ nothing changes for a consumer that does not ask.
   drawn at `Y(v * factor)`. Only defined between two rate units; switching the rate axis on or off
   rescales per block (each factor depends on that block's interval), so that always snaps.
 
+### Partial bins — `plot.data_until` / `setPartialBins`
+
+A block may only have data up to some point (an ETL high-water mark, a lagging feed). Drawn
+at full width, the bin holding that point is **both too short and too long** at once: it
+holds a fraction of a bin's worth of data, and it reaches into a span that holds none. Modes
+are `'full'` (default, pre-0.9.1 behaviour), `'clip'` (right edge on `data_until`) and
+`'scale'` (clip + height ÷ fill fraction, so the bar's *area* stays the value it holds).
+
+- **The policy is resolved once, in `partialOf` (`src/timeseries.js`), and stamped as
+  `plot._partial = {slot, frac, scale, skip}`.** Four consumers — the renderer,
+  `highlight_multibar`, the y-extent scan and the hit test — then read two numbers and know
+  nothing about modes. Stamping the raw `f` instead would have put the mode × `extensive` ×
+  threshold decision in four places. The record is reset for *every* block each frame, or it
+  would survive `setPartialBins('full')`.
+- **The computing half lives in `timeseries.js`, the reading half in `renderers.js`** —
+  exactly mirroring `vscaleOf`, which exists in both files for the same reason: the mode is
+  instance state and must not leak into the module-global renderer file.
+- **`scale` *is* the rate-correct factor, not a second effect on top of it.** A value
+  accumulated over `interval*f` seconds is a rate of `value/(interval*f)` = `_vscale / f`,
+  so the area-true factor and the rate factor coincide and `setRateUnit` needs no special
+  case. They compose because `scale` lives in **value** space and `_vscale` in **axis**
+  space; each is applied exactly once.
+- **This is the one per-slot render factor, so unlike `_fade`/`_vscale` it is applied inside
+  the renderer** rather than centrally. A `scaledCtx` per slot would be an allocation per
+  slot per frame; since `Y(v)` is affine in `v`, `bar * k` is the identical arithmetic for
+  free. That is not the double-application the block-wide factors warn about.
+- **Only `extensive` blocks are scaled**; an average or a percentile falls back to `'clip'`,
+  same judgement as the rate axis. `'clip'` therefore has to exist internally whether or not
+  anyone selects it — which is why the option is a tri-state string and not a boolean.
+- **Below `PARTIAL_MIN_FRAC` (0.1) the bin is dropped entirely** — not drawn, not measured,
+  not hittable — because `1/f` explodes: 30 s into an hourly bin is a 120× extrapolation on
+  a sub-pixel bar. A *fraction of the data* was chosen as the threshold rather than a pixel
+  width, so the same bin behaves the same at every zoom. It does not pop vertically: a bin
+  filling steadily arrives at roughly its neighbours' height, and grows in **width**.
+- **A stale `data_until` is inert by construction**, not by bookkeeping: `partialOf` accepts
+  it only when its slot is the block's last populated one. `pushData` therefore needed no
+  change at all, even though it trims blocks in place — reading the truth each frame beats
+  updating a cached horizon on every path that edits a block.
+- **`rollupBinned` does not carry `data_until` over**, same reasoning as `extensive`.
+- The y-extent's `banded` branch holds an **array** per series, so the factor goes on each
+  entry — `array * number` would be `NaN`. Inert today (`quantile-bands` is never
+  `extensive`), but the shape must not be allowed.
+
 ### Zabbix source — zoom-adaptive history/trends
 
 ```js
@@ -860,6 +903,12 @@ arrangement as `barRect()` in `gantt.js`. Point plots are hit-tested in *pixel* 
 found arithmetically. Valid only while no renderer downsamples internally; a source
 applying `lttb` before pushing is fine, since both draw and hit test then see the
 reduced array.
+
+The one bar that does **not** tile its bin is the partial one (see *Partial bins* below):
+right of `data_until` nothing is drawn, so `get_element` has to stop there explicitly
+instead of inferring the bar from its slot index alone. That is the whole reason the
+feature needed a hit-test change, and why a third consumer of the bar geometry had to be
+kept in step with the other two.
 
 `ts.zoom()`'s third argument overrides the animation duration for that one transition;
 `0` jumps without animating. Omit it for the configured `zoomDuration`.
