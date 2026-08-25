@@ -14,6 +14,8 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-25
+
 ### Added
 
 - **Partial bins.** A block can now declare `data_until` — the point past which
