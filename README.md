@@ -55,7 +55,8 @@ Save this as an HTML file and open it. That is the whole setup.
 </script>
 ```
 
-Drag to pan, scroll to zoom, click a time label to zoom to it, arrow keys to page.
+Drag to pan, scroll to zoom (shift+scroll to pan), click a time label to zoom to it,
+arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 
 > Using it for real? Pin a version — `@0.9` tracks patch releases, `@0.9.0` is immutable.
 > With a bundler: `npm i @hgruber/timeseries.js`.

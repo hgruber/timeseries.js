@@ -233,7 +233,11 @@ two are hand-kept in sync rather than sharing code), `test/binned-regression.tes
 (guards the pre-existing multibar path against the `category: 'span'` changes),
 `test/dates.test.mjs` (`Easter` against published dates, `isoWeekStart`, and the
 week/day presets for every weekday — Sunday being the case `(d.getDay() || 7)` exists
-for), `test/pan.test.mjs` (pan snapping incl. DST transitions), `test/hover.test.mjs`
+for), `test/pan.test.mjs` (the snap-grid arithmetic and the calendar helpers under it, incl.
+DST transitions), `test/snapgrid.test.mjs` (the invariants that make the grid *consistent*
+rather than usually-right: paging never changes level/width/alignment, out-and-back is
+lossless, attaching rounds once within tolerance, the level follows what is labelled, and an
+analogue gesture releases the grid), `test/hover.test.mjs`
 (the `onHoverData` contract the tooltip overlay is built on),
 `test/tooltip.test.mjs` (the shipped overlay: inert until attached, default body,
 each override level, palette re-theming, edge flip, `destroy()`, and that an app's
@@ -245,7 +249,8 @@ drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
 `test/lttb.test.mjs` (both previously untested pure modules), `test/memory.test.mjs`
 (bounded growth of `data[]` under a polling source), `test/series.test.mjs`
 (series enumeration, visibility, y-axis rescaling, point hit test),
-`test/keyboard.test.mjs` (focusability, arrow-key paging), `test/offset.test.mjs`
+`test/keyboard.test.mjs` (focusability, all four arrows and their shift variants),
+`test/offset.test.mjs`
 (hit testing survives the canvas moving in the viewport — see below),
 `test/zabbix.test.mjs` (the zoom-adaptive Zabbix source: the pure ring helpers
 `zabbixFold`/`zabbixEvict`/`zabbixPlot`/`zabbixWindow`/`zabbixPrimaryTier`, the
@@ -886,13 +891,46 @@ built chart is that reload.
 opt-in `parentElement` (via `makeCanvas`'s 4th argument) to make it drivable — the stub
 `ResizeObserver` used to be inert, so resize was untestable.
 
-### Keyboard
+### Keyboard, and the snap grid
 
 `keyboard: true` (default) makes the canvas focusable (`tabindex=0`, `role=application`,
-an `aria-label` unless the page set one) and binds left/right arrows to `pan(∓1)` — one
-screenful, snapped to the calendar unit that fits the current zoom. Handlers sit on the
-canvas, not the document, so a page with several charts only moves the focused one. Set
-`keyboard: false` to opt out entirely.
+an `aria-label` unless the page set one) and binds all four arrows: ←/→ page
+(`pan(∓1)`), ↑/↓ zoom (`zoomStep(±1)`), and Shift makes each the single-cell variant
+(`{cells: 1}`). Handlers sit on the canvas, not the document, so a page with several charts
+only moves the focused one. Set `keyboard: false` to opt out entirely. On the mouse side the
+wheel zooms and **Shift+wheel pans**, both continuous.
+
+**A viewport is a grid state `{unit, mult, k, lo}`, not a pair of timestamps.** That framing
+is the whole feature and two earlier designs died without it:
+
+- **The level carries the anchor, so it must not be read coarser than it is.** Treating a
+  6 h window as `3 × 2h` parks its edges on *even* hours (04:00–10:00) instead of the nearer
+  full hour (03:00–09:00). `labelledLevels()` therefore offers **one step per unit** — the
+  step `time_part()` says is currently printed — never the whole `part24`/`part60` ladder.
+- **Deriving the grid from the viewport on every call feeds back on itself.** Rounding changes
+  the width and the width picks the level: 100 s → 105 s → 120 s, and a fixpoint iteration
+  does *not* fix it (measured: 10 cases in 30 000 cycle, distortion accumulates to 60 %). So
+  the state is **held** in `snapState` and only re-attached when there is none or when its
+  level stopped being labelled. Rounding therefore happens once per attach, bounded by
+  `GRID_TOLERANCE` (20 %), and every key press after that is exact arithmetic.
+  Do not "simplify" `ensureGrid()` into a pure function of `tmin`/`tmax`.
+
+The level is the **coarsest currently *labelled* x-axis level that fits the window** —
+`labelledLevels()` (instance scope, next to `time_part`) builds the candidate list, and
+`pickGridLevel()` (module scope, pure, hence testable without a canvas) picks from it. That
+list is the only place the grid touches pixels, deliberately: you can only snap to a boundary
+you can read, so when the hour labels stop fitting the grid moves up to day boundaries. It
+must keep reading the same `dtl` the axis labels by, or grid and labelling drift apart.
+
+The 20 % guard in `pickGridLevel` is not cosmetic — without it "coarsest wins" collapses a
+10-day window onto one calendar week. Two more things that look redundant and are not:
+`gridWindow()` re-floors the edge after every step (`panAdd` on a `mult > 1` hour grid can
+land on an odd hour across spring-forward), and analogue gestures call `dropGrid()` — the
+wheel, `onmousedown` and `ontouchstart` — so the hand is never fighting the grid.
+
+`panSnap: 'off'` (or `{snap: false}` per call) skips all of it: `pan()` moves by the exact
+width, `zoomStep()` by a factor of two. `snapView()` snaps without paging, `getSnapGrid()`
+reports the state, `setPanSnap`/`getPanSnap` switch modes at runtime.
 
 ### Point hit testing
 
@@ -917,20 +955,23 @@ kept in step with the other two.
 
 Besides the default export, `src/timeseries.js` exports the pure date/format helpers so
 they can be tested and reused without constructing a chart: `Easter(year)`,
-`isoWeekStart(year, week)`, `siFormat(v)`, and the pan-snapping set `panSnapUnit(tmin, tmax)`,
-`panFloor(ms, unit)`, `panAdd(ms, unit, n)`, `panDiff(lo, hi, unit)`,
-`panSnapEdge(ms, unit, roundUpIfAmbiguous)`, and the `PAN_TOLERANCE` constant (5%) they
-share. `panSnapUnit` is calendar-aware for month/year (a plain ms threshold can't tell a
-30-day April from a 30-day non-month span, since real month/year lengths vary); `panSnapEdge`
-applies that same tolerance when rounding `pan()`'s viewport edges to the unit's boundaries,
-so a viewport that's close to but not exactly one calendar month/year still snaps cleanly
-instead of inflating to the next full unit. It's also calendar-aware at the hour/day
-boundary: a viewport already sitting on local-midnight at both edges is treated as `'day'`
-grain even when its real length is 23h/25h (a DST transition day), because `'day'`
-steps via `Date#setDate` (DST-safe) where `'hour'` steps via `Date#setHours` field
-arithmetic — which only rolls to the next day when the added hour count overflows past
-23, so a 23-hour DST day (which doesn't) used to leave `pan()`'s boundary stuck 1h off
-midnight. A non-midnight-aligned rolling window (e.g. `last24()`) still uses `'hour'`.
+`isoWeekStart(year, week)`, `siFormat(v)`, the calendar-stepping set `panFloor(ms, unit)`,
+`panAdd(ms, unit, n)`, `panDiff(lo, hi, unit)`, and the snap-grid set
+`floorToGrid(ms, unit, mult)`, `addGrid(ms, unit, mult, n)`, `gridCell(ms, unit, mult)`,
+`nearestGrid(ms, unit, mult)`, `pickGridLevel(levels, tmin, span[, tol])` with the
+`GRID_TOLERANCE` constant (20%) — see *Keyboard, and the snap grid* above.
+
+`panFloor`/`panAdd` work on local `Date` fields and are therefore DST-correct; `panDiff`
+divides by fixed ms constants for day/week, which is off by up to an hour across a DST change
+— `Math.round` absorbs it, and `test/pan.test.mjs` pins that. `floorToGrid` anchors a
+sub-multiple *inside* its parent unit exactly the way the drawn axis anchors its lines
+(`grid[1..3]` test `s % part`, `m % part`, `h % part`), so a snapped edge always lands on a
+line that is actually drawn; `gridCell` measures on the calendar at that instant, because a
+month cell is 28–31 days and a day cell 23–25 hours.
+
+**`panSnapUnit`, `panSnapEdge` and `PAN_TOLERANCE` were removed** with the grid rewrite (0.10.0).
+Do not reintroduce edge-wise snapping: snapping each edge independently and deriving the step
+count from the result is what used to inflate a 6 h window to 7 h on the first key press.
 
 The statics `TimeSeries.registerRenderer` / `registerSource` / `seriesColor` / `lttb` /
 `rollupBinned` / `siFormat` / `themes` live at module scope, so the IIFE build can call them

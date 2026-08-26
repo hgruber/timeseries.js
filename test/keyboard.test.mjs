@@ -2,9 +2,10 @@
 // no key handler at all, and a <canvas> cannot even take focus without an
 // explicit tabindex.
 //
-// Arrow keys page by one screenful snapped to a calendar unit — the same
-// behaviour as ts.pan(), so a keyboard user lands on the same boundaries as
-// someone clicking the nav buttons.
+// Every arrow moves the viewport in whole cells of the labelled x-axis level:
+// left/right page, up/down zoom, and shift makes each the single-cell variant.
+// A keyboard user therefore lands on the same boundaries as someone clicking
+// the nav buttons, at any zoom level.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,8 +25,8 @@ function build(opts) {
 }
 
 // A synthetic KeyboardEvent, recording whether the default was prevented.
-function keyEvent(key) {
-  return { key, prevented: false, preventDefault() { this.prevented = true; } };
+function keyEvent(key, shiftKey = false) {
+  return { key, shiftKey, prevented: false, preventDefault() { this.prevented = true; } };
 }
 
 // Local midnight, not UTC: panFloor/panAdd work in local time, so a window
@@ -99,14 +100,14 @@ test('arrow keys suppress the browser default, other keys do not', async () => {
   const { ts, canvas } = build();
   await setView(ts, MON, NEXT_MON);
 
-  for (const key of ['ArrowLeft', 'ArrowRight']) {
+  for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
     const e = keyEvent(key);
     canvas.onkeydown(e);
     assert.equal(e.prevented, true, `${key} should preventDefault (page scroll)`);
     await sleep(700);
   }
 
-  for (const key of ['a', 'Tab', 'Enter', 'ArrowUp', 'ArrowDown']) {
+  for (const key of ['a', 'Tab', 'Enter', 'Home', 'PageDown']) {
     const e = keyEvent(key);
     canvas.onkeydown(e);
     assert.equal(e.prevented, false, `${key} must be left to the browser`);
@@ -117,7 +118,7 @@ test('an unhandled key does not move the viewport', async () => {
   const { ts, canvas } = build();
   await setView(ts, MON, NEXT_MON);
 
-  canvas.onkeydown(keyEvent('ArrowUp'));
+  canvas.onkeydown(keyEvent('a'));
   await sleep(100);
 
   const vp = ts.getViewport();
@@ -140,4 +141,68 @@ test('the snap unit follows the zoom level', async () => {
   assert.equal(d.getMinutes(), 0, 'should land on an hour boundary');
   assert.equal(d.getSeconds(), 0);
   assert.ok(vp.tmin > t0, 'should have moved forward');
+});
+
+// ── Zoom and the shift variants ───────────────────────────────────────────────
+test('up/down zoom in and out around the centre', async () => {
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11, 3).getTime();
+  await setView(ts, t0, t0 + 6 * 3600000);          // 6 h
+
+  canvas.onkeydown(keyEvent('ArrowUp'));
+  await sleep(700);
+  const zoomedIn = ts.getViewport();
+  assert.ok(zoomedIn.tmax - zoomedIn.tmin < 6 * 3600000, 'up must zoom in');
+
+  canvas.onkeydown(keyEvent('ArrowDown'));
+  await sleep(700);
+  const back = ts.getViewport();
+  assert.ok(back.tmax - back.tmin > zoomedIn.tmax - zoomedIn.tmin, 'down must zoom out');
+});
+
+test('shift+left/right steps a single cell, not a whole page', async () => {
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11, 3).getTime();
+  await setView(ts, t0, t0 + 6 * 3600000);          // 6 cells of one hour
+
+  const g = ts.getSnapGrid();
+  assert.equal(g.unit, 'hour');
+  assert.equal(g.k, 6);
+
+  canvas.onkeydown(keyEvent('ArrowRight', true));
+  await sleep(700);
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t0 + 3600000, 'one hour cell forward, not six');
+  assert.equal(vp.tmax - vp.tmin, 6 * 3600000, 'width must not change');
+});
+
+test('shift+up/down changes the cell count by one', async () => {
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11, 3).getTime();
+  await setView(ts, t0, t0 + 6 * 3600000);
+
+  canvas.onkeydown(keyEvent('ArrowUp', true));
+  await sleep(700);
+  let g = ts.getSnapGrid();
+  assert.equal(g.k, 5, 'one cell fewer');
+  assert.equal(g.tmin, t0, 'left edge stays put');
+
+  canvas.onkeydown(keyEvent('ArrowDown', true));
+  await sleep(700);
+  g = ts.getSnapGrid();
+  assert.equal(g.k, 6, 'and back');
+});
+
+test('panSnap: off pans by the exact width instead of snapping', async () => {
+  const { ts, canvas } = build({ panSnap: 'off' });
+  const t0 = new Date(2026, 4, 11, 18, 55).getTime();
+  const t1 = new Date(2026, 4, 11, 20, 4).getTime();
+  await setView(ts, t0, t1);
+
+  canvas.onkeydown(keyEvent('ArrowRight'));
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t1, 'continuous pan starts where the window ended');
+  assert.equal(vp.tmax - vp.tmin, t1 - t0, 'width preserved exactly');
 });

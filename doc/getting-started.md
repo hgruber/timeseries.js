@@ -115,7 +115,8 @@ A complete file. Save it, open it, done.
 </script>
 ```
 
-Drag to pan, scroll to zoom, click a time label to zoom to it, arrow keys to page.
+Drag to pan, scroll to zoom (shift+scroll to pan), click a time label to zoom to it,
+arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 
 Next: [more examples](recipes.md) · [other data shapes](data-formats.md) ·
 [fetch from a real server](sources.md) · [options](configuration.md)

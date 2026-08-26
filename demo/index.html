@@ -425,6 +425,18 @@
                                 title="Show or hide the series legend">Series</button>
                     </div>
                     <div class="divider"></div>
+                    <!-- Snap grid: arrow keys move in whole cells of the labelled axis level -->
+                    <div class="control-group">
+                        <span class="group-label">Snap</span>
+                        <button class="btn-ghost"
+                                id="btn-snap"
+                                aria-pressed="true"
+                                onclick="toggleSnap()"
+                                title="Arrow keys: snap to the labelled axis grid, or move continuously">Grid</button>
+                        <span id="snap-grid-label"
+                              title="The axis level the arrow keys currently step in">&mdash;</span>
+                    </div>
+                    <div class="divider"></div>
                     <!-- Live -->
                     <div class="control-group" id="live-group">
                         <span class="group-label">Live</span>
@@ -781,6 +793,32 @@
       document.getElementById('btn-legend')
         .setAttribute('aria-pressed', String(legend.el.style.display !== 'none'));
     }
+
+    // ── Snap grid ────────────────────────────────────────────────────────────
+    // Arrow keys move the viewport in whole cells of the coarsest x-axis level
+    // that is currently labelled. The readout makes that visible: zoom around
+    // and watch it walk from milliseconds up to years.
+    function toggleSnap() {
+      var on = ts.getPanSnap() === 'grid';
+      ts.setPanSnap(on ? 'off' : 'grid');
+      var btn = document.getElementById('btn-snap');
+      btn.setAttribute('aria-pressed', String(!on));
+      btn.textContent = on ? 'Off' : 'Grid';
+      showSnapGrid();
+    }
+
+    function showSnapGrid() {
+      var el = document.getElementById('snap-grid-label');
+      if (ts.getPanSnap() !== 'grid') { el.textContent = 'continuous'; return; }
+      var g = ts.getSnapGrid();
+      var step = (g.mult > 1 ? g.mult + ' ' : '') + g.unit + (g.mult > 1 ? 's' : '');
+      el.textContent = g.k + ' \u00d7 ' + step;
+    }
+
+    // Cheap enough to just poll: the grid only changes when the viewport does,
+    // and the demo has no hook for "the user zoomed".
+    setInterval(showSnapGrid, 400);
+    showSnapGrid();
 
     // ── Tooltip ──────────────────────────────────────────────────────────────
     // The library ships the overlay (TimeSeries.attachTooltip) — the demo just

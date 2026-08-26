@@ -12,7 +12,8 @@ const ts = new TimeSeries({
   zoomDuration:   500,           // ms — zoom transition length
   zoomFactor:     0.1,           // wheel-zoom sensitivity (smaller = finer steps)
   autoFollow:     false,         // enter follow mode when "now" reaches the right edge
-  keyboard:       true,          // focusable canvas + arrow-key paging
+  keyboard:       true,          // focusable canvas + arrow-key paging and zooming
+  panSnap:        'grid',        // 'grid' | 'off' — snap keyboard navigation to the axis grid
   fadeHi:         2,             // resolution-tier switch point, px of bar width
   fadeLo:         1,             // dissolve band lower edge, px of bar width
   partialBins:    'full',        // 'full' | 'clip' | 'scale' — how an incomplete bin is drawn
@@ -37,7 +38,8 @@ const ts = new TimeSeries({
 | `zoomDuration` | number (ms) | `500` | Click / `zoom()` transition length. |
 | `zoomFactor` | number | `0.1` | Mouse-wheel zoom step. |
 | `autoFollow` | boolean | `false` | Start rolling once the right edge reaches the present. |
-| `keyboard` | boolean | `true` | Focusable canvas and arrow-key paging — see [below](#keyboard). |
+| `keyboard` | boolean | `true` | Focusable canvas and arrow-key navigation — see [below](#keyboard). |
+| `panSnap` | string | `'grid'` | `'grid'` snaps keyboard navigation to the labelled axis grid, `'off'` moves continuously — see [below](#keyboard). |
 | `fadeHi` / `fadeLo` | number (px) | `2` / `1` | Resolution-tier switch point and dissolve band — see [Resolution tiers](tiers.md). |
 | `partialBins` | string | `'full'` | How the bin holding a block's `data_until` is drawn — see [Partial bins](api.md#partial-bins). |
 | `yAxisFormat` | function | SI format | `(value) => string` for y-axis tick labels. |
@@ -179,12 +181,39 @@ The default is the German set (`Neujahr`, `Karfreitag`, `Tag der Einheit`, …).
 ## Keyboard
 
 With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`,
-`role="application"`, and an `aria-label` unless the page set one), and left/right arrows
-page through time by one screenful — the same movement as `ts.pan(∓1)`, snapped to whichever
-calendar unit suits the current zoom.
+`role="application"`, and an `aria-label` unless the page set one) and binds four keys:
+
+| Key | Movement | API equivalent |
+|---|---|---|
+| ←/→ | one page back/forward | `ts.pan(∓1)` |
+| Shift+←/→ | one grid cell back/forward | `ts.pan(∓1, { cells: 1 })` |
+| ↑/↓ | zoom in/out, halving or doubling the window | `ts.zoomStep(±1)` |
+| Shift+↑/↓ | one cell narrower/wider | `ts.zoomStep(±1, { cells: 1 })` |
+
+### The snap grid
+
+Keyboard navigation moves in whole cells of the **coarsest x-axis level that is currently
+labelled and fits the window**. That one rule covers every zoom level: a window of 18:55–20:04
+is one hour cell, so → pages to 20:00–21:00; a six-hour window is six hour cells, so it pages
+to the next six full hours without changing width; a window over a day lands on midnight, and
+one over a month on the first. When a level stops being labelled because the canvas is too
+narrow for it, the grid moves up to the next coarser one — you can only snap to something you
+can read.
+
+Attaching a grid rounds the window onto whole cells once, by at most 20 % of its width. From
+then on the grid is *held*: every key press is exact, so paging out and back returns to the
+same window and the width never drifts. Analogue gestures — wheel, drag, pinch — are never
+snapped and release the grid; the next key press attaches a fresh one.
+
+`panSnap: 'off'` turns this off: ←/→ then move by the exact current width and ↑/↓ zoom by a
+factor of two, with no rounding anywhere. It can also be switched at runtime with
+`ts.setPanSnap(mode)`, and `ts.getSnapGrid()` reports the grid currently in force.
 
 Handlers are bound to the canvas, not the document, so on a page with several charts only
 the focused one moves. `keyboard: false` leaves the element untouched.
+
+Two mouse gestures round the model out: the wheel zooms at the cursor, and **Shift+wheel pans**
+— both continuous, both unsnapped.
 
 ## Mobile
 

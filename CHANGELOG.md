@@ -14,6 +14,41 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+### Changed
+
+- **Keyboard navigation now snaps to the labelled axis grid at every zoom level.**
+  Arrow keys move the viewport in whole cells of the coarsest x-axis level that is
+  currently labelled and fits the window, so they land on boundaries you can read:
+  a window of 18:55–20:04 pages to 20:00–21:00, a six-hour window pages six full
+  hours on *without changing width*, a window over a day lands on midnight and one
+  over a month on the first. Previously each edge was snapped independently and the
+  step count derived from the result, which drifted (18:55–20:04 → 20:04–21:13),
+  grew the window (6 h → 7 h on the first press), never used a finer unit than the
+  second (a 40 ms window paged a full second), and ignored steps like 5 or 15
+  minutes entirely.
+  Attaching the grid rounds the window once, by at most 20 % of its width; from
+  then on it is held, so repeated paging is exact and the width never drifts.
+  Wheel, drag and pinch are never snapped and release the grid.
+
+### Added
+
+- **`↑`/`↓` zoom from the keyboard**, halving and doubling the window on the grid,
+  and **`Shift`+arrow** as the single-cell variant of each direction (`←`/`→` step
+  one cell instead of a page, `↑`/`↓` change the cell count by one). The chart was
+  previously not zoomable without a mouse.
+- **`Shift`+mouse wheel pans** horizontally, continuously.
+- `panSnap: 'grid' | 'off'` option plus `ts.setPanSnap()` / `ts.getPanSnap()` —
+  `'off'` moves by the exact current width and never rounds.
+- `ts.zoomStep(dir, opts)`, `ts.snapView()` and `ts.getSnapGrid()`.
+- `ts.pan(dir, opts)` takes `{ cells: n }` and `{ snap: false }`.
+
+### Removed
+
+- The module-level exports `panSnapUnit`, `panSnapEdge` and `PAN_TOLERANCE`, which
+  implemented the old edge-wise snapping. `panFloor`, `panAdd` and `panDiff` remain;
+  the new grid helpers `floorToGrid`, `addGrid`, `gridCell`, `nearestGrid`,
+  `pickGridLevel` and `GRID_TOLERANCE` are exported alongside them.
+
 ## [0.9.1] - 2026-08-25
 
 ### Added

@@ -145,65 +145,21 @@ export function siFormat(v) {
   return String(v);
 }
 
-// ── Pan snapping ──────────────────────────────────────────────────────────────
-// Used by ts.pan(): both viewport edges snap to the nearest local-time calendar
-// boundary for the most meaningful unit at the current zoom level.
+// ── Snap grid ─────────────────────────────────────────────────────────────────
+// A viewport is not an arbitrary pair of timestamps but a grid state
+// {unit, mult, k, lo}: a level, its cell length, how many cells are visible and
+// where the left edge sits. Every keyboard action is an exact operation on that
+// state, which is what keeps paging and zooming consistent at any zoom level.
+//
+// The level is whichever x-axis level is currently *labelled* — see
+// labelledLevels() in the instance scope. Only that choice depends on pixels
+// (a level nobody can read is no anchor); everything below is pure time
+// arithmetic.
+//
 // panFloor/panAdd use local Date methods and are therefore DST-correct. panDiff
 // counts day/week steps from a fixed-ms division, which is off by up to an hour
 // across a DST change — Math.round absorbs that, so the step count still comes
 // out right (see test/pan.test.mjs).
-
-// Shared by panSnapUnit's calendar-boundary detection and panSnapEdge's
-// boundary rounding: how close (as a fraction of the unit's actual length)
-// a viewport edge must be to a calendar boundary to snap to it.
-export var PAN_TOLERANCE = 0.05;
-
-export function panSnapUnit(tmin, tmax) {
-  var span = tmax - tmin;
-  var s = 1000, m = 60000, h = 3600000, d = 86400000;
-  var YEAR_AVG = 365.25 * d, MONTH_AVG = YEAR_AVG / 12;
-
-  // Months/years have variable real length (28-31d, 365-366d), so a fixed-ms
-  // threshold alone can never tell "this 30-day span is April" from "this
-  // 30-day span is just a long week-ish view" — only checking against the
-  // actual calendar anchored at tmin can. Checked largest-first so an exact
-  // multi-year span wins over an incidental multi-month match.
-  if (calendarUnitMatches(tmin, span, 'year', YEAR_AVG))   return 'year';
-  if (calendarUnitMatches(tmin, span, 'month', MONTH_AVG)) return 'month';
-
-  if (span <  90 * s) return 'second';
-  if (span <  90 * m) return 'minute';
-  if (span <  36 * h) {
-    // A viewport already sitting on local-midnight boundaries at both edges
-    // is a calendar-day view (or a short run of them) even when its real
-    // duration isn't exactly 24h — the day either side of a DST transition
-    // is 23h or 25h. 'hour' would then step it via panAdd's Date#setHours
-    // field arithmetic, which only rolls to the next day when the hour
-    // count overflows past 23; a DST day's real hour count (23) doesn't,
-    // so the boundary silently sticks 1h off local midnight. 'day' steps
-    // via Date#setDate instead, which is calendar-safe (see panAdd tests).
-    // A non-midnight-aligned rolling window (e.g. last24()) still falls
-    // through to 'hour' below, unaffected.
-    if (panFloor(tmin, 'day') === tmin && panFloor(tmax, 'day') === tmax) return 'day';
-    return 'hour';
-  }
-  if (span <  14 * d) return 'day';
-  if (span <  60 * d) return 'week';
-  return 'month';  // multi-month span that isn't calendar-aligned within tolerance
-}
-
-// n is estimated from the average unit length rather than panDiff(unit),
-// because panDiff('year'/'month') is a raw calendar-field difference
-// (getFullYear()/getMonth() only) — it doesn't know whether an anniversary
-// has actually elapsed, so it's inconsistent with panAdd for an arbitrary
-// (non-boundary-aligned) tmin. Rounding by average length and then verifying
-// the *actual* panAdd-derived span avoids that mismatch.
-function calendarUnitMatches(tmin, span, unit, avgLen) {
-  var n = Math.round(span / avgLen);
-  if (n < 1) return false;
-  var unitSpan = panAdd(tmin, unit, n) - tmin;
-  return Math.abs(span - unitSpan) <= PAN_TOLERANCE * unitSpan;
-}
 
 export function panFloor(ms, unit) {
   var d = new Date(ms);
@@ -241,19 +197,73 @@ export function panDiff(lo, hi, unit) {
   return b.getFullYear() - a.getFullYear();
 }
 
-// Rounds one viewport edge to the nearest boundary of `unit` if it's within
-// PAN_TOLERANCE of one, otherwise falls back to the historical behaviour
-// (floor when roundUpIfAmbiguous is false, ceil when true) — so this only
-// changes anything for edges that sit close to, but not exactly on, a
-// calendar boundary; an already-aligned edge is untouched.
-export function panSnapEdge(ms, unit, roundUpIfAmbiguous) {
-  var lo = panFloor(ms, unit);
+// How far rounding the viewport onto whole cells may stretch or shrink it.
+// Rounding happens once per grid attach, so this is also the hard bound on how
+// much a window can change when it snaps.
+export var GRID_TOLERANCE = 0.2;
+
+// Floor to a boundary of `mult` units. Sub-multiples are anchored inside their
+// parent unit exactly the way the drawn axis anchors its lines (grid[1..3] test
+// `s % part`, `m % part`, `h % part`), so a snapped edge always lands on a line
+// that is actually drawn.
+export function floorToGrid(ms, unit, mult) {
+  if (unit === 'ms') return Math.floor(ms / mult) * mult;
+  if (mult === 1) return panFloor(ms, unit);
+  var d = new Date(panFloor(ms, unit));
+  if      (unit === 'second') d.setSeconds(d.getSeconds() - d.getSeconds() % mult);
+  else if (unit === 'minute') d.setMinutes(d.getMinutes() - d.getMinutes() % mult);
+  else if (unit === 'hour')   d.setHours(d.getHours() - d.getHours() % mult);
+  else if (unit === 'month')  d.setMonth(d.getMonth() - d.getMonth() % mult);
+  else if (unit === 'year')   d.setFullYear(d.getFullYear() - ((d.getFullYear() % mult) + mult) % mult);
+  return d.getTime();
+}
+
+export function addGrid(ms, unit, mult, n) {
+  return unit === 'ms' ? ms + mult * n : panAdd(ms, unit, mult * n);
+}
+
+// Length of one cell, measured on the calendar at `ms` — a month cell is 28..31
+// days and a day cell is 23..25 hours, so this must never be a constant.
+export function gridCell(ms, unit, mult) {
+  var lo = floorToGrid(ms, unit, mult);
+  return addGrid(lo, unit, mult, 1) - lo;
+}
+
+// Nearest cell boundary, not floor: 18:55 belongs to the 19:00 hour cell far
+// more than to the 18:00 one, and paging from the nearer edge is what makes
+// 18:55-20:04 page to 20:00-21:00 rather than to 20:04-21:13.
+export function nearestGrid(ms, unit, mult) {
+  var lo = floorToGrid(ms, unit, mult);
   if (lo === ms) return lo;
-  var hi = panAdd(lo, unit, 1);
-  var unitLen = hi - lo;
-  if ((ms - lo) <= PAN_TOLERANCE * unitLen) return lo;
-  if ((hi - ms) <= PAN_TOLERANCE * unitLen) return hi;
-  return roundUpIfAmbiguous ? hi : lo;
+  var hi = addGrid(lo, unit, mult, 1);
+  return (ms - lo) <= (hi - ms) ? lo : hi;
+}
+
+// Pick the level for a window of `span` ms anchored at `tmin`, out of `levels`
+// (coarsest first, as labelledLevels() returns them). The coarsest level that
+// fits at least once wins, unless rounding onto its cells would distort the
+// window by more than `tol` — that guard is what keeps a 10-day window from
+// collapsing onto one calendar week.
+//
+// Pure on purpose: the level list is the only thing that knows about pixels, so
+// this can be tested without a canvas.
+export function pickGridLevel(levels, tmin, span, tol) {
+  if (tol == null) tol = GRID_TOLERANCE;
+  for (var i = 0; i < levels.length; i++) {
+    var unit = levels[i][0], mult = levels[i][1];
+    var cell = gridCell(tmin, unit, mult);
+    var k = Math.round(span / cell);
+    if (k < 1) continue;
+    var lo = nearestGrid(tmin, unit, mult);
+    var hi = addGrid(lo, unit, mult, k);
+    if (Math.abs((hi - lo) - span) < tol * span)
+      return { unit: unit, mult: mult, k: k, lo: lo, hi: hi };
+  }
+  // Nothing labelled fits (a canvas too narrow to label anything at all).
+  // Fall back to raw milliseconds so callers always get a usable state.
+  var ms = Math.round(tmin);
+  var n = Math.max(1, Math.round(span));
+  return { unit: 'ms', mult: 1, k: n, lo: ms, hi: ms + n };
 }
 
 export default function TimeSeries(options) {
@@ -265,6 +275,9 @@ export default function TimeSeries(options) {
     zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
     keyboard: true,        // arrow-key navigation; also makes the canvas focusable
+    // Snap policy for the keyboard: 'grid' pages and zooms in whole cells of the
+    // labelled x-axis level, 'off' moves the viewport continuously instead.
+    panSnap: 'grid',
     // Resolution-tier switch point and cross-fade band, in px of bar width.
     // A tier is primary while its bars are at least fadeHi wide; as it shrinks
     // past that the coarser tier takes over, dissolving across fadeHi → fadeLo.
@@ -458,6 +471,9 @@ export default function TimeSeries(options) {
   }
   var rctx = null; // render context, updated on each plotAll() call
   var renderInterval = null; // when set via setRenderInterval(), prepare_grid renders only blocks at this interval
+  // Snap grid: the held {unit, mult, k, lo} the keyboard operates on, or null
+  // while the viewport is wherever an analogue gesture left it. See ensureGrid().
+  var snapState = null;
   // Rate axis (setRateUnit): seconds the y-axis is "per". While set, a block the
   // host marked `extensive` is drawn as value * rateUnit / plot.interval, so
   // resolution tiers holding accumulated amounts land on one common scale.
@@ -1261,19 +1277,120 @@ export default function TimeSeries(options) {
     zoom(start, end);
   };
 
-  // ── Viewport pan: one "screen" left (dir=-1) or right (dir=+1) ───────────
-  // panSnapUnit/panFloor/panAdd/panDiff live at module scope — see top of file.
-  this.pan = function (dir) {
-    doStop();
+  // ── Viewport pan / zoom on the snap grid ──────────────────────────────────
+  // floorToGrid/addGrid/pickGridLevel live at module scope, labelledLevels() and
+  // ensureGrid() further down in this closure — see the comments there for why
+  // the grid is held state rather than a function of the viewport.
+
+  // A pan or zoom that is in flight has already committed to its target, so
+  // steps taken during the animation must build on that, not on the frame the
+  // viewport happens to be showing right now.
+  function pendingView() {
     var inFlight = animation.endT && Date.now() < animation.endT;
-    var srcMin = inFlight ? animation.end.tmin : tmin;
-    var srcMax = inFlight ? animation.end.tmax : tmax;
-    var unit = panSnapUnit(srcMin, srcMax);
-    var lo   = panSnapEdge(srcMin, unit, false);
-    var hi   = panSnapEdge(srcMax, unit, true);
-    var n    = Math.max(1, panDiff(lo, hi, unit));
-    zoom(panAdd(lo, unit, dir * n), panAdd(hi, unit, dir * n));
+    return inFlight
+      ? { tmin: animation.end.tmin, tmax: animation.end.tmax }
+      : { tmin: tmin, tmax: tmax };
+  }
+
+  // Pan by one page (default) or by `opts.cells` cells. `opts.snap === false`,
+  // like panSnap: 'off', moves by the exact current width instead.
+  this.pan = function (dir, opts) {
+    doStop();
+    var v = pendingView();
+    if (!snapEnabled(opts)) {
+      var span = v.tmax - v.tmin;
+      dropGrid();
+      zoom(v.tmin + dir * span, v.tmax + dir * span);
+      return;
+    }
+    var g = ensureGridFor(v);
+    var n = opts && opts.cells != null ? opts.cells : g.k;
+    snapState = gridWindow(g, addGrid(g.lo, g.unit, g.mult, dir * n));
+    zoom(snapState.lo, snapState.hi);
   };
+
+  // Zoom by one step: dir > 0 zooms in. By default the width halves/doubles
+  // about the centre and the result re-attaches to the grid; opts.cells steps
+  // the cell count by that many instead, which keeps the level and the left
+  // edge and is the fine-grained variant on Shift+Up/Down.
+  this.zoomStep = function (dir, opts) {
+    doStop();
+    var v = pendingView();
+    var span = v.tmax - v.tmin;
+    if (!snapEnabled(opts)) {
+      var w = dir > 0 ? span / 2 : span * 2;
+      var mid = (v.tmin + v.tmax) / 2;
+      dropGrid();
+      if (!withinZoomLimits(w)) return;
+      zoom(Math.round(mid - w / 2), Math.round(mid + w / 2));
+      return;
+    }
+    var g = ensureGridFor(v);
+    if (opts && opts.cells) {
+      var k = Math.max(1, g.k - dir * opts.cells);
+      var hi = addGrid(g.lo, g.unit, g.mult, k);
+      if (!withinZoomLimits(hi - g.lo)) return;
+      snapState = { unit: g.unit, mult: g.mult, k: k, lo: g.lo, hi: hi };
+    } else {
+      var target = dir > 0 ? (g.hi - g.lo) / 2 : (g.hi - g.lo) * 2;
+      if (!withinZoomLimits(target)) return;
+      var centre = (g.lo + g.hi) / 2;
+      // Re-attach rather than step the level: halving may cross into a finer
+      // level, and which one that is depends on what is labelled at the new
+      // width — the same rule that governs every other attach.
+      snapState = null;
+      snapState = pickGridLevel(labelledLevels(), Math.round(centre - target / 2), target);
+    }
+    zoom(snapState.lo, snapState.hi);
+  };
+
+  // Snap the current window onto the grid without paging. Attaches a grid state
+  // even when panSnap is 'off' — an explicit call is an explicit request.
+  this.snapView = function () {
+    doStop();
+    var v = pendingView();
+    snapState = pickGridLevel(labelledLevels(), v.tmin, v.tmax - v.tmin);
+    zoom(snapState.lo, snapState.hi);
+  };
+
+  this.getSnapGrid = function () {
+    var g = ensureGrid();
+    return { unit: g.unit, mult: g.mult, k: g.k, tmin: g.lo, tmax: g.hi };
+  };
+
+  this.setPanSnap = function (mode) {
+    if (mode !== 'grid' && mode !== 'off') {
+      console.warn('TimeSeries: panSnap must be "grid" or "off", got', mode);
+      return;
+    }
+    settings.panSnap = mode;
+    if (mode === 'off') dropGrid();
+  };
+
+  this.getPanSnap = function () { return settings.panSnap; };
+
+  function snapEnabled(opts) {
+    if (opts && opts.snap === false) return false;
+    return settings.panSnap !== 'off';
+  }
+
+  // The wheel handler refuses to zoom past these; keyboard zoom obeys the same
+  // bounds, or Up/Down could walk somewhere the wheel can never come back from.
+  function withinZoomLimits(span) {
+    if (span <= 0) return false;
+    var p = plotWidth / span;
+    return p <= 25 && p >= 6e-9;
+  }
+
+  // Attach a grid to a specific window (the pending one, which may differ from
+  // the drawn viewport mid-animation).
+  function ensureGridFor(v) {
+    if (snapState && snapState.lo === v.tmin && snapState.hi === v.tmax &&
+        levelStillLabelled(snapState))
+      return snapState;
+    snapState = pickGridLevel(labelledLevels(), v.tmin, v.tmax - v.tmin);
+    return snapState;
+  }
 
   function easeInOutExpo(x) {
     return x === 0
@@ -1392,6 +1509,7 @@ export default function TimeSeries(options) {
   canvas.onmousedown = function (e) {
     refreshOffset();
     doStop();
+    dropGrid();   // dragging is analogue input — see the wheel handler
     var item = mouse_position(e);
     if (item.level) {
       var dir = "center";
@@ -1462,6 +1580,7 @@ export default function TimeSeries(options) {
   canvas.ontouchstart = function (e) {
     e.preventDefault();
     refreshOffset();
+    dropGrid();   // pan and pinch are analogue input — see the wheel handler
     if (e.touches.length === 1) {
       if (follow_timers > 0 && !follow_stopped) return; // pan not allowed while following
       doStop();
@@ -1530,15 +1649,20 @@ export default function TimeSeries(options) {
       canvas.setAttribute('role', 'application');
       if (!canvas.getAttribute('aria-label'))
         canvas.setAttribute('aria-label',
-          'Time series chart. Use left and right arrow keys to page through time.');
+          'Time series chart. Left and right arrow keys page through time, up and down zoom. Hold shift for a single step.');
     }
 
     canvas.onkeydown = function (e) {
-      // Left/right page by one screenful, snapped to whichever calendar unit
-      // fits the current zoom (see panSnapUnit) — same behaviour as ts.pan(),
-      // so a keyboard user lands on the same boundaries as a clicking one.
-      if (e.key === 'ArrowLeft')       self.pan(-1);
-      else if (e.key === 'ArrowRight') self.pan(1);
+      // Every arrow moves the viewport in whole cells of the labelled x-axis
+      // level, so a keyboard user is never left on a ragged edge. Shift is the
+      // fine-grained variant of the same movement, not an escape from it:
+      //   ←/→        one page          Shift+←/→  one cell
+      //   ↑/↓        halve/double      Shift+↑/↓  one cell more/less
+      var cell = e.shiftKey ? { cells: 1 } : undefined;
+      if      (e.key === 'ArrowLeft')  self.pan(-1, cell);
+      else if (e.key === 'ArrowRight') self.pan(1, cell);
+      else if (e.key === 'ArrowUp')    self.zoomStep(1, cell);
+      else if (e.key === 'ArrowDown')  self.zoomStep(-1, cell);
       else return;                     // leave every other key to the browser
       e.preventDefault();              // ... but don't let the page scroll
     };
@@ -1547,6 +1671,22 @@ export default function TimeSeries(options) {
   canvas.onwheel = function (e) {
     e.preventDefault();
     refreshOffset();
+    // Analogue input follows the hand: the wheel never snaps, it only drops the
+    // held grid so the next key press re-attaches one (see ensureGrid).
+    dropGrid();
+    // Shift+wheel pans instead of zooming. Some browsers already translate a
+    // shifted wheel into deltaX, so take whichever axis carries the movement.
+    if (e.shiftKey) {
+      var d = e.deltaX || e.deltaY;
+      if (!d) return;
+      var shift = d * mspp;
+      doStop();
+      tmin += shift;
+      tmax += shift;
+      plotAll();
+      scheduleViewportChange();
+      return;
+    }
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
     // When following, reposition to the actual current now before zooming.
@@ -1580,6 +1720,63 @@ export default function TimeSeries(options) {
   // d is minimum pixel distance allowed between tics
   function time_part(p, t, d) {
     for (var pp in p) if (ppms * t * p[pp] > d) return p[pp];
+  }
+
+  // ── Snap grid ──────────────────────────────────────────────────────────────
+  // The x-axis levels that are currently *labelled*, coarsest first. This is the
+  // candidate list pickGridLevel() chooses from, and the only place where the
+  // snap grid touches pixels: a level nobody can read is no anchor to snap to.
+  // The moment the hour labels no longer fit, the grid moves up to day
+  // boundaries — the same threshold `dtl` that prepare_grid draws them by, so
+  // grid and labelling can never disagree.
+  function labelledLevels() {
+    var out = [];
+    var t = (tmin + tmax) / 2;
+    // Coarse levels have one fixed step each; "labelled" means a cell is at
+    // least dtl wide, exactly as for the sub-day levels below.
+    var coarse = [['year', 1], ['month', 1], ['week', 1], ['day', 1]];
+    for (var i = 0; i < coarse.length; i++)
+      if (ppms * gridCell(t, coarse[i][0], coarse[i][1]) > dtl) out.push(coarse[i]);
+    // Sub-day levels come in steps (part24/part60/part1000); time_part returns
+    // the finest step that is still legible, i.e. the one actually printed.
+    var ph = time_part(part24,   f.h, dtl); if (ph) out.push(['hour',   ph]);
+    var pm = time_part(part60,   f.m, dtl); if (pm) out.push(['minute', pm]);
+    var ps = time_part(part60,   f.s, dtl); if (ps) out.push(['second', ps]);
+    var pl = time_part(part1000, 1,   dtl); if (pl) out.push(['ms',     pl]);
+    return out;
+  }
+
+  // True while `g` is still a level the axis labels — the one condition under
+  // which a held grid state stays valid (see ensureGrid).
+  function levelStillLabelled(g) {
+    var lv = labelledLevels();
+    for (var i = 0; i < lv.length; i++)
+      if (lv[i][0] === g.unit && lv[i][1] === g.mult) return true;
+    return false;
+  }
+
+  // Return the current grid state, attaching one if there is none or if its
+  // level stopped being labelled. Deliberately *not* recomputed from the
+  // viewport on every call: rounding changes the width, and the width picks the
+  // level, so re-deriving it each time feeds back on itself (100s → 105s →
+  // 120s). Holding the state means a rounding happens once per attach, bounded
+  // by GRID_TOLERANCE, and every key press after that is exact.
+  function ensureGrid() {
+    if (snapState && levelStillLabelled(snapState)) return snapState;
+    snapState = pickGridLevel(labelledLevels(), tmin, tmax - tmin);
+    return snapState;
+  }
+
+  // Any analogue gesture (wheel, drag, pinch) hands the viewport back to the
+  // user's hand; the grid is re-attached on the next key press.
+  function dropGrid() { snapState = null; }
+
+  // Move the left edge by n cells and rebuild the window from it. The floorToGrid
+  // is not redundant: across the spring-forward transition panAdd on a mult > 1
+  // hour grid can land on an odd hour, which would leave the edge off-grid.
+  function gridWindow(g, lo) {
+    lo = floorToGrid(lo, g.unit, g.mult);
+    return { unit: g.unit, mult: g.mult, k: g.k, lo: lo, hi: addGrid(lo, g.unit, g.mult, g.k) };
   }
 
   function mouse_position(e) {

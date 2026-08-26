@@ -28,12 +28,28 @@ ts.zoom(tmin, tmax, animationMs);  // explicit window; tmin/tmax in Unix MILLISE
 ts.zoomWeek(year, week);           // ISO 8601 week number
 ts.zoomMonth(year, month);         // month is 1–12
 ts.zoomYear(year);
-ts.pan(dir);                       // one screenful; dir < 0 back, > 0 forward
+ts.pan(dir, opts);                 // one screenful; dir < 0 back, > 0 forward
+                                   // opts: { cells: n } move n grid cells instead of a page
+                                   //       { snap: false } move by the exact width, unsnapped
+ts.zoomStep(dir, opts);            // dir > 0 in, < 0 out; halves/doubles the window
+                                   // opts: { cells: n } change the cell count by n instead
+ts.snapView();                     // align the window to the grid without moving it on
+ts.setPanSnap(mode);               // 'grid' (default) | 'off'
+ts.getPanSnap();
+ts.getSnapGrid();                  // { unit, mult, k, tmin, tmax } currently in force
 ```
 
-`pan()` is calendar-aware: it snaps to whichever unit fits the current zoom, so paging a
-month-wide viewport lands on month boundaries rather than drifting by 30 days, and a
-23-hour DST day still pans to local midnight.
+`pan()` and `zoomStep()` move in whole cells of the **coarsest x-axis level that is currently
+labelled and fits the window**, so they land on readable boundaries at any zoom: 18:55–20:04
+pages to 20:00–21:00, a six-hour window pages six full hours on without changing width, a
+month-wide viewport lands on month boundaries rather than drifting by 30 days, and a 23-hour
+DST day still pans to local midnight.
+
+The grid is attached once — rounding the window onto whole cells by at most 20 % of its width
+— and then held, so repeated paging is exact and never drifts. Wheel, drag and pinch are never
+snapped and release it; the next call attaches a fresh one. `panSnap: 'off'` (or
+`{ snap: false }` for a single call) skips all of it and moves by the exact current width.
+See [Keyboard](configuration.md#keyboard) for the key bindings that drive this.
 
 ## Follow (rolling) mode
 
@@ -232,12 +248,15 @@ import TimeSeries, {
   Easter,        // (year) → Date of Easter Sunday, Gauss/Butcher computus
   isoWeekStart,  // (year, week) → Date of that ISO week's Monday
   siFormat,      // (value) → '1.2k'
-  panSnapUnit,   // (tmin, tmax) → 'hour' | 'day' | 'week' | 'month' | 'year'
   panFloor,      // (ms, unit) → ms, floored to that unit's boundary
   panAdd,        // (ms, unit, n) → ms, n units later (DST-safe)
   panDiff,       // (lo, hi, unit) → whole units between
-  panSnapEdge,   // (ms, unit, roundUpIfAmbiguous) → ms, snapped within PAN_TOLERANCE
-  PAN_TOLERANCE, // 0.05
+  floorToGrid,   // (ms, unit, mult) → ms, floored to a boundary of `mult` units
+  addGrid,       // (ms, unit, mult, n) → ms, n cells later (DST-safe)
+  gridCell,      // (ms, unit, mult) → length of one cell there, on the calendar
+  nearestGrid,   // (ms, unit, mult) → ms, rounded to the nearest cell boundary
+  pickGridLevel, // (levels, tmin, span[, tol]) → { unit, mult, k, lo, hi }
+  GRID_TOLERANCE,// 0.2 — how far attaching a grid may round a window
 } from '@hgruber/timeseries.js';
 ```
 

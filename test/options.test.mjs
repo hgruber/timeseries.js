@@ -115,3 +115,37 @@ test('siFormat applies SI prefixes and trims trailing .0', () => {
   assert.equal(f(4e12), '4T');
   assert.equal(f(-1500), '-1.5k');
 });
+
+// ── panSnap ───────────────────────────────────────────────────────────────────
+test('panSnap defaults to grid and round-trips through the setter', () => {
+  const ts = build();
+  assert.equal(ts.getPanSnap(), 'grid');
+
+  ts.setPanSnap('off');
+  assert.equal(ts.getPanSnap(), 'off');
+
+  ts.setPanSnap('grid');
+  assert.equal(ts.getPanSnap(), 'grid');
+});
+
+test('panSnap can be set from the constructor', () => {
+  assert.equal(build({ panSnap: 'off' }).getPanSnap(), 'off');
+});
+
+// An unusable mode must not reach the navigation code, where it would silently
+// behave like 'grid' and leave the caller wondering.
+test('setPanSnap rejects anything that is not a mode', () => {
+  const ts = build();
+  const warn = console.warn;
+  let warned = 0;
+  console.warn = () => { warned++; };
+  try {
+    for (const bad of ['on', true, null, 1, 'GRID']) {
+      ts.setPanSnap(bad);
+      assert.equal(ts.getPanSnap(), 'grid', `${String(bad)} must be refused`);
+    }
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(warned, 5, 'each refusal should say so');
+});
