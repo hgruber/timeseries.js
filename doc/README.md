@@ -22,6 +22,7 @@ five-minute version; everything else lives here.
 | Get past a CORS error | [Data sources → Cross-origin](sources.md#cross-origin-cors) |
 | Write my own renderer or data source | [Plugins](plugins.md) |
 | Show two resolutions of one signal without a visible pop | [Resolution tiers](tiers.md) |
+| See how this differs from a Grafana/Zabbix panel | [Comparison](comparison.md) |
 | Copy a working example | [Recipes](recipes.md) |
 | Build, test or release the project | [Development](development.md) |
 
@@ -36,6 +37,7 @@ five-minute version; everything else lives here.
 | [overlays.md](overlays.md) | `attachTooltip` and `attachLegend`: defaults, the override layers, the controller objects |
 | [sources.md](sources.md) | The built-in `artificial`, `zabbix` and `caldav` sources, complete single-file recipes against a real server, and CORS |
 | [tiers.md](tiers.md) | Resolution tiers, the cross-fade, `rollupBinned`, and the rate axis (`setRateUnit`) |
+| [comparison.md](comparison.md) | How embedding this chart differs from a Grafana or Zabbix panel |
 | [plugins.md](plugins.md) | The renderer and source plugin contracts |
 | [recipes.md](recipes.md) | Copy-paste examples, one per task |
 | [development.md](development.md) | Build, test, lint, the demo pages, cutting a release |

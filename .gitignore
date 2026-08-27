@@ -6,3 +6,7 @@ dist/
 # local. Ignored rather than merely untracked so it can't trip the clean-tree
 # check in scripts/release.mjs.
 RELEASING.md
+
+# Personal launch-copy draft (Show HN title/comment, timing notes) — promotional,
+# one-off, not project documentation. Stays local like RELEASING.md above.
+SHOW_HN_DRAFT.md

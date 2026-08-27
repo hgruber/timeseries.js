@@ -99,6 +99,16 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 
 ---
 
+## Already running Grafana or Zabbix?
+
+Those are dashboard platforms; timeseries.js is the chart itself, embedded directly in a
+page you control — no iframe, no server, DST-correct keyboard navigation and a resolution
+switch with no visible pop. It doesn't replace alerting or long-term storage, and its
+built-in [Zabbix](doc/sources.md) and [CalDAV](doc/sources.md) sources are there for
+exactly that pairing. See [the full comparison](doc/comparison.md).
+
+---
+
 ## Documentation
 
 | Page | For |
