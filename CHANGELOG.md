@@ -14,6 +14,8 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-28
+
 ### Added
 
 - **Three new plot types that draw a distribution without interpolating it.**
