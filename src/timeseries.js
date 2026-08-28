@@ -9,7 +9,8 @@
 // are a standalone utility module, imported by consumers directly.
 import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
-         plotSeriesIds, resolveColor, POINT_RADIUS } from './renderers.js';
+         plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType,
+         ladderPairs } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
@@ -781,7 +782,7 @@ export default function TimeSeries(options) {
         }
         if (newStart < ee && newEnd > es) {
           var concatable = (data[i].type === 'multibar'
-                            || data[i].type === 'quantile-bands');
+                            || isBandedType(data[i].type));
           if (concatable && data[i].interval === plot.interval
               && data[i].category !== 'point' && plot.category !== 'point') {
             // Concatenate: trim old block's slots inside the new block's
@@ -794,7 +795,7 @@ export default function TimeSeries(options) {
               var slotMs = slotTime * 1000;
               if (slotMs >= newStart && slotMs < newEnd) delete data[i].data[s];
             }
-            // Recalculate old block's metadata. quantile-bands store an array
+            // Recalculate old block's metadata. A ladder type stores an array
             // of percentile values per series (extent = min/max array entry);
             // multibar stacks series (extent = per-slot stacked total).
             data[i].count = Object.keys(data[i].data).length;
@@ -807,7 +808,7 @@ export default function TimeSeries(options) {
               continue;
             } else {
               var mn = Infinity, mx = -Infinity;
-              var banded = data[i].type === 'quantile-bands';
+              var banded = isBandedType(data[i].type);
               for (s in data[i].data) {
                 if (banded) {
                   for (var series in data[i].data[s]) {
@@ -1845,12 +1846,65 @@ export default function TimeSeries(options) {
           return { plot: i, n: e, key: ev.id != null ? ev.id : String(e), value: ev };
       }
     }
+    // ladder identification — blocks whose per-series value is an *array*
+    // (quantile-bands, quantile-steps, error-bars, candlestick). There is no
+    // stack to walk here: the whole ladder is the value and the bin is the hit
+    // target, so this is its own branch rather than a case in the one below.
+    var bestHit = null, bestDist = Infinity;
+    for (const i of activePlot) {
+      if (!data[i] || !isBandedType(data[i].type)) continue;
+      if (data[i].category === 'point' || data[i].category === 'span') continue;
+      // Mid-cross-fade, only the visually dominant tier is hittable — same rule
+      // the stacked branch below follows, for the same reason.
+      if (data[i]._fade != null && data[i]._fade < 0.5) continue;
+      var bp = data[i];
+      if (!(bp.interval_start * 1000 <= t && t <= bp.interval_end * 1000)) continue;
+      var bn = Math.floor((+t / 1000 - bp.interval_start) / bp.interval);
+      var bslot = bp.data && bp.data[bn];
+      if (!bslot) continue;
+      var bpk = 1;
+      if (bp._partial && bp._partial.slot === bn) {
+        if (bp._partial.skip) continue;                 // not drawn → not hittable
+        var bStart = (bp.interval_start + bn * bp.interval) * 1000;
+        if (+t > bStart + bp.interval * 1000 * bp._partial.frac) continue;
+        bpk = bp._partial.scale;
+      }
+      var bvs = (bp._vscale != null ? bp._vscale : 1) * bpk;
+      // A min=avg=max ladder collapses to a hairline and would be unhittable
+      // without a tolerance — the idea POINT_RADIUS.multiline encodes, in value
+      // space rather than pixels.
+      var btol = ppv > 0 ? 4 / ppv : 0;
+      for (const bk in bslot) {
+        // Unlike the stacked branch below, this one honours hidden series: what
+        // is not drawn must not be hoverable either.
+        if (hiddenSeries.has(bk)) continue;
+        var barr = bslot[bk];
+        if (!Array.isArray(barr) || !barr.length) continue;
+        var blo = Infinity, bhi = -Infinity;
+        for (var bq = 0; bq < barr.length; bq++) {
+          var bv = barr[bq] * bvs;
+          if (bv < blo) blo = bv;
+          if (bv > bhi) bhi = bv;
+        }
+        if (py < blo - btol || py > bhi + btol) continue;
+        // Several ladders overlapping: the one whose middle is nearest the
+        // pointer, so a narrow band inside a wide one stays reachable.
+        var bd = Math.abs(py - (blo + bhi) / 2);
+        if (bd < bestDist) {
+          bestDist = bd;
+          // The raw ladder goes back, unscaled: a tooltip reports the values in
+          // the bin, not whatever unit the axis happens to be showing.
+          bestHit = { plot: i, n: bn, key: bk, value: barr };
+        }
+      }
+    }
+    if (bestHit) return bestHit;
     // multibar identification
     for (const i of activePlot) {
       if (!data[i] || data[i].category === 'point' || data[i].category === 'span') continue;
-      // quantile-bands store an array per series, not a stackable scalar;
-      // they have no per-bar hit target, so skip hit-testing them.
-      if (data[i].type === 'quantile-bands') continue;
+      // A ladder block stores an array per series, not a stackable scalar —
+      // handled by its own branch above, never by this arithmetic.
+      if (isBandedType(data[i].type)) continue;
       // Mid-cross-fade both resolutions are active and overlap. Only the
       // dominant one is hittable, so the tooltip follows what is actually
       // visible instead of whichever tier happens to sit first in activePlot.
@@ -2072,11 +2126,11 @@ export default function TimeSeries(options) {
           // Stacked plots (multibar) sum series per slot for the y-extent;
           // un-stacked plots (multiline, multipoint) plot each series
           // independently, so each slot contributes its largest single series
-          // value (and most-negative) instead. quantile-bands store an array
-          // of percentile values per series; the extent is the largest /
-          // most-negative array entry across the slot's series.
+          // value (and most-negative) instead. A ladder type (values: 'array')
+          // stores an array of percentile values per series; the extent is the
+          // largest / most-negative array entry across the slot's series.
           var stacked = plot.type === 'multibar';
-          var banded  = plot.type === 'quantile-bands';
+          var banded  = isBandedType(plot.type);
           if (plot.category === 'point') {
             // Point series carry {t, values} and no slot grid, so the binned
             // scan below cannot address them (it would compute NaN slot times
@@ -3234,6 +3288,11 @@ TimeSeries.seriesColor = seriesColor;
 // Exposed so an overlay can reproduce exactly what a renderer painted for a
 // series, plot.series_colors overrides included.
 TimeSeries.resolveColor = resolveColor;
+// Exposed for third-party ladder renderers: ladderPairs so they read a
+// percentiles array the way the built-in four do, isBandedType so a consumer
+// can ask whether a type stores arrays (which the core branches on).
+TimeSeries.ladderPairs = ladderPairs;
+TimeSeries.isBandedType = isBandedType;
 TimeSeries.attachTooltip = attachTooltip;
 TimeSeries.attachLegend = attachLegend;
 TimeSeries.lttb = lttb;

@@ -8,7 +8,7 @@ There are three shapes, selected by `category`:
 
 | `category` | Time is… | `data` is… | Use for | Renderers |
 |---|---|---|---|---|
-| *(omitted)* — **binned** | fixed-width slots on a shared grid | an object keyed by slot index | pre-aggregated metrics | `multibar`, `multiline`, `multipoint`, `quantile-bands` |
+| *(omitted)* — **binned** | fixed-width slots on a shared grid | an object keyed by slot index | pre-aggregated metrics | `multibar`, `multiline`, `multipoint`, and the ladder four: `quantile-bands`, `quantile-steps`, `error-bars`, `candlestick` |
 | `'point'` | a timestamp per sample | an array of `{t, values}` | raw samples, irregular data | `multiline`, `multipoint`, `scatter` |
 | `'span'` | a start/end pair per item | an array of `{start, end, …}` | calendar events, jobs, outages | `gantt` |
 
@@ -26,7 +26,7 @@ Values already aggregated into fixed `interval`-wide slots. This is the default 
 ```js
 {
   'source-type': 'artificial',  // which source plugin loads it
-  type: 'multibar',             // 'multibar' | 'multiline' | 'multipoint' | 'quantile-bands'
+  type: 'multibar',             // 'multibar' | 'multiline' | 'multipoint' (or a ladder type)
   name: 'transactions',         // label for the legend
   interval_start: 1717200000,   // Unix SECONDS — left edge of the data
   interval_end:   1717286400,   // Unix SECONDS — right edge
@@ -74,6 +74,9 @@ The same block renders as stacked bars, lines or points purely by changing `type
 { …, type: 'multiline' }   // one line per series, connecting slot centres
 { …, type: 'multipoint' }  // one marker per slot per series
 ```
+
+If a slot's value is an **array** rather than a number, you have a
+[ladder block](#ladder-blocks-percentiles-minavgmax) and four more types to pick from.
 
 ### Butterfly charts (`series_directions`)
 
@@ -135,19 +138,20 @@ reduced array, so a tooltip always points at a marker that is actually drawn.
 
 ---
 
-## Quantile bands
+## Ladder blocks (percentiles, min/avg/max)
 
-A percentile fan per series rather than a single value. Each slot's value is an **array**
-of percentile values, aligned to the block's `percentiles` ladder.
+A distribution per bin rather than a single value. Each slot's value is an **array** of
+values aligned to the block's `percentiles` ladder — a percentile fan, a min/avg/max
+envelope, an OHLC quadruple.
 
 ```js
 {
   'source-type': 'artificial',
-  type: 'quantile-bands',
+  type: 'quantile-steps',             // any of the four ladder renderers below
   name: 'request latency',
   interval_start: 1717200000, interval_end: 1717286400,
   interval: 3600, count: 24,
-  min: 0, max: 900,                   // smallest / largest percentile value
+  min: 0, max: 900,                   // smallest / largest ladder value
   percentiles: [5, 25, 50, 75, 95],   // ascending ladder; the median is drawn bold
   data: {
     0: { api: [12, 40, 88, 210, 640] },   // one entry per percentile, same order
@@ -157,18 +161,96 @@ of percentile values, aligned to the block's `percentiles` ladder.
 }
 ```
 
-Lines connect slot centres; the area between adjacent percentiles is shaded, most opaque
-around the median and fading toward the tails.
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `percentiles` | array | ✓ | The ladder. Ascending. Entries may be numbers (`50` → `p50` in the tooltip) or strings (`'avg'`) — only the **length** and the **order** are read |
+| `connect` | boolean | | `quantile-steps` only. `false` drops the vertical risers, leaving the segments free-standing. Default `true` |
+| `roles` | object | | `candlestick` only. `{ open, high, low, close }`, each an **index** into the value array. Opts into true OHLC — see below |
+| `candleColors` | object | | `candlestick` only. `{ up, down }` CSS colours, overriding the hollow/filled convention |
 
-Two constraints:
+Everything else is the ordinary binned block above: `interval`, `count`, `series_colors`,
+`data_until` and the rest all mean exactly what they mean there.
 
-- **Binned only** — there is no `category: 'point'` form.
-- **No per-bar hit target**, so click and hover callbacks do not fire for these series.
+**Binned only** — there is no `category: 'point'` form for any of these. A ladder needs a
+bin to belong to.
+
+### The four renderers
+
+All four read the same block. They differ in one thing: whether they claim anything about
+the time *between* two bins.
+
+```js
+{ …, type: 'quantile-bands' }   // lines through the slot CENTRES, shaded between
+{ …, type: 'quantile-steps' }   // a flat segment across each BIN, shaded between
+{ …, type: 'error-bars' }       // a marker on the centre rung, whiskers over the pairs
+{ …, type: 'candlestick' }      // wick, body and median tick per bin
+```
+
+`quantile-bands` interpolates: it draws a straight line from one bin's median to the next
+one's, through the gap where nothing was measured. That reads well as a trend and badly as
+a statement of fact.
+
+The other three are **bin-local**. `quantile-steps` is the direct swap for the bands — same
+ladder, same shading, same bold median — except each rung is a horizontal segment spanning
+its own interval, joined to its neighbour by a vertical riser. Nothing is drawn on a slant,
+so nothing suggests a value that was never measured. `connect: false` removes the risers
+too, if even the jump should go unstated.
+
+`error-bars` and `candlestick` go further and draw each bin as an isolated glyph.
+
+### How the rungs are read
+
+`error-bars` and `candlestick` decompose the ladder symmetrically — outermost pair first,
+working inward, with the middle entry (if the ladder has an odd length) as the centre:
+
+| `percentiles` | Pairs, outermost first | Centre |
+|---|---|---|
+| `[25, 75]` | `25↔75` | *none* |
+| `['min','avg','max']` | `min↔max` | `avg` |
+| `[5, 25, 50, 75, 95]` | `5↔95`, `25↔75` | `50` |
+
+**An even-length ladder has no centre**, so `error-bars` draws no marker and `candlestick`
+no median tick. Rounding to a neighbouring rung would label a value the data never claimed.
+
+`error-bars` puts a marker on the centre and a whisker over every pair, the innermost bold
+and the outermost thin, with caps only on the outermost. `candlestick` uses the outermost
+pair as the wick and the next one in as the body — the box plot a percentile ladder
+actually supports. A ladder with only **one** pair (`[min, avg, max]`, `[p25, p75]`) becomes
+a plain filled box over that pair rather than a bodyless hairline.
+
+### True OHLC candles (`roles`)
+
+A percentile ladder has no direction, so there is nothing to colour rising against falling.
+`plot.roles` supplies one by naming which array index is which:
+
+```js
+{
+  type: 'candlestick',
+  percentiles: ['open', 'high', 'low', 'close'],
+  roles: { open: 0, high: 1, low: 2, close: 3 },   // indices into the value array
+  data: { 0: { eurusd: [1.081, 1.090, 1.078, 1.087] } },
+}
+```
+
+Rising bins (`close >= open`) are drawn **hollow**, falling ones **filled** — the classic
+convention, and the one that needs no second colour, so the candles re-theme with the
+series. `candleColors: { up, down }` overrides that with explicit colours. A `roles` map
+naming an index outside the array is ignored and the ladder reading above is used instead.
+
+### Hover and click
+
+A ladder bin **is** a hit target: hovering one hands the whole array to
+`onHoverDataCallback` as `value`, with the series id as `key`. The shipped tooltip renders
+one labelled row per rung, highest first (`p95`, `p75`, …), which
+[`percentileLabel`](overlays.md#tooltip) retargets. Hidden series are not hittable.
 
 A two-entry ladder is the min/max envelope case, and a three-entry `[min, avg, max]` ladder
 is what the [Zabbix source](sources.md#zabbix) uses for both its history and its trends
 tier — which is how one renderer draws a fine tier as a single line (min = avg = max at one
 sample per bucket) and a coarse tier as a filled band.
+
+> All tiers of one signal must use the **same** ladder type: the resolution cross-fade
+> groups blocks by `plot.type`, so mixing two of them pops instead of dissolving.
 
 ---
 
@@ -239,7 +321,13 @@ or the old layout is reused.
 | `multiline` | ✓ | ✓ | | One line per series |
 | `multipoint` | ✓ | ✓ | | One marker per sample |
 | `scatter` | | ✓ | | Filled circle per point |
-| `quantile-bands` | ✓ | | | Percentile fan with shaded bands |
+| `quantile-bands` | ✓ | | | Percentile fan, interpolated between slot centres |
+| `quantile-steps` | ✓ | | | The same fan, flat across each bin |
+| `error-bars` | ✓ | | | Marker plus whiskers per bin |
+| `candlestick` | ✓ | | | Wick and body per bin; OHLC via `roles` |
 | `gantt` | | | ✓ | Duration bars packed into rows |
+
+The four ladder renderers take a slot value that is an **array**
+([ladder blocks](#ladder-blocks-percentiles-minavgmax)); everything else takes a number.
 
 Registering your own is two dozen lines — see [Plugins](plugins.md).

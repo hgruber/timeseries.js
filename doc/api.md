@@ -233,6 +233,10 @@ TimeSeries.resolveColor(plot, seriesId, alpha);          // the colour a series 
 TimeSeries.seriesColor(index, alpha);                    // the automatic palette, by ordinal
 TimeSeries.siFormat(value);                              // 1234 → '1.2k'
 
+TimeSeries.ladderPairs(n);        // { centre, pairs } — how the ladder renderers read
+                                  //   plot.percentiles; see doc/data-formats.md
+TimeSeries.isBandedType(type);    // does this plot type store an array per slot?
+
 TimeSeries.themes;    // { light, dark, highContrast, warm }
 TimeSeries.VERSION;   // '0.9.0'
 TimeSeries.BUILD;     // '' for a release, otherwise a commit hash or 'dev'

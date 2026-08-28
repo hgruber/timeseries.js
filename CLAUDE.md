@@ -21,7 +21,7 @@ manual:
 |---|---|
 | `doc/README.md` | The index: a "what do I want to do → read this" table, plus the cross-file conventions (ms vs. seconds, local time, series ids) |
 | `doc/getting-started.md` | Installing, the CDN/npm/self-host choice, version pinning, versioning policy, first chart, the three common pitfalls |
-| `doc/data-formats.md` | Every plot object shape with a field table each: binned, point, quantile-bands, span |
+| `doc/data-formats.md` | Every plot object shape with a field table each: binned, point, ladder (the four array-valued renderers), span |
 | `doc/configuration.md` | Constructor options, palette keys and themes, holidays, keyboard, mobile, hidden containers |
 | `doc/api.md` | Every instance method and static, grouped by task; also what is deliberately *not* in the API |
 | `doc/overlays.md` | `attachTooltip` / `attachLegend`, their override layers and controllers |
@@ -42,7 +42,12 @@ Three rules that keep this from rotting:
   when the rendering changes. The old hand-made `demo.png` is gone. Regenerate by driving
   a headless Chromium's `Page.captureScreenshot` with a clip from
   `getBoundingClientRect()` — note the clip's `scale` must stay `1` when
-  `deviceScaleFactor` is already 2, or the capture doubles up.
+  `deviceScaleFactor` is already 2, or the capture doubles up. `types.png` is the
+  `.type-grid` element of `demo/index.html` (the page caps it at 1252 CSS px, so the
+  viewport width only has to exceed that); `captureBeyondViewport: true` is needed,
+  since the grid is taller than any sane viewport. Do **not** post-process with a
+  palette quantizer: it halves the file but adds a step the next person will not
+  know to repeat, and re-shooting has to stay a one-command job.
 - **`RELEASING.md` stays out of both** — it is gitignored and German-only, see the
   Releasing section below.
 
@@ -257,7 +262,14 @@ drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
 `prepare_grid` history↔trends cross-fade `_fade`, and the source end-to-end over a stubbed
 `XMLHttpRequest` — trends→band, ±50% prefetch skip, and the out-of-order sequence guard),
 `test/rollup.test.mjs` (`rollupBinned`: every `agg`, epoch-gridded buckets, sparse means,
-non-mutation, and the shapes it refuses), and `test/crossfade.test.mjs` (the generic tier
+non-mutation, and the shapes it refuses), `test/ladder-types.test.mjs` (the array-valued
+family: `ladderPairs`, that each of `quantile-steps`/`error-bars`/`candlestick` paints the
+geometry it claims to — flat segments spanning the bin, risers present under `connect: true`
+and absent under `false`, no riser across a slot gap, whiskers and caps, the dodge closing up
+when a series is hidden, ladder-mode vs. `roles` candles — plus, on a real instance, the
+y-extent test that **fails without `values: 'array'`**, the `pushData` concat of overlapping
+ladder blocks, the hit test for all four types, and the tooltip's rung rows), and
+`test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
 the band, the hit test following the dominant tier, and `fadeHi`/`fadeLo`/`setFadeBand`
@@ -405,7 +417,7 @@ means emitting a real CJS build; do not "fix" it by re-adding the claim.
 | `legend.js` | `attachLegend()` — shipped opt-in series-visibility legend overlay (see below) |
 | `intervals.js` | Six standalone interval-arithmetic utility functions (no global side effects) |
 | `rollup.js` | `rollupBinned()` — pure helper deriving a coarser resolution tier from a binned block |
-| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline`, `multipoint` |
+| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline`, `multipoint`, `scatter`, and the ladder four (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`) |
 | `gantt.js` | `gantt` renderer + `layoutSpans()` row packing for `category: 'span'` plots |
 | `sources.js` | Data source plugin registry + built-in adapters: `zabbix`, `artificial`, `caldav` |
 | `jpZabbix.js` | Standalone Zabbix JSON-RPC client (Promise-based, reusable independently) |
@@ -453,9 +465,20 @@ centuries would otherwise accumulate an entry per day and never release it.
 TimeSeries.registerRenderer({
   type: 'my-type',
   draw(plot, rctx) { /* rctx: { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight } */ },
-  highlight(plot, n, item, rctx) { /* optional */ }
+  highlight(plot, n, item, rctx) { /* optional */ },
+  coalesce(plot) { /* optional — key; blocks sharing it are merged before draw */ },
+  values: 'array'  /* optional — declares a ladder renderer, see below */
 });
 ```
+
+**`values: 'array'` is load-bearing, not decoration.** The core branches on "does this
+type store an array per slot" at three sites in `src/timeseries.js` (the `pushData`
+concat allow-list, the extent recompute beside it, and the y-extent scan in
+`prepare_grid`). Those used to test the literal string `'quantile-bands'`; they now call
+`isBandedType()` from `src/renderers.js`, which `registerRenderer` populates from this
+field. A type that fails to declare it does **not** error — `array * number` is `NaN`,
+`NaN >= 0` is false, so the extent scan contributes nothing and the axis silently falls
+back to `plot.max`. That silence is the whole reason the flag exists.
 
 **Source plugin** (`src/sources.js`):
 ```js
@@ -488,6 +511,8 @@ Renderers receive a `plot` object with:
 
 `plot.category` selects between three shapes: the binned default (above), `'point'`
 (`data` is an array of `{t, values}`, extent from `plot.tmin`/`tmax`), and `'span'`.
+Orthogonally to `category`, a binned block's slot values may be **arrays** rather than
+numbers — see *Ladder renderers* below.
 
 An optional `extensive: true` marks the values as amounts accumulated over the bin (counts,
 sums) rather than already per-unit (averages, percentiles, gauges) — see the rate axis below.
@@ -524,6 +549,52 @@ does; each event is its own thing, nothing to keep together).
 Core support for `'span'` lives in four guarded spots in `src/timeseries.js`: extent in `pushData`
 and `prepare_grid`, the y-extent shortcut, and the hit test in `get_element` (which mirrors
 `barRect()` in `gantt.js` — keep the two in step).
+
+### Ladder renderers — one block, four ways to draw it
+
+Four renderers share one shape: a **binned** block whose every slot holds, per series, an
+*array* aligned to `plot.percentiles`. They all declare `values: 'array'`.
+
+| Type | Draws | Interpolates? |
+|---|---|---|
+| `quantile-bands` | lines through slot **centres**, shaded between | yes |
+| `quantile-steps` | a flat segment across each **bin**, shaded between | no |
+| `error-bars` | marker on the centre rung, whiskers over the pairs | no |
+| `candlestick` | wick / body / median tick, or true OHLC via `plot.roles` | no |
+
+`quantile-steps`, `error-bars` and `candlestick` exist because the bands draw a value for
+every instant between two measurements, and nothing was measured there. They are a
+presentation choice, not a data one — the same block feeds all four.
+
+Things worth knowing before touching this family:
+
+- **`ladderPairs(npct)` (`src/renderers.js`, exported) is the single reading of
+  `plot.percentiles`.** It returns `{ centre, pairs }`, pairs outermost-first. Three
+  renderers need the same decomposition and each deriving it by hand is how they would
+  drift. An **even** ladder has `centre: null` and therefore no marker and no median tick —
+  rounding to a neighbour would label a value the data never claimed. Note
+  `quantile-bands` predates it and keeps its own `Math.floor((npct-1)/2)`; that is
+  deliberate, its bold-median index must not move.
+- **`binGeom(plot, slot, rctx)`** is the left-edge/width/partial-scale arithmetic the three
+  bin-local renderers share; `multibar` predates it and keeps an inlined copy.
+- **`dodgeBin()` is only for the glyph renderers.** `error-bars` and `candlestick` draw at a
+  single x, so two series would land exactly on top of each other and the upper one would
+  erase the lower. Bands and steps must *not* dodge — their translucent fills overlay
+  correctly, and the dodge index counts only *visible* series so hiding one closes the row
+  up rather than leaving a hole.
+- **`coalesceBlocks` now carries a rebased `_partial`.** `quantile-steps` registers
+  `coalesce` (to keep risers running across fetch-block margins) *and* reads `_partial`,
+  which is exactly the collision the function's docstring used to only anticipate. Only one
+  record survives, the one at the highest rebased slot.
+- **The hit test is its own branch** in `get_element`, above the multibar loop: a ladder has
+  no stack to walk, so the bin is the target and the whole array comes back as `value`,
+  raw and unscaled. It grabs within 4px of the ladder's range (the `POINT_RADIUS.multiline`
+  idea, in value space) so a min=avg=max hairline stays hittable, picks the ladder whose
+  middle is nearest when several overlap, and — unlike the multibar branch, which still
+  does not — honours `hiddenSeries`.
+- **All tiers of one signal must use the same ladder type**: `_fade` groups by `plot.type`,
+  so two types pop rather than dissolve. The `zabbix` source's `render` option therefore
+  applies to every tier at once.
 
 ### CalDAV source
 
@@ -728,8 +799,14 @@ are `'full'` (default, pre-0.9.1 behaviour), `'clip'` (right edge on `data_until
   'history-interval': 60,                          // fine tier bucket seconds
   tiers: [{interval, kind:'history'|'trends'}],    // optional; default 60s history + 3600s trends
   padding: 0.5,                                    // prefetch fraction fetched either side
+  render: 'quantile-bands',                        // any ladder type; applies to ALL tiers
   series_colors: { [itemid]: cssColor }, name }
 ```
+
+`render` exists because a `[min, avg, max]` cell is equally a band, a step, an error bar or
+a candle. It is validated against `isBandedType()` and falls back with a warning, and it
+deliberately has no per-tier form: `_fade` groups by `plot.type`, so two types would pop
+instead of dissolving.
 
 Two (or more) **resolution tiers coexist as `quantile-bands` plots that differ only in
 `interval`**. Both `history` (raw, binned to min/avg/max per bucket) and `trends` (Zabbix's
@@ -777,7 +854,8 @@ see the section above), `ts.setYAxisLabel(lbl)`
 
 Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts)`,
 `TimeSeries.resolveColor(plot, id, alpha)`,
-`TimeSeries.rollupBinned(plot, coarseInterval, opts)`.
+`TimeSeries.rollupBinned(plot, coarseInterval, opts)`,
+`TimeSeries.ladderPairs(npct)` / `TimeSeries.isBandedType(type)` (see *Ladder renderers*).
 
 ### DOM overlays: the tooltip and legend are the shipped exceptions
 

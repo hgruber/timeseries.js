@@ -25,6 +25,12 @@ const tip = TimeSeries.attachTooltip(ts);   // that is the whole default setup
 Out of the box: a colour swatch, the series label, `(value · interval)` and the slot
 timestamp, positioned beside the cursor and flipped away from the viewport edges.
 
+On a [ladder block](data-formats.md#ladder-blocks-percentiles-minavgmax) the hit value is
+the whole array, so the body instead carries **one labelled row per rung**, highest first.
+Numeric ladder entries print as `p95`, `p50`; string ones (`'avg'`, `'min'`) verbatim.
+`percentileLabel(entry, i, plot)` retargets just those labels; `valueFormat` still formats
+each number.
+
 ### Options
 
 ```js
@@ -33,6 +39,7 @@ TimeSeries.attachTooltip(ts, {
   colorFor:    (key, plot) => myColors[key],
   valueFormat: v => v.toFixed(1) + ' req/s',
   timeFormat:  (date, ctx) => date.toISOString(),
+  percentileLabel: (entry, i, plot) => 'q' + entry,   // ladder blocks only
   plotTypes:   ['multibar'],          // or a predicate; default is every type
   colors:      { tooltipBg: '#222' }, // overrides on top of the palette
   container:   document.body,

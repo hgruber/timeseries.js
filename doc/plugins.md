@@ -19,8 +19,42 @@ TimeSeries.registerRenderer({
   type: 'my-type',                      // matches plot.type
   draw(plot, rctx) { … },
   highlight(plot, n, item, rctx) { … }, // optional — the hover/selection emphasis
+  coalesce(plot) { … },                 // optional — see "Drawing across fetch blocks"
+  values: 'scalar',                     // optional — 'array' for a ladder renderer
 });
 ```
+
+### `values: 'array'` — declaring a ladder renderer
+
+If your renderer's per-slot, per-series value is an **array** rather than a number — a
+percentile ladder, an OHLC quadruple, an error envelope — say so. The core branches on it
+in three places: whether overlapping blocks can be concatenated, how a trimmed block's
+`min`/`max` are recomputed, and how the y-axis extent is measured.
+
+Leaving it off does not raise an error; it fails *quietly*. The extent scan computes
+`array * number`, gets `NaN`, and since `NaN >= 0` is false the slot contributes nothing —
+so the axis silently falls back to the block's declared `max` and your chart is drawn at
+the wrong scale with no warning anywhere.
+
+The four built-in ladder renderers ([ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax))
+declare it, and `TimeSeries.isBandedType(type)` reports it back. `TimeSeries.ladderPairs(n)`
+gives you the same symmetric centre/pairs reading of `plot.percentiles` that `error-bars`
+and `candlestick` use, so a fifth ladder renderer stays consistent with them.
+
+### Drawing across fetch blocks (`coalesce`)
+
+A polling source stores each fetch as its own block. A renderer that connects one bin to the
+next therefore leaves a one-slot hole at every block margin. Returning a key from
+`coalesce(plot)` merges the active blocks that share it into one synthetic block — rebased
+onto a common slot grid — which is then drawn in a single `draw()` call:
+
+```js
+coalesce(plot) { return (plot.name || '') + '|' + plot.interval; }
+```
+
+Blocks in a group must share an `interval` (put it in the key, as above), since the merge
+renumbers slots against it. A renderer that draws nothing between two bins — `error-bars`,
+`candlestick` — has no margin to bridge and should leave `coalesce` off.
 
 ### The render context
 
@@ -94,8 +128,10 @@ sources: [{ 'source-type': 'artificial', type: 'steps', interval: 3600, … }]
 - **Do not apply the fade or the rate scale yourself.** Both are applied centrally; doing it
   again doubles up.
 - **Keep drawing and hit testing in step.** The core's hit test is arithmetic for binned
-  bars and pixel-nearest for point plots; if your geometry differs, hover will point at the
-  wrong thing.
+  bars, bin-and-ladder-range for `values: 'array'` blocks, and pixel-nearest for point
+  plots; if your geometry differs, hover will point at the wrong thing.
+- **Declare `values: 'array'` if your slot values are arrays** — see above for what goes
+  quietly wrong otherwise.
 
 ---
 

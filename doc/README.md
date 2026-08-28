@@ -12,7 +12,8 @@ five-minute version; everything else lives here.
 | Know what a breaking change looks like | [Getting started → Versioning](getting-started.md#versioning) |
 | Hand my data to the chart in the right shape | [Data formats](data-formats.md) |
 | Draw bars / lines / points / scatter | [Data formats → Binned series](data-formats.md#binned-series), [Point series](data-formats.md#point-series) |
-| Draw percentile fans | [Data formats → Quantile bands](data-formats.md#quantile-bands) |
+| Draw percentile fans, error bars, box plots or candlesticks | [Data formats → Ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax) |
+| Stop a chart interpolating between two measurements | [Data formats → The four renderers](data-formats.md#the-four-renderers) |
 | Draw calendar events, jobs or outages | [Data formats → Spans (Gantt)](data-formats.md#spans-gantt) |
 | Set constructor options, colours, themes, holidays | [Configuration](configuration.md) |
 | Navigate, zoom, follow "now", sync several charts | [API reference → Navigation](api.md#navigation) |
@@ -31,7 +32,7 @@ five-minute version; everything else lives here.
 | Page | Contents |
 |---|---|
 | [getting-started.md](getting-started.md) | Installing (CDN, npm, self-hosted), version pinning, versioning policy, first chart, the three mistakes everybody makes first |
-| [data-formats.md](data-formats.md) | Every plot object shape the core understands: binned, point, quantile-band, span — with a field table each |
+| [data-formats.md](data-formats.md) | Every plot object shape the core understands: binned, point, ladder, span — with a field table each |
 | [configuration.md](configuration.md) | All constructor options, the palette and the four themes, holidays, keyboard, mobile |
 | [api.md](api.md) | Every instance method and static, grouped by task |
 | [overlays.md](overlays.md) | `attachTooltip` and `attachLegend`: defaults, the override layers, the controller objects |

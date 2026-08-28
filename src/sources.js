@@ -11,6 +11,7 @@
 
 import jpZabbix from './jpZabbix.js';
 import CalDAV from './caldav.js';
+import { isBandedType } from './renderers.js';
 
 const registry = new Map();
 
@@ -144,12 +145,17 @@ export function zabbixEvict(ring, interval, centerMs, max) {
   for (var i = 0; i < keys.length && ring.size > max; i++) ring.delete(keys[i]);
 }
 
-// Rebuild a quantile-bands plot from a tier's ring. Slots are rebased onto the
-// earliest held slot so plot.data keys start near 0, matching the binned shape
-// the core expects. min=avg=max cells (history) render as a single line.
-export function zabbixPlot(tier, ring, name, series_colors) {
+// Rebuild a ladder plot from a tier's ring. Slots are rebased onto the earliest
+// held slot so plot.data keys start near 0, matching the binned shape the core
+// expects. min=avg=max cells (history) render as a single line.
+//
+// `render` picks which of the ladder renderers draws it (the source's `render`
+// option); a [min, avg, max] cell is equally a band, a step, an error bar or a
+// candle. It must be the same for every tier of a signal — the cross-fade
+// groups blocks by `plot.type`, so two types would pop instead of dissolving.
+export function zabbixPlot(tier, ring, name, series_colors, render) {
   var plot = {
-    type: 'quantile-bands',
+    type: render || 'quantile-bands',
     name: name,
     interval: tier.interval,
     interval_start: 0,
@@ -199,6 +205,14 @@ registerSource({
     var colors = source['series_colors'] || null;
     var name = source['name'] != null ? source['name']
       : String((source['itemids'] && source['itemids'][0]) || 'zabbix');
+    // A [min, avg, max] cell suits any of the ladder renderers. Anything else
+    // would be handed arrays it cannot read, so it falls back rather than
+    // drawing nothing and leaving the reader to guess why.
+    var render = source['render'] || 'quantile-bands';
+    if (!isBandedType(render)) {
+      console.warn('TimeSeries: zabbix render must be a ladder type, got', render);
+      render = 'quantile-bands';
+    }
 
     // Per-tier cache: ring of buckets, its chart slot id, the last window
     // fetched (fast-path skip) and a sequence guard against out-of-order XHRs.
@@ -249,7 +263,7 @@ registerSource({
         zabbixFold(st.ring, rows || [], tiers[i].interval, trend);
         zabbixEvict(st.ring, tiers[i].interval,
                     (viewport.tmin + viewport.tmax) / 2, ZBX_MAX_SLOTS);
-        var plot = zabbixPlot(tiers[i], st.ring, name, colors);
+        var plot = zabbixPlot(tiers[i], st.ring, name, colors, render);
         if (st.plotId === null) st.plotId = callbacks.pushData(plot);
         else callbacks.replaceData(st.plotId, plot);
         callbacks.requestRedraw();

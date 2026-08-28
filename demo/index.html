@@ -602,6 +602,120 @@
                             </label>
                         </div>
                     </div>
+                    <!-- quantile-bands — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">quantile-bands</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-bands"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-bands','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-bands','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-bands','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-bands',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- quantile-steps — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">quantile-steps</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-steps"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-steps','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-steps','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-steps','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-steps',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- error-bars — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">error-bars</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-errorbars"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-errorbars','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-errorbars','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-errorbars','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-errorbars',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- candlestick — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">candlestick</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-candlestick"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-candlestick','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-candlestick','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-candlestick','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-candlestick',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- quantile-steps, connect: false — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">quantile-steps (open)</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-steps-open"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-steps-open','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-steps-open','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-steps-open','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-steps-open',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- candlestick with roles (true OHLC) — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">candlestick (OHLC)</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-candlestick-ohlc"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-candlestick-ohlc','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-candlestick-ohlc','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-candlestick-ohlc','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-candlestick-ohlc',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 <!-- /.type-grid -->
             </div>
@@ -745,6 +859,15 @@
         { id: 'tc-multipoint-b',source: artificialMultipoint,initialView: 'yesterday' },
         { id: 'tc-multiline-p', source: artificialPointLine, initialView: 'yesterday' },
         { id: 'tc-scatter',     source: artificialPointScatter, initialView: 'yesterday' },
+        // The four ladder types, all four drawing the very same block: only
+        // quantile-bands connects one hour to the next.
+        { id: 'tc-bands',       source: artificialBands,     initialView: 'yesterday' },
+        { id: 'tc-steps',       source: artificialSteps,     initialView: 'yesterday' },
+        { id: 'tc-errorbars',   source: artificialErrorBars, initialView: 'yesterday' },
+        { id: 'tc-candlestick', source: artificialCandles,   initialView: 'yesterday' },
+        // The two per-block options, beside their defaults above.
+        { id: 'tc-steps-open',       source: artificialStepsOpen,   initialView: 'yesterday' },
+        { id: 'tc-candlestick-ohlc', source: artificialCandlesOHLC, initialView: 'yesterday' },
       ];
 
       defs.forEach(function (d) {

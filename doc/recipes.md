@@ -118,6 +118,52 @@ const ts = new TimeSeries({
 });
 ```
 
+`quantile-bands` draws a straight line from one bucket's p50 to the next one's — through a
+minute in which nothing was measured. If that reads as a claim you would rather not make,
+swap one word:
+
+```js
+type: 'quantile-steps',   // each percentile flat across its own minute, no interpolation
+```
+
+Same block, same ladder, same bold median — only now every value is drawn over the interval
+it was actually measured in. `connect: false` also drops the vertical risers between
+buckets. `'error-bars'` and `'candlestick'` read the very same block as a marker-and-whisker
+or a box-and-wick per bucket; see
+[Ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax).
+
+## Candlesticks from OHLC data
+
+```js
+// bars: [{ ts, open, high, low, close }, …] — ts in Unix seconds, hourly
+const data = {};
+bars.forEach((b, i) => { data[i] = { eurusd: [b.open, b.high, b.low, b.close] }; });
+
+const ts = new TimeSeries({
+  canvas: 'chart',
+  initialView: 'lastWeek',
+  sources: [{
+    'source-type': 'artificial',
+    type: 'candlestick',
+    name: 'EUR/USD',
+    // `roles` names which array index is which, which is what gives the block a
+    // direction: rising bars are drawn hollow, falling ones filled.
+    percentiles: ['open', 'high', 'low', 'close'],
+    roles: { open: 0, high: 1, low: 2, close: 3 },
+    interval_start: bars[0].ts,
+    interval_end: bars[0].ts + bars.length * 3600,
+    interval: 3600,
+    count: bars.length,
+    min: Math.min(...bars.map(b => b.low)),
+    max: Math.max(...bars.map(b => b.high)),
+    data,
+  }],
+});
+```
+
+Without `roles` the same renderer reads the array as an ascending ladder instead and draws a
+box plot — outermost pair as the wick, next pair in as the body.
+
 ## Calendar events or job runs
 
 ```js
@@ -327,7 +373,7 @@ with `npm run build && npm run serve`:
 
 | Page | Shows |
 |---|---|
-| `demo/index.html` | Stacked bars, butterfly, lines, points, scatter, the resolution cross-fade, follow mode, the legend |
+| `demo/index.html` | Stacked bars, butterfly, lines, points, scatter, the four ladder types side by side, the resolution cross-fade, follow mode, the legend |
 | `demo/caldav.html` | Spans and the `gantt` renderer, against static fixtures — no server needed |
 | `demo/zabbix.html` | The real `zabbix` source against a synthetic API — no server needed |
 | `demo/caldav-live.html` | A real CalDAV server, with a connect form |

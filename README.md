@@ -71,7 +71,7 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 
 | | |
 |---|---|
-| [![Six plot types side by side](doc/img/types.png)](https://hgruber.github.io/timeseries.js/demo/) | **Six built-in plot types** — stacked bars, butterfly, lines, points, scatter and percentile bands, from binned or timestamped data.<br>[`demo/index.html`](https://hgruber.github.io/timeseries.js/demo/) |
+| [![The built-in plot types side by side](doc/img/types.png)](https://hgruber.github.io/timeseries.js/demo/) | **Nine built-in plot types** — stacked bars, butterfly, lines, points, scatter, and four ways to draw a distribution per bin: percentile bands, stepped bands, error bars and candlesticks.<br>[`demo/index.html`](https://hgruber.github.io/timeseries.js/demo/) |
 | [![Calendar events drawn as spans across a week](doc/img/gantt.png)](https://hgruber.github.io/timeseries.js/demo/caldav.html) | **Spans and Gantt rows** — calendar events, job runs, outages. Rows are packed automatically; lanes keep sources apart.<br>[`demo/caldav.html`](https://hgruber.github.io/timeseries.js/demo/caldav.html) |
 | [![A min/avg/max band over a month, warm theme](doc/img/bands.png)](https://hgruber.github.io/timeseries.js/demo/zabbix.html) | **Zoom-adaptive resolution** — a fine tier and a coarse one held at once and dissolved into each other, so crossing the boundary has no visible pop.<br>[`demo/zabbix.html`](https://hgruber.github.io/timeseries.js/demo/zabbix.html) |
 | [![The same stacked bars in the dark theme](doc/img/dark.png)](https://hgruber.github.io/timeseries.js/demo/) | **Four themes, one call** — `ts.setColors(TimeSeries.themes.dark)` re-themes the chart and its overlays together.<br>[Colours & themes](doc/configuration.md#colours-and-themes) |
@@ -88,8 +88,11 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 - **Viewport sync** — several charts pan, zoom and follow together
 - **Zoom-adaptive resolution** — two tiers of one signal cross-faded as bars get too narrow
 - **Smart downsampling** — LTTB keeps large point series fast without losing their shape
-- **Built-in plot types** — `multibar`, `multiline`, `multipoint`, `scatter`,
-  `quantile-bands`, `gantt`
+- **Built-in plot types** — `multibar`, `multiline`, `multipoint`, `scatter`, `gantt`, and
+  four renderers for a distribution per bin: `quantile-bands`, `quantile-steps`,
+  `error-bars`, `candlestick`
+- **Bin-local distributions** — the three types beside `quantile-bands` draw each bin on its
+  own, so nothing is interpolated across a gap where nothing was measured
 - **Built-in data sources** — Zabbix JSON-RPC, CalDAV calendars, static data
 - **Opt-in tooltip & legend** — one call each, themed from the palette, overridable at every
   level

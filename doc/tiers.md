@@ -68,7 +68,7 @@ Derives a coarser block from a finer one. Pure and non-mutating.
 
 | Argument | Notes |
 |---|---|
-| `plot` | A **binned scalar** block. `category: 'point'` / `'span'` and array-valued blocks (`quantile-bands`) return `null` |
+| `plot` | A **binned scalar** block. `category: 'point'` / `'span'` and [ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax) (array-valued: `quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`) return `null` |
 | `coarseInterval` | Seconds. Must be an integer multiple of `plot.interval` |
 | `opts.agg` | `'sum'` (default) \| `'mean'` \| `'max'` \| `'min'` \| `fn(values, seriesId, slot)` |
 

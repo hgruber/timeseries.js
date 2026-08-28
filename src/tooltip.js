@@ -11,8 +11,10 @@
 // same contract any third-party overlay would have to live with.
 //
 // Three levels of override, so the common case needs no configuration at all:
-//   • nothing            → swatch + series label + (value · interval) + time
-//   • labelFor / colorFor / valueFormat / timeFormat → retarget one piece
+//   • nothing            → swatch + series label + (value · interval) + time,
+//                          plus one labelled row per rung on a ladder block
+//   • labelFor / colorFor / valueFormat / timeFormat / percentileLabel
+//                        → retarget one piece
 //   • formatter(ctx)     → take over the body completely; ctx.defaultContent()
 //                          still returns the standard nodes to build on
 //
@@ -171,6 +173,36 @@ export function attachTooltip(ts, options) {
     return parts.length ? '(' + parts.join(' · ') + ')' : '';
   }
 
+  // Ladder blocks (quantile-bands, quantile-steps, error-bars, candlestick)
+  // hand back the *whole* percentile array as the value. Rendered through
+  // valueFormat it would read "12,40,88", so each rung gets a labelled row of
+  // its own. Numeric ladder entries print as p5/p50/p95, string ones ('min',
+  // 'avg') verbatim, and a block with no `percentiles` falls back to the index.
+  function rungLabel(plot, i) {
+    var pct = plot.percentiles;
+    var entry = (pct && pct[i] !== undefined) ? pct[i] : i;
+    if (opts.percentileLabel) return String(opts.percentileLabel(entry, i, plot));
+    return typeof entry === 'number' ? 'p' + entry : String(entry);
+  }
+
+  // Highest rung first, so the rows read top-down in the order the ladder is
+  // drawn on the chart.
+  function ladderRows(ctx) {
+    var rows = [];
+    for (var i = ctx.value.length - 1; i >= 0; i--) {
+      var row = div('ts-tooltip-rung');
+      Object.assign(row.style, {
+        display: 'flex', gap: '10px', justifyContent: 'space-between',
+      });
+      var name = span(rungLabel(ctx.plot, i));
+      name.style.color = theme.tooltipMuted;
+      row.appendChild(name);
+      row.appendChild(span(valueFormat(ctx.value[i])));
+      rows.push(row);
+    }
+    return rows;
+  }
+
   function defaultContent(ctx) {
     var nodes = [];
 
@@ -190,6 +222,8 @@ export function attachTooltip(ts, options) {
       title.appendChild(m);
     }
     nodes.push(title);
+
+    if (Array.isArray(ctx.value)) for (const row of ladderRows(ctx)) nodes.push(row);
 
     var when = timeText(ctx);
     if (when) {
