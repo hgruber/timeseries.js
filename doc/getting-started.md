@@ -8,7 +8,7 @@ mistakes that cost everybody their first half hour.
 ### Script tag (no build step)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js"></script>
 ```
 
 That is an IIFE bundle: it defines a global `TimeSeries` and nothing else. No build, no
@@ -41,8 +41,8 @@ import TimeSeries, { siFormat, Easter, isoWeekStart } from '@hgruber/timeseries.
 
 | URL | What it gives you |
 |---|---|
-| `…/npm/@hgruber/timeseries.js@0.9.0/dist/timeseries.min.js` | **One exact version.** Immutable — npm never lets a published version change. Use this in production. |
-| `…/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js` | **The latest 0.9.x.** Picks up fixes, never a breaking change (see [Versioning](#versioning)). |
+| `…/npm/@hgruber/timeseries.js@0.10.0/dist/timeseries.min.js` | **One exact version.** Immutable — npm never lets a published version change. Use this in production. |
+| `…/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js` | **The latest 0.10.x.** Picks up fixes, never a breaking change (see [Versioning](#versioning)). |
 | [`hgruber.github.io/timeseries.js/dist/timeseries.min.js`](https://hgruber.github.io/timeseries.js/dist/timeseries.min.js) | **Always the tip of `main`.** Rebuilt on every push, deliberately unpinned — for trying things out, not for production. |
 
 Prefix the first two with `https://cdn.jsdelivr.net`; `https://unpkg.com` serves the same
@@ -67,7 +67,7 @@ The project is pre-1.0 and follows the usual 0.x convention:
 - a **minor** bump (`0.9.0` → `0.10.0`) may break the public API,
 - a **patch** bump (`0.9.0` → `0.9.1`) never does.
 
-So `^0.9.0` in a `package.json`, or `@0.9` in a CDN URL, gets you fixes without surprises.
+So `^0.10.0` in a `package.json`, or `@0.10` in a CDN URL, gets you fixes without surprises.
 Every release is listed in [CHANGELOG.md](../CHANGELOG.md), and breaking changes are called
 out there under *Changed* or *Removed*.
 
@@ -83,7 +83,7 @@ A complete file. Save it, open it, done.
 <title>timeseries.js</title>
 <canvas id="chart" style="width: 900px; height: 360px"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js"></script>
 <script>
   // 24 hourly slots, two series each. `data[slot][seriesId] = value`.
   const t0 = Math.floor(Date.now() / 3600000) * 3600 - 23 * 3600;   // Unix *seconds*, on the hour

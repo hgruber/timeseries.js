@@ -24,7 +24,7 @@ Save this as an HTML file and open it. That is the whole setup.
 ```html
 <canvas id="chart" style="width: 900px; height: 360px"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js"></script>
 <script>
   // 24 hourly slots, two series each.
   const t0 = Math.floor(Date.now() / 3600000) * 3600 - 23 * 3600;   // Unix seconds, on the hour
@@ -58,7 +58,7 @@ Save this as an HTML file and open it. That is the whole setup.
 Drag to pan, scroll to zoom (shift+scroll to pan), click a time label to zoom to it,
 arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 
-> Using it for real? Pin a version — `@0.9` tracks patch releases, `@0.9.0` is immutable.
+> Using it for real? Pin a version — `@0.10` tracks patch releases, `@0.10.0` is immutable.
 > With a bundler: `npm i @hgruber/timeseries.js`.
 > Details in [Getting started](doc/getting-started.md#installing).
 

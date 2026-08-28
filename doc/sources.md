@@ -152,7 +152,7 @@ browser makes no cross-origin check at all.
 <title>Zabbix — timeseries.js</title>
 <canvas id="chart" style="width:100%;height:360px"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js"></script>
 <script>
   const ts = new TimeSeries({
     canvas: 'chart',
@@ -189,7 +189,7 @@ Panning and zooming refetch as needed.
 <title>CalDAV — timeseries.js</title>
 <canvas id="chart" style="width:100%;height:420px"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js"></script>
 <script>
   const ts = new TimeSeries({
     canvas: 'chart',

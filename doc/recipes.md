@@ -5,7 +5,7 @@ exists:
 
 ```html
 <canvas id="chart" style="width:100%;height:360px"></canvas>
-<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.9/dist/timeseries.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@hgruber/timeseries.js@0.10/dist/timeseries.min.js"></script>
 ```
 
 - [Stacked bars from an array](#stacked-bars-from-an-array-of-rows)
