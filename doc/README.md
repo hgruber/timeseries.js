@@ -12,8 +12,11 @@ five-minute version; everything else lives here.
 | Know what a breaking change looks like | [Getting started → Versioning](getting-started.md#versioning) |
 | Hand my data to the chart in the right shape | [Data formats](data-formats.md) |
 | Draw bars / lines / points / scatter | [Data formats → Binned series](data-formats.md#binned-series), [Point series](data-formats.md#point-series) |
+| Shade under a line, stack areas, or draw a step chart | [Data formats → Line and area options](data-formats.md#line-and-area-options) |
+| Draw a running total broken into its contributions | [Data formats → Waterfall blocks](data-formats.md#waterfall-blocks) |
+| Give each series its own row (heatmap, horizon) | [Data formats → Laned blocks](data-formats.md#laned-blocks--heatmap-and-horizon) |
 | Draw percentile fans, error bars, box plots or candlesticks | [Data formats → Ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax) |
-| Stop a chart interpolating between two measurements | [Data formats → The four renderers](data-formats.md#the-four-renderers) |
+| Stop a chart interpolating between two measurements | [Data formats → The five renderers](data-formats.md#the-five-renderers) |
 | Draw calendar events, jobs or outages | [Data formats → Spans (Gantt)](data-formats.md#spans-gantt) |
 | Set constructor options, colours, themes, holidays | [Configuration](configuration.md) |
 | Navigate, zoom, follow "now", sync several charts | [API reference → Navigation](api.md#navigation) |

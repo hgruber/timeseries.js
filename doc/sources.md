@@ -64,7 +64,7 @@ sources: [{
 | `'history-interval'` | `60` | Bucket width of the fine tier, seconds |
 | `tiers` | 60 s history + 3600 s trends | `[{ interval, kind: 'history' \| 'trends' }]` |
 | `padding` | `0.5` | Fraction of the viewport prefetched either side |
-| `render` | `'quantile-bands'` | Which [ladder renderer](data-formats.md#the-four-renderers) draws the block: also `'quantile-steps'`, `'error-bars'`, `'candlestick'`. Applies to **every** tier — the cross-fade groups blocks by type, so two of them would pop rather than dissolve. Anything that is not a ladder type warns and falls back |
+| `render` | `'quantile-bands'` | Which [ladder renderer](data-formats.md#the-five-renderers) draws the block: also `'quantile-steps'`, `'error-bars'`, `'candlestick'`, `'ohlc'`. Applies to **every** tier — the cross-fade groups blocks by type, so two of them would pop rather than dissolve. Anything that is not a ladder type warns and falls back |
 
 Both tiers map to the same `[min, avg, max]` band shape, which is why one
 `quantile-bands` renderer draws the fine tier as a single line (min = avg = max at about one

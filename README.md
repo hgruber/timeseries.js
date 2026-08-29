@@ -88,11 +88,14 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 - **Viewport sync** — several charts pan, zoom and follow together
 - **Zoom-adaptive resolution** — two tiers of one signal cross-faded as bars get too narrow
 - **Smart downsampling** — LTTB keeps large point series fast without losing their shape
-- **Built-in plot types** — `multibar`, `multiline`, `multipoint`, `scatter`, `gantt`, and
-  four renderers for a distribution per bin: `quantile-bands`, `quantile-steps`,
-  `error-bars`, `candlestick`
-- **Bin-local distributions** — the three types beside `quantile-bands` draw each bin on its
+- **Built-in plot types** — `multibar`, `multiline` (with `step`/`fill`), `stackarea`,
+  `waterfall`, `multipoint`, `scatter`, `heatmap`, `horizon`, `gantt`, and five renderers
+  for a distribution per bin: `quantile-bands`, `quantile-steps`, `error-bars`,
+  `candlestick`, `ohlc`
+- **Bin-local distributions** — the four types beside `quantile-bands` draw each bin on its
   own, so nothing is interpolated across a gap where nothing was measured
+- **Categorical y-axis** — `heatmap`, `horizon` and `gantt` give each series its own row,
+  labelled by name instead of by number
 - **Built-in data sources** — Zabbix JSON-RPC, CalDAV calendars, static data
 - **Opt-in tooltip & legend** — one call each, themed from the palette, overridable at every
   level

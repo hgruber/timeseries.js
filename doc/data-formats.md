@@ -174,9 +174,9 @@ Everything else is the ordinary binned block above: `interval`, `count`, `series
 **Binned only** — there is no `category: 'point'` form for any of these. A ladder needs a
 bin to belong to.
 
-### The four renderers
+### The five renderers
 
-All four read the same block. They differ in one thing: whether they claim anything about
+All five read the same block. They differ in one thing: whether they claim anything about
 the time *between* two bins.
 
 ```js
@@ -184,6 +184,7 @@ the time *between* two bins.
 { …, type: 'quantile-steps' }   // a flat segment across each BIN, shaded between
 { …, type: 'error-bars' }       // a marker on the centre rung, whiskers over the pairs
 { …, type: 'candlestick' }      // wick, body and median tick per bin
+{ …, type: 'ohlc' }             // high-low bar, open ticked left, close ticked right
 ```
 
 `quantile-bands` interpolates: it draws a straight line from one bin's median to the next
