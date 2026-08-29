@@ -14,6 +14,8 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-30
+
 ### Added
 
 - **Two new plot types, and two options that turn `multiline` into an area chart.**
@@ -239,7 +241,8 @@ For anyone arriving at the project with this release, the library covers:
 - Opt-in tooltip and series-visibility legend overlays that follow the palette.
 - Four built-in themes and a fully overridable colour palette.
 
-[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/hgruber/timeseries.js/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/hgruber/timeseries.js/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/hgruber/timeseries.js/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/hgruber/timeseries.js/releases/tag/v0.9.0
