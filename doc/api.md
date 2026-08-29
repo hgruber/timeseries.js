@@ -236,6 +236,7 @@ TimeSeries.siFormat(value);                              // 1234 → '1.2k'
 TimeSeries.ladderPairs(n);        // { centre, pairs } — how the ladder renderers read
                                   //   plot.percentiles; see doc/data-formats.md
 TimeSeries.isBandedType(type);    // does this plot type store an array per slot?
+TimeSeries.isStackedType(type);   // does this plot type sum its series per slot?
 
 TimeSeries.themes;    // { light, dark, highContrast, warm }
 TimeSeries.VERSION;   // '0.9.0'

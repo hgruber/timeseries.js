@@ -21,7 +21,7 @@ manual:
 |---|---|
 | `doc/README.md` | The index: a "what do I want to do → read this" table, plus the cross-file conventions (ms vs. seconds, local time, series ids) |
 | `doc/getting-started.md` | Installing, the CDN/npm/self-host choice, version pinning, versioning policy, first chart, the three common pitfalls |
-| `doc/data-formats.md` | Every plot object shape with a field table each: binned, point, ladder (the four array-valued renderers), span |
+| `doc/data-formats.md` | Every plot object shape with a field table each: binned, point, ladder (the five array-valued renderers), span; plus the `step`/`fill` line-and-area options |
 | `doc/configuration.md` | Constructor options, palette keys and themes, holidays, keyboard, mobile, hidden containers |
 | `doc/api.md` | Every instance method and static, grouped by task; also what is deliberately *not* in the API |
 | `doc/overlays.md` | `attachTooltip` / `attachLegend`, their override layers and controllers |
@@ -268,8 +268,15 @@ geometry it claims to — flat segments spanning the bin, risers present under `
 and absent under `false`, no riser across a slot gap, whiskers and caps, the dodge closing up
 when a series is hidden, ladder-mode vs. `roles` candles — plus, on a real instance, the
 y-extent test that **fails without `values: 'array'`**, the `pushData` concat of overlapping
-ladder blocks, the hit test for all four types, and the tooltip's rung rows), and
-`test/crossfade.test.mjs` (the generic tier
+ladder blocks, the hit test for all four types, and the tooltip's rung rows),
+`test/area-types.test.mjs` (the area family: the exact path `multiline` traces under each
+`step` mode — including the trailing segment that carries the last value across its own bin
+— that `fill` closes on the zero line *under* the stroke and clamps to the plot box, that a
+line bridges a slot gap but breaks on a null, `stackarea`'s bands sitting on the running
+total and closing up when a series is hidden, `ohlc`'s tick geometry and its `candleColors`
+direction, and — on a real instance — the y-extent test that **fails without
+`stacked: true`**, paired with `multiline` over the identical data to show the two apart),
+and `test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
 the band, the hit test following the dominant tier, and `fadeHi`/`fadeLo`/`setFadeBand`
@@ -417,7 +424,7 @@ means emitting a real CJS build; do not "fix" it by re-adding the claim.
 | `legend.js` | `attachLegend()` — shipped opt-in series-visibility legend overlay (see below) |
 | `intervals.js` | Six standalone interval-arithmetic utility functions (no global side effects) |
 | `rollup.js` | `rollupBinned()` — pure helper deriving a coarser resolution tier from a binned block |
-| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline`, `multipoint`, `scatter`, and the ladder four (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`) |
+| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline` (with `step`/`fill`), `stackarea`, `multipoint`, `scatter`, and the ladder five (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc`) |
 | `gantt.js` | `gantt` renderer + `layoutSpans()` row packing for `category: 'span'` plots |
 | `sources.js` | Data source plugin registry + built-in adapters: `zabbix`, `artificial`, `caldav` |
 | `jpZabbix.js` | Standalone Zabbix JSON-RPC client (Promise-based, reusable independently) |
@@ -467,7 +474,8 @@ TimeSeries.registerRenderer({
   draw(plot, rctx) { /* rctx: { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight } */ },
   highlight(plot, n, item, rctx) { /* optional */ },
   coalesce(plot) { /* optional — key; blocks sharing it are merged before draw */ },
-  values: 'array'  /* optional — declares a ladder renderer, see below */
+  values: 'array', /* optional — declares a ladder renderer, see below */
+  stacked: true    /* optional — declares that series sum per slot, see below */
 });
 ```
 
@@ -479,6 +487,16 @@ concat allow-list, the extent recompute beside it, and the y-extent scan in
 field. A type that fails to declare it does **not** error — `array * number` is `NaN`,
 `NaN >= 0` is false, so the extent scan contributes nothing and the axis silently falls
 back to `plot.max`. That silence is the whole reason the flag exists.
+
+**`stacked: true` is the same move for the y-extent.** A stacked type's tallest point in
+a slot is the *sum* of that slot's series; an unstacked one's is its largest single
+series, and `prepare_grid` has no other way to tell them apart. This was the literal
+`plot.type === 'multibar'` until `stackarea` needed the same treatment, i.e. it was a fact
+only the core knew and a second stacked renderer could not declare. It now reads
+`isStackedType()`, populated by `registerRenderer` from this field, and the same flag also
+puts the type on the `pushData` concat allow-list (which likewise tested `'multibar'`).
+Omitting it fails as quietly as the banded case, mirror-imaged: the axis is measured from
+the tallest single series and the top of every stack is clipped off.
 
 **Source plugin** (`src/sources.js`):
 ```js
@@ -550,9 +568,41 @@ Core support for `'span'` lives in four guarded spots in `src/timeseries.js`: ex
 and `prepare_grid`, the y-extent shortcut, and the hit test in `get_element` (which mirrors
 `barRect()` in `gantt.js` — keep the two in step).
 
-### Ladder renderers — one block, four ways to draw it
+### The area family — `multiline`'s `step`/`fill`, and `stackarea`
 
-Four renderers share one shape: a **binned** block whose every slot holds, per series, an
+`multiline` takes two per-block options (`step: 'after'|'before'`, `fill: true`), and
+`stackarea` is the stacked renderer beside it. Both shapes — binned and point — support
+all of it. Things worth knowing before touching this family:
+
+- **`lineRuns(plot, sid, rctx)` is the single reading of "where does this series' line
+  go".** It replaced two near-identical branches in `multiline` that had already begun to
+  drift: the binned one broke a run only on `undefined`, so an explicit `null` was drawn at
+  `Y(0)` — a spike to the axis indistinguishable from data. It returns `{runs, binW}`;
+  `binW` exists because a `step: 'after'` staircase has to carry its last value *across*
+  the bin that value belongs to, which a list of bin-start x-coordinates cannot express.
+- **A line bridges a gap in the slot numbering; a filled form breaks on it.** That split is
+  deliberate and it is the rule for the whole file: `multiline` and `quantile-bands`
+  interpolate by definition, while `stackarea` and `quantile-steps` shade a region, and
+  shading across unmeasured time asserts far more than a line through it does. What breaks
+  a line is a missing *value* in a slot that exists. Note CLAUDE.md and the source used to
+  claim `multiline` broke on a missing slot; it never did.
+- **`stackarea` is a type, not a `stack: true` flag on `multiline`** — because
+  `prepare_grid` decides how to measure the y-extent from the *type* (`isStackedType`), so
+  a per-plot flag would put that decision somewhere the registry cannot see it.
+- **`traceRun` traces into the current path; `edgePoints` returns a list.** They look
+  redundant and are not: a stacked band is closed by walking its *lower* edge backwards,
+  and a path-tracing helper cannot be run in reverse.
+- **`coalesceBlocks` carries `step` and `fill` alongside `connect`.** All three change what
+  a block draws *between* bins, so a merged block that dropped them would draw differently
+  from the blocks it was built out of. `stackarea` registers `coalesce` for the same reason
+  `quantile-steps` does — a stack drawn block by block notches at every fetch margin.
+- **`fill` clamps its closing edge to the plot box.** The zero line can sit far outside the
+  viewport, and an unclamped fill paints over the axis and the margins on its way there.
+  The data vertices themselves are *not* clamped, matching every other renderer.
+
+### Ladder renderers — one block, five ways to draw it
+
+Five renderers share one shape: a **binned** block whose every slot holds, per series, an
 *array* aligned to `plot.percentiles`. They all declare `values: 'array'`.
 
 | Type | Draws | Interpolates? |
@@ -560,6 +610,7 @@ Four renderers share one shape: a **binned** block whose every slot holds, per s
 | `quantile-bands` | lines through slot **centres**, shaded between | yes |
 | `quantile-steps` | a flat segment across each **bin**, shaded between | no |
 | `error-bars` | marker on the centre rung, whiskers over the pairs | no |
+| `ohlc` | high–low line, open ticked left, close ticked right | no |
 | `candlestick` | wick / body / median tick, or true OHLC via `plot.roles` | no |
 
 `quantile-steps`, `error-bars` and `candlestick` exist because the bands draw a value for
@@ -855,7 +906,8 @@ see the section above), `ts.setYAxisLabel(lbl)`
 Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts)`,
 `TimeSeries.resolveColor(plot, id, alpha)`,
 `TimeSeries.rollupBinned(plot, coarseInterval, opts)`,
-`TimeSeries.ladderPairs(npct)` / `TimeSeries.isBandedType(type)` (see *Ladder renderers*).
+`TimeSeries.ladderPairs(npct)` / `TimeSeries.isBandedType(type)` (see *Ladder renderers*),
+`TimeSeries.isStackedType(type)` (see the renderer contract above).
 
 ### DOM overlays: the tooltip and legend are the shipped exceptions
 

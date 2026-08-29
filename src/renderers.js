@@ -2,7 +2,7 @@
 //
 // Each renderer plugin is:
 //   { type: string, draw(plot, rctx), highlight?(plot, n, item, rctx),
-//     coalesce?(plot) -> key, values?: 'scalar' | 'array' }
+//     coalesce?(plot) -> key, values?: 'scalar' | 'array', stacked?: boolean }
 // rctx shape: { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight }
 
 const registry = new Map();
@@ -17,15 +17,29 @@ const registry = new Map();
 // third-party) ladder renderer from rediscovering that the hard way.
 const bandedTypes = new Set();
 
+// Types that *sum* their series per slot rather than drawing each independently.
+// The y-extent scan in prepare_grid needs this: a stacked type's tallest point is
+// the sum of a slot's series, an unstacked one's is its largest single series, and
+// measuring a stack the unstacked way clips the top of every bar off the chart.
+//
+// This used to be the literal `plot.type === 'multibar'` in timeseries.js, which
+// made "is this stacked" a fact only the core knew — so a second stacked renderer
+// had to edit the core to be measured correctly. Declaring it on the plugin is the
+// same move `values: 'array'` makes above, for the same reason.
+const stackedTypes = new Set();
+
 /**
  * Register a renderer plugin for a given plot type.
  * @param {{ type: string, draw: function, highlight?: function,
- *          coalesce?: function, values?: 'scalar'|'array' }} plugin
+ *          coalesce?: function, values?: 'scalar'|'array',
+ *          stacked?: boolean }} plugin
  */
 export function registerRenderer(plugin) {
   registry.set(plugin.type, plugin);
   if (plugin.values === 'array') bandedTypes.add(plugin.type);
   else bandedTypes.delete(plugin.type);
+  if (plugin.stacked) stackedTypes.add(plugin.type);
+  else stackedTypes.delete(plugin.type);
 }
 
 /**
@@ -34,6 +48,13 @@ export function registerRenderer(plugin) {
  */
 export function isBandedType(type) {
   return bandedTypes.has(type);
+}
+
+/**
+ * Does this plot type stack its series per slot? See `stackedTypes` above.
+ */
+export function isStackedType(type) {
+  return stackedTypes.has(type);
 }
 
 /**
@@ -49,8 +70,10 @@ export function isBandedType(type) {
  * — quantile-steps is the case the note here used to only anticipate. Only one
  * record survives, the one at the highest rebased slot: `_partial` names a
  * single bin, and in practice only the newest block of a group carries a
- * `data_until` at all. `connect` rides along because it changes what the merged
- * block draws between bins.
+ * `data_until` at all. `connect`, `step` and `fill` ride along for the same
+ * reason as each other: every one of them changes what the merged block draws
+ * *between* bins, so dropping them would make a coalesced block draw differently
+ * from the blocks it was built out of.
  */
 function coalesceBlocks(group, data) {
   if (group.length === 1) return data[group[0]];
@@ -68,14 +91,16 @@ function coalesceBlocks(group, data) {
   };
   var colors = null;
   var name = base.name;
-  var connect = base.connect;
   var partial = null;
+  // Flags that change what is drawn between bins. First non-null wins, the same
+  // rule `name` follows — they are block metadata, not per-slot data.
+  var flags = { connect: base.connect, step: base.step, fill: base.fill };
   for (const i of group) {
     var blk = data[i];
     if (blk.percentiles && !merged.percentiles) merged.percentiles = blk.percentiles;
     if (blk.series_colors) colors = Object.assign(colors || {}, blk.series_colors);
     if (name == null) name = blk.name;
-    if (connect == null) connect = blk.connect;
+    for (var fk in flags) if (flags[fk] == null) flags[fk] = blk[fk];
     var shift = Math.round((blk.interval_start - baseStart) / interval);
     if (blk._partial && (!partial || blk._partial.slot + shift > partial.slot))
       partial = Object.assign({}, blk._partial, { slot: blk._partial.slot + shift });
@@ -83,7 +108,7 @@ function coalesceBlocks(group, data) {
   }
   if (colors) merged.series_colors = colors;
   if (name != null) merged.name = name;
-  if (connect != null) merged.connect = connect;
+  for (var fk2 in flags) if (flags[fk2] != null) merged[fk2] = flags[fk2];
   if (partial) merged._partial = partial;
   return merged;
 }
@@ -389,45 +414,114 @@ function multipoint(plot, rctx) {
   }
 }
 
-function multiline(plot, rctx) {
-  var { c, X, Y, hidden } = rctx;
-  c.lineWidth = 1.5;
+/**
+ * Runs of drawable points for one series, chronologically — one run per unbroken
+ * stretch of data, so a caller can stroke or fill each without bridging a gap.
+ * The point shape ({t, values}) and the binned shape (a slot grid) reduce to the
+ * same {x, v} list here.
+ *
+ * This is the single reading of "where does this series' line go". multiline,
+ * its fill, and stackarea all need it, and each deriving it by hand is how they
+ * would drift apart on the gap rule — which is exactly what the two near-identical
+ * branches this replaces had already started to do (the binned one broke only on
+ * `undefined`, so an explicit `null` was drawn as a dive to zero).
+ *
+ * What breaks a run is a missing *value* in a slot that exists. An absent slot
+ * is bridged, which is deliberate and unchanged: multiline is the interpolating
+ * renderer, and quantile-bands reads its slots the same way. The filled forms
+ * break on an absent slot instead (stackarea below, quantile-steps already) —
+ * shading across unmeasured time asserts much more than a line through it does.
+ *
+ * `binW` is the pixel width of one bin, 0 for a point plot: a step line has to
+ * carry its last value across the bin that value belongs to, and a list of
+ * bin-start x-coordinates alone cannot express that.
+ */
+function lineRuns(plot, sid, rctx) {
+  var X = rctx.X;
+  var runs = [];
+  var run = null;
+  var push = function (x, v) {
+    if (!run) { run = []; runs.push(run); }
+    run.push({ x: x, v: v });
+  };
   if (plot.category === 'point') {
-    for (const sid of plotSeriesIds(plot)) {
-      if (hidden && hidden.has(sid)) continue;
-      var started = false;
-      c.beginPath();
-      for (const pt of plot.data) {
-        var v = pt.values[sid];
-        if (v == null) { started = false; continue; }
-        var x = X(pt.t);
-        if (!started) { c.moveTo(x, Y(v)); started = true; }
-        else c.lineTo(x, Y(v));
-      }
-      c.strokeStyle = resolveColor(plot, sid, 0.8);
-      c.stroke();
+    for (const pt of plot.data) {
+      var pv = pt.values[sid];
+      if (pv == null) { run = null; continue; }
+      push(X(pt.t), pv);
     }
-  } else {
-    var start = plot.interval_start * 1000;
-    var step = plot.interval * 1000;
-    // Slots in chronological order — do not assume slot 0 exists (it may be
-    // empty for an arbitrary time window).
-    var slots = Object.keys(plot.data).map(Number).sort((a, b) => a - b);
-    // Series ids = union across all slots (sparse slots may omit some series).
-    for (const i of plotSeriesIds(plot)) {
-      if (hidden && hidden.has(i)) continue;
-      started = false;
-      c.beginPath();
-      for (const t of slots) {
-        var val = plot.data[t][i];
-        if (val === undefined) { started = false; continue; }
-        x = X(start + t * step);
-        if (!started) { c.moveTo(x, Y(val)); started = true; }
-        else c.lineTo(x, Y(val));
+    return { runs: runs, binW: 0 };
+  }
+  var start = plot.interval_start * 1000;
+  var step = plot.interval * 1000;
+  // Slots in chronological order — do not assume slot 0 exists (a block covers
+  // an arbitrary window).
+  for (const s of sortedSlots(plot)) {
+    var v = plot.data[s][sid];
+    if (v == null) { run = null; continue; }
+    push(X(start + s * step), v);
+  }
+  return { runs: runs, binW: rctx.ppms * step };
+}
+
+/**
+ * Trace one run into the current path — a plain polyline, or a staircase when
+ * `step` is set: 'after' holds each value until the next point (which is what a
+ * binned slot *means*, since the bin covers the whole interval), 'before' holds
+ * it from the previous one.
+ *
+ * Returns the x the run ends at. Under 'after' that is past the last point: the
+ * final value still owns its own bin, so the staircase has to cross it rather
+ * than stopping on the bin's left edge. The caller needs that x to close a fill.
+ */
+function traceRun(c, Y, run, step, binW) {
+  c.moveTo(run[0].x, Y(run[0].v));
+  for (var i = 1; i < run.length; i++) {
+    var p = run[i], q = run[i - 1];
+    if (step === 'after') c.lineTo(p.x, Y(q.v));
+    else if (step === 'before') c.lineTo(q.x, Y(p.v));
+    c.lineTo(p.x, Y(p.v));
+  }
+  var last = run[run.length - 1];
+  var endX = last.x;
+  if (step === 'after' && binW) {
+    endX += binW;
+    c.lineTo(endX, Y(last.v));
+  }
+  return endX;
+}
+
+// multiline — one gap-aware polyline per series. `plot.step` ('after'|'before')
+// draws it as a staircase instead of interpolating, and `plot.fill` shades the
+// area down to the zero line. Both apply to binned and point blocks.
+function multiline(plot, rctx) {
+  var { c, Y, margin, plotHeight, hidden } = rctx;
+  var step = (plot.step === 'after' || plot.step === 'before') ? plot.step : null;
+  c.lineWidth = 1.5;
+  for (const sid of plotSeriesIds(plot)) {
+    if (hidden && hidden.has(sid)) continue;
+    var lr = lineRuns(plot, sid, rctx);
+    if (plot.fill) {
+      // Clamped to the plot box: the zero line can sit far outside the viewport
+      // (a series that never approaches zero), and an unclamped fill would paint
+      // over the axis and the margins on its way there.
+      var y0 = Math.max(margin.top, Math.min(margin.top + plotHeight, Y(0)));
+      c.fillStyle = resolveColor(plot, sid, 0.18);
+      for (const frun of lr.runs) {
+        c.beginPath();
+        var endX = traceRun(c, Y, frun, step, lr.binW);
+        c.lineTo(endX, y0);
+        c.lineTo(frun[0].x, y0);
+        c.closePath();
+        c.fill();
       }
-      c.strokeStyle = resolveColor(plot, i, 0.8);
-      c.stroke();
     }
+    // Stroked after the fill and in one path over all runs: the area is context,
+    // the line is the datum, so the line stays the crisper of the two.
+    c.strokeStyle = resolveColor(plot, sid, 0.8);
+    c.beginPath();
+    for (const run of lr.runs) traceRun(c, Y, run, step, lr.binW);
+    c.stroke();
   }
   c.lineWidth = 1;
 }
@@ -448,6 +542,97 @@ function scatter(plot, rctx) {
       c.arc(x, Y(v), r, 0, 2 * Math.PI);
       c.fill();
     }
+  }
+}
+
+/**
+ * The polyline of one stacked edge, already expanded into its staircase corners
+ * when `step` is set.
+ *
+ * Returned as a list rather than traced straight into the path (the way
+ * traceRun does it) because a band is closed by walking its *lower* edge
+ * backwards, and a path-tracing helper cannot be run in reverse.
+ */
+function edgePoints(run, cols, vals, step, binW) {
+  var pts = [];
+  for (var i = 0; i < run.length; i++) {
+    var ci = run[i];
+    if (i > 0) {
+      if (step === 'after') pts.push({ x: cols[ci].x, v: vals[run[i - 1]] });
+      else if (step === 'before') pts.push({ x: cols[run[i - 1]].x, v: vals[ci] });
+    }
+    pts.push({ x: cols[ci].x, v: vals[ci] });
+  }
+  if (step === 'after' && binW) {
+    var last = run[run.length - 1];
+    pts.push({ x: cols[last].x + binW, v: vals[last] });
+  }
+  return pts;
+}
+
+// stackarea — series summed per slot and drawn as bands stacked on one another,
+// so the outline is the total and each band's thickness is its own contribution.
+//
+// A separate type rather than a `stack: true` flag on multiline: prepare_grid
+// decides how to measure the y-extent from the *type* (see isStackedType), and a
+// per-plot flag would leave that decision somewhere the registry cannot see.
+function stackarea(plot, rctx) {
+  var { c, X, Y, hidden } = rctx;
+  var step = (plot.step === 'after' || plot.step === 'before') ? plot.step : null;
+  // Hidden series are dropped from the stack entirely, not drawn transparent —
+  // exactly as multibar does it. Leaving a gap in the stack would float every
+  // band above it off its own baseline.
+  var ids = visibleIds(plot, hidden);
+  if (!ids.length) return;
+
+  // One column per position, carrying its slot number so a gap in the slot
+  // numbering can break the run. A point block has no slot grid and so no gaps.
+  var cols = [];
+  var binW = 0;
+  if (plot.category === 'point') {
+    for (const pt of plot.data) cols.push({ x: X(pt.t), v: pt.values, slot: null });
+  } else {
+    var start = plot.interval_start * 1000;
+    var istep = plot.interval * 1000;
+    binW = rctx.ppms * istep;
+    for (const s of sortedSlots(plot))
+      cols.push({ x: X(start + s * istep), v: plot.data[s], slot: s });
+  }
+  if (!cols.length) return;
+
+  // Run boundaries are a property of the columns, not of any one series, so they
+  // are found once and shared by every band — that is also what keeps the bands
+  // stacked on each other rather than each breaking at a different place.
+  var runs = [];
+  var cur = null;
+  for (var i = 0; i < cols.length; i++) {
+    if (cur && cols[i].slot != null && cols[i].slot !== cols[i - 1].slot + 1) cur = null;
+    if (!cur) { cur = []; runs.push(cur); }
+    cur.push(i);
+  }
+
+  var lower = new Array(cols.length).fill(0);
+  for (const id of ids) {
+    var upper = new Array(cols.length);
+    for (var k = 0; k < cols.length; k++) {
+      // A series absent from one column contributes nothing there, but must not
+      // tear the stack: the columns around it still stack, so the band pinches
+      // to zero height instead of starting a new run.
+      var raw = cols[k].v ? cols[k].v[id] : undefined;
+      upper[k] = lower[k] + (raw == null ? 0 : raw);
+    }
+    c.fillStyle = resolveColor(plot, id, 0.75);
+    for (const run of runs) {
+      var top = edgePoints(run, cols, upper, step, binW);
+      var bot = edgePoints(run, cols, lower, step, binW);
+      c.beginPath();
+      c.moveTo(top[0].x, Y(top[0].v));
+      for (var t = 1; t < top.length; t++) c.lineTo(top[t].x, Y(top[t].v));
+      for (var b = bot.length - 1; b >= 0; b--) c.lineTo(bot[b].x, Y(bot[b].v));
+      c.closePath();
+      c.fill();
+    }
+    lower = upper;
   }
 }
 
@@ -842,11 +1027,72 @@ function candlestick(plot, rctx) {
   }
 }
 
+// ohlc — the bar form of a candle: a high-low line with the open ticked off to
+// the left and the close to the right. Reads exactly the same block and the same
+// roles as candlestick (see candleRoles); it draws thinner, which is what keeps
+// it readable at bin widths where a filled body turns into a blob.
+function ohlc(plot, rctx) {
+  var { c, Y, margin, plotWidth } = rctx;
+  var pct = plot.percentiles || [];
+  var npct = pct.length;
+  if (npct < 2) return;
+  if (plot.category === 'point') return;        // binned series only
+  var role = candleRoles(plot, npct);
+  var cc = plot.candleColors;
+  var ids = visibleIds(plot, rctx.hidden);
+  if (!ids.length) return;
+
+  for (const s of sortedSlots(plot)) {
+    var g = binGeom(plot, s, rctx);
+    if (!g) continue;
+    if (g.x0 + g.w < margin.left || g.x0 > margin.left + plotWidth) continue;
+    var slot = plot.data[s];
+    for (var ki = 0; ki < ids.length; ki++) {
+      var v = slot[ids[ki]];
+      if (v === undefined) continue;
+      var d = dodgeBin(g.x0, g.w, ids.length, ki);
+      var tw = Math.max(d.w * 0.35, 1);
+      var up = role.ohlc ? v[role.ohlc.close] >= v[role.ohlc.open] : true;
+      var override = cc && (up ? cc.up : cc.down);
+      // No hollow/filled convention here — an OHLC bar is all strokes, so the
+      // direction shows only where candleColors gives it a second colour.
+      c.strokeStyle = override || resolveColor(plot, ids[ki], 0.85);
+      c.lineWidth = 1;
+      c.beginPath();
+      if (role.wick) {
+        c.moveTo(d.cx, Y(v[role.wick[0]] * g.k));
+        c.lineTo(d.cx, Y(v[role.wick[1]] * g.k));
+      }
+      // Open left, close right. These ticks are the whole difference between an
+      // OHLC bar and a plain whisker, so they are drawn even when the ladder
+      // yielded no separate wick pair to hang them on.
+      var yOpen = Y(v[role.body[0]] * g.k);
+      var yClose = Y(v[role.body[1]] * g.k);
+      c.moveTo(d.cx - tw, yOpen);
+      c.lineTo(d.cx, yOpen);
+      c.moveTo(d.cx, yClose);
+      c.lineTo(d.cx + tw, yClose);
+      c.stroke();
+    }
+  }
+  c.lineWidth = 1;
+}
+
 // Register built-in renderers
-registerRenderer({ type: 'multibar',   draw: multibar,   highlight: highlight_multibar });
+registerRenderer({ type: 'multibar',   draw: multibar,   highlight: highlight_multibar,
+                   stacked: true });
 registerRenderer({ type: 'multiline',  draw: multiline });
 registerRenderer({ type: 'multipoint', draw: multipoint });
 registerRenderer({ type: 'scatter',    draw: scatter });
+// Areas join across abutting fetch blocks for the same reason the ladder types
+// do: a stack drawn block by block leaves a one-slot notch at every margin.
+var areaCoalesce = function (plot) { return (plot.name || '') + '|' + plot.interval; };
+registerRenderer({
+  type: 'stackarea',
+  draw: stackarea,
+  stacked: true,
+  coalesce: areaCoalesce,
+});
 // Coalesce abutting fetch blocks (same source + interval) so the fan lines,
 // shaded bands and step risers run continuously across block margins.
 var ladderCoalesce = function (plot) { return (plot.name || '') + '|' + plot.interval; };
@@ -866,3 +1112,4 @@ registerRenderer({
 // block margin to bridge and need no coalesce.
 registerRenderer({ type: 'error-bars',  draw: errorbars,   values: 'array' });
 registerRenderer({ type: 'candlestick', draw: candlestick, values: 'array' });
+registerRenderer({ type: 'ohlc',        draw: ohlc,        values: 'array' });

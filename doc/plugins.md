@@ -21,6 +21,7 @@ TimeSeries.registerRenderer({
   highlight(plot, n, item, rctx) { … }, // optional — the hover/selection emphasis
   coalesce(plot) { … },                 // optional — see "Drawing across fetch blocks"
   values: 'scalar',                     // optional — 'array' for a ladder renderer
+  stacked: false,                       // optional — true if you sum series per slot
 });
 ```
 
@@ -36,10 +37,24 @@ Leaving it off does not raise an error; it fails *quietly*. The extent scan comp
 so the axis silently falls back to the block's declared `max` and your chart is drawn at
 the wrong scale with no warning anywhere.
 
-The four built-in ladder renderers ([ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax))
+The five built-in ladder renderers ([ladder blocks](data-formats.md#ladder-blocks-percentiles-minavgmax))
 declare it, and `TimeSeries.isBandedType(type)` reports it back. `TimeSeries.ladderPairs(n)`
 gives you the same symmetric centre/pairs reading of `plot.percentiles` that `error-bars`
-and `candlestick` use, so a fifth ladder renderer stays consistent with them.
+and `candlestick` use, so a sixth ladder renderer stays consistent with them.
+
+### `stacked: true` — declaring that you sum series
+
+The same kind of declaration for the other axis-shaping question. A stacked renderer's
+tallest point in a slot is the **sum** of that slot's series; an unstacked one's is its
+largest single series. `prepare_grid` measures the y-extent accordingly, and it has no
+other way to tell the two apart.
+
+Leaving it off fails quietly in the mirror-image way: the axis is measured from the tallest
+single series, so the top of every stack is drawn above the plot area and simply clipped.
+`multibar` and `stackarea` declare it; `TimeSeries.isStackedType(type)` reports it back.
+
+It also puts your type on the list of block types `pushData` will concatenate when a new
+block overlaps an older one, which is what a polling source relies on.
 
 ### Drawing across fetch blocks (`coalesce`)
 
@@ -130,8 +145,9 @@ sources: [{ 'source-type': 'artificial', type: 'steps', interval: 3600, … }]
 - **Keep drawing and hit testing in step.** The core's hit test is arithmetic for binned
   bars, bin-and-ladder-range for `values: 'array'` blocks, and pixel-nearest for point
   plots; if your geometry differs, hover will point at the wrong thing.
-- **Declare `values: 'array'` if your slot values are arrays** — see above for what goes
-  quietly wrong otherwise.
+- **Declare `values: 'array'` if your slot values are arrays**, and **`stacked: true` if you
+  sum your series per slot** — see above for what goes quietly wrong otherwise. Both are
+  facts only you know and the core cannot infer.
 
 ---
 

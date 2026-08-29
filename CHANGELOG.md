@@ -14,6 +14,49 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+### Added
+
+- **Two new plot types, and two options that turn `multiline` into an area chart.**
+  The area family was the largest remaining gap in the built-in set: `multiline`
+  could draw a line but not shade under it, and a stacked composition over time —
+  arguably the most common time-series chart there is — could not be drawn at all.
+  **`stackarea`** sums the visible series per slot and draws each as a band on top
+  of the running total, so the outline is the total and each band's thickness is
+  that series' share of it. Hiding a series closes the stack up rather than
+  leaving a hole, and the y-axis is measured from the stacked total.
+  **`ohlc`** is the bar form of `candlestick`: a high–low line with the open
+  ticked off to the left and the close to the right. It reads exactly the same
+  block and the same `roles` mapping, and draws thinner — which is what keeps it
+  readable at bin widths where a filled body turns into a blob.
+- **`plot.step` and `plot.fill` on `multiline`** (both also honoured by
+  `stackarea`, and both applying to binned and point blocks). `step: 'after'`
+  holds each value across its own bin instead of sloping to the next one, which is
+  what a binned slot actually claims — nothing was measured part-way through it;
+  `'before'` raises the value at the previous point. `fill: true` shades each
+  series down to the zero line, under the stroke, clamped to the plot box so a
+  far-off zero line cannot paint over the axis. Series are filled independently
+  and therefore overlap; use `stackarea` to stack them.
+- **`stacked: true` in the renderer contract**, with `TimeSeries.isStackedType(type)`
+  to read it back. Whether a type sums its series per slot decides how the y-extent
+  is measured, and the core previously knew it only as a literal comparison against
+  `'multibar'` — so a second stacked renderer had no way to be measured correctly
+  without editing the core. This is the same declaration `values: 'array'` already
+  makes, and it fails the same way when omitted: the axis is measured from the
+  tallest single series and the top of every stack is quietly clipped.
+
+### Fixed
+
+- **`multiline` no longer draws an explicit `null` as a dive to zero.** The binned
+  branch broke the line only on `undefined`, so a slot carrying `null` was drawn at
+  `Y(0)` — a spike to the axis indistinguishable from real data. Both shapes now
+  break on either, which is what the point branch always did. A gap in the *slot
+  numbering* is still bridged, unchanged and deliberate: `multiline` is the
+  interpolating renderer.
+- **A coalesced block no longer loses `step` and `fill`.** Blocks merged across
+  fetch margins carried `connect` but not the other flags that change what is drawn
+  between bins, so a coalesced area block drew differently from the blocks it was
+  built from.
+
 ## [0.10.0] - 2026-08-28
 
 ### Added

@@ -8,7 +8,7 @@ There are three shapes, selected by `category`:
 
 | `category` | Time is… | `data` is… | Use for | Renderers |
 |---|---|---|---|---|
-| *(omitted)* — **binned** | fixed-width slots on a shared grid | an object keyed by slot index | pre-aggregated metrics | `multibar`, `multiline`, `multipoint`, and the ladder four: `quantile-bands`, `quantile-steps`, `error-bars`, `candlestick` |
+| *(omitted)* — **binned** | fixed-width slots on a shared grid | an object keyed by slot index | pre-aggregated metrics | `multibar`, `multiline`, `stackarea`, `multipoint`, and the ladder five: `quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc` |
 | `'point'` | a timestamp per sample | an array of `{t, values}` | raw samples, irregular data | `multiline`, `multipoint`, `scatter` |
 | `'span'` | a start/end pair per item | an array of `{start, end, …}` | calendar events, jobs, outages | `gantt` |
 
@@ -147,7 +147,7 @@ envelope, an OHLC quadruple.
 ```js
 {
   'source-type': 'artificial',
-  type: 'quantile-steps',             // any of the four ladder renderers below
+  type: 'quantile-steps',             // any of the five ladder renderers below
   name: 'request latency',
   interval_start: 1717200000, interval_end: 1717286400,
   interval: 3600, count: 24,
@@ -318,16 +318,37 @@ or the old layout is reused.
 | Renderer | Binned | Point | Span | Draws |
 |---|:--:|:--:|:--:|---|
 | `multibar` | ✓ | | | Stacked bars, negatives downward |
-| `multiline` | ✓ | ✓ | | One line per series |
+| `multiline` | ✓ | ✓ | | One line per series; `step` and `fill` below |
+| `stackarea` | ✓ | ✓ | | Filled bands stacked on one another |
 | `multipoint` | ✓ | ✓ | | One marker per sample |
 | `scatter` | | ✓ | | Filled circle per point |
 | `quantile-bands` | ✓ | | | Percentile fan, interpolated between slot centres |
 | `quantile-steps` | ✓ | | | The same fan, flat across each bin |
 | `error-bars` | ✓ | | | Marker plus whiskers per bin |
 | `candlestick` | ✓ | | | Wick and body per bin; OHLC via `roles` |
+| `ohlc` | ✓ | | | High–low bar, open ticked left and close right |
 | `gantt` | | | ✓ | Duration bars packed into rows |
 
-The four ladder renderers take a slot value that is an **array**
+The five ladder renderers take a slot value that is an **array**
 ([ladder blocks](#ladder-blocks-percentiles-minavgmax)); everything else takes a number.
+
+### Line and area options
+
+`multiline` takes two per-block options; both apply to binned and point blocks,
+and both combine.
+
+| Field | Values | Effect |
+|---|---|---|
+| `step` | `'after'` \| `'before'` | Draw a staircase instead of interpolating. `'after'` holds each value across its own bin — what a binned slot actually claims, since nothing was measured part-way through it. `'before'` raises the value at the previous point. Any other value is ignored. |
+| `fill` | `true` | Shade each series down to the zero line, under the stroke. Series are drawn independently, so the areas **overlap**; use `stackarea` to stack them instead. |
+
+`stackarea` reads `step` too. It sums the visible series per slot, so hiding one
+closes the stack up rather than leaving a hole, and the y-axis is measured from
+the stacked total rather than the tallest single series.
+
+A line bridges a gap in the slot numbering; a *missing value* in a slot that
+exists breaks it. The filled forms (`stackarea`, `quantile-steps`) break on an
+absent slot as well — shading across unmeasured time asserts more than a line
+through it does.
 
 Registering your own is two dozen lines — see [Plugins](plugins.md).

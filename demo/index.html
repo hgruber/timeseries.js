@@ -716,6 +716,82 @@
                             </label>
                         </div>
                     </div>
+                    <!-- ohlc — the bar form of the same OHLC block -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">ohlc</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-ohlc"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-ohlc','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-ohlc','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-ohlc','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-ohlc',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- multiline with fill — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multiline (fill)</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-area"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-area','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-area','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-area','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-area',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- multiline with step — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">multiline (step)</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-step"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-step','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-step','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-step','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-step',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- stackarea — BinnedSeries -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">stackarea</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-stackarea"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-stackarea','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-stackarea','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-stackarea','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-stackarea',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 <!-- /.type-grid -->
             </div>
@@ -868,6 +944,13 @@
         // The two per-block options, beside their defaults above.
         { id: 'tc-steps-open',       source: artificialStepsOpen,   initialView: 'yesterday' },
         { id: 'tc-candlestick-ohlc', source: artificialCandlesOHLC, initialView: 'yesterday' },
+        // The same OHLC block as the card above, drawn as bars instead.
+        { id: 'tc-ohlc',        source: artificialOHLCBars,   initialView: 'yesterday' },
+        // The area family: two per-block options on multiline, then the stacked
+        // renderer beside them — all three over the same multibar data.
+        { id: 'tc-area',        source: artificialArea,       initialView: 'yesterday' },
+        { id: 'tc-step',        source: artificialStepLine,   initialView: 'yesterday' },
+        { id: 'tc-stackarea',   source: artificialStackArea,  initialView: 'yesterday' },
       ];
 
       defs.forEach(function (d) {

@@ -67,6 +67,31 @@ var artificialMultipoint = Object.assign({}, artificial, {
   type: "multipoint",
 });
 
+// `fill: true` shades each series down to the zero line. Still one line per
+// series, drawn independently — the areas overlap rather than stacking.
+var artificialArea = Object.assign({}, artificial, {
+  name: "example multiline, fill: true",
+  type: "multiline",
+  fill: true,
+});
+
+// `step: 'after'` holds each value across its own bin instead of sloping to the
+// next one, which is what a binned slot actually claims: the bin covers the
+// whole interval, and nothing was measured part-way through it.
+var artificialStepLine = Object.assign({}, artificial, {
+  name: "example multiline, step: 'after'",
+  type: "multiline",
+  step: "after",
+  fill: true,
+});
+
+// The stacked counterpart: bands sit on one another, so the outline is the
+// total and each band's thickness is that series' share of it.
+var artificialStackArea = Object.assign({}, artificial, {
+  name: "example stackarea (BinnedSeries)",
+  type: "stackarea",
+});
+
 // ── PointSeries variants (explicit timestamp per point) ───────────────────────
 // Uses series 0, 2, 4 from the slot data (three distinct Gaussian peaks).
 
@@ -235,6 +260,14 @@ var artificialCandlesOHLC = {
   series_colors: { price: '#2d6a9f' },
   data: _ohlcData,
 };
+
+// The same OHLC walk drawn as bars instead of candles: a high-low line with the
+// open ticked left and the close ticked right. Same block, same `roles` — only
+// the renderer type differs, which is the point of showing them side by side.
+var artificialOHLCBars = Object.assign({}, artificialCandlesOHLC, {
+  name: "example ohlc (OHLC via roles)",
+  type: "ohlc",
+});
 
 // ── Butterfly stacked variant ─────────────────────────────────────────────────
 // Same multibar data, but series 1, 3, 5 stack DOWN from y=0 while 0, 2, 4

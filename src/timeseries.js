@@ -9,7 +9,7 @@
 // are a standalone utility module, imported by consumers directly.
 import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
-         plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType,
+         plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType, isStackedType,
          ladderPairs } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
@@ -781,7 +781,9 @@ export default function TimeSeries(options) {
           ee = (data[i].interval_start + data[i].interval * (dms + 1)) * 1000;
         }
         if (newStart < ee && newEnd > es) {
-          var concatable = (data[i].type === 'multibar'
+          // Was the literal 'multibar'; multibar declares `stacked: true`, so
+          // this is the same set plus any other stacked type (stackarea).
+          var concatable = (isStackedType(data[i].type)
                             || isBandedType(data[i].type));
           if (concatable && data[i].interval === plot.interval
               && data[i].category !== 'point' && plot.category !== 'point') {
@@ -2123,13 +2125,16 @@ export default function TimeSeries(options) {
           // below zero for butterfly plots.
           var vpUpMax = 0, vpDownMax = 0;
           var dirs = plot.series_directions;
-          // Stacked plots (multibar) sum series per slot for the y-extent;
-          // un-stacked plots (multiline, multipoint) plot each series
+          // Stacked plots (multibar, stackarea) sum series per slot for the
+          // y-extent; un-stacked plots (multiline, multipoint) plot each series
           // independently, so each slot contributes its largest single series
           // value (and most-negative) instead. A ladder type (values: 'array')
           // stores an array of percentile values per series; the extent is the
           // largest / most-negative array entry across the slot's series.
-          var stacked = plot.type === 'multibar';
+          // Asked of the registry rather than compared against 'multibar', so a
+          // renderer declaring `stacked: true` is measured right without the
+          // core having to learn its name.
+          var stacked = isStackedType(plot.type);
           var banded  = isBandedType(plot.type);
           if (plot.category === 'point') {
             // Point series carry {t, values} and no slot grid, so the binned
@@ -3293,6 +3298,9 @@ TimeSeries.resolveColor = resolveColor;
 // can ask whether a type stores arrays (which the core branches on).
 TimeSeries.ladderPairs = ladderPairs;
 TimeSeries.isBandedType = isBandedType;
+// The same question for the other axis-shaping declaration: does this type sum
+// its series per slot? Both are registry facts, so both are askable.
+TimeSeries.isStackedType = isStackedType;
 TimeSeries.attachTooltip = attachTooltip;
 TimeSeries.attachLegend = attachLegend;
 TimeSeries.lttb = lttb;

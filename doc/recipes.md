@@ -373,7 +373,7 @@ with `npm run build && npm run serve`:
 
 | Page | Shows |
 |---|---|
-| `demo/index.html` | Stacked bars, butterfly, lines, points, scatter, the four ladder types side by side, the resolution cross-fade, follow mode, the legend |
+| `demo/index.html` | Stacked bars, butterfly, lines (plain, stepped, filled), stacked areas, points, scatter, the five ladder types side by side, the resolution cross-fade, follow mode, the legend |
 | `demo/caldav.html` | Spans and the `gantt` renderer, against static fixtures — no server needed |
 | `demo/zabbix.html` | The real `zabbix` source against a synthetic API — no server needed |
 | `demo/caldav-live.html` | A real CalDAV server, with a connect form |
