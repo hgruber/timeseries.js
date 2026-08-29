@@ -35,6 +35,18 @@ const stackedTypes = new Set();
 // the largest single step, which is almost never the height of the chart.
 const cumulativeTypes = new Set();
 
+// Types whose y-axis is *categorical*: each series (or lane) owns a horizontal
+// band, and the value is shown some other way — by colour for a heatmap, by a
+// band-local scale for a horizon chart, by a bar's start and end for a gantt.
+// Such a plot occupies the fixed value space 0…laneCount no matter what its
+// numbers are, and the axis is labelled with names rather than quantities.
+//
+// This used to be `plot.category === 'span'` in prepare_grid, which welded the
+// idea to the one data shape that first needed it. A binned block can want a
+// lane axis just as much — heatmap and horizon are both binned — so the question
+// is now asked of the renderer, not of the data shape.
+const lanedTypes = new Set();
+
 /**
  * Register a renderer plugin for a given plot type.
  * @param {{ type: string, draw: function, highlight?: function,
@@ -49,6 +61,8 @@ export function registerRenderer(plugin) {
   else stackedTypes.delete(plugin.type);
   if (plugin.cumulative) cumulativeTypes.add(plugin.type);
   else cumulativeTypes.delete(plugin.type);
+  if (plugin.lanes) lanedTypes.add(plugin.type);
+  else lanedTypes.delete(plugin.type);
 }
 
 /**
@@ -71,6 +85,31 @@ export function isStackedType(type) {
  */
 export function isCumulativeType(type) {
   return cumulativeTypes.has(type);
+}
+
+/**
+ * Does this plot type put its series on a categorical y-axis? See `lanedTypes`.
+ */
+export function isLanedType(type) {
+  return lanedTypes.has(type);
+}
+
+/**
+ * Let a renderer compute whatever the axis needs before it is drawn — for a
+ * laned type, `laneCount` and `yticks`.
+ *
+ * The y-axis has to know how many lanes there are *before* draw time, and only
+ * the renderer knows how its lanes are derived: gantt packs events into rows
+ * (layoutSpans), while heatmap and horizon simply give each series a lane.
+ * prepare_grid used to call layoutSpans directly, which is why the lane axis was
+ * available to exactly one renderer.
+ *
+ * Implementations must be idempotent — this runs every frame.
+ */
+export function layoutPlot(plot) {
+  if (!plot) return;
+  const plugin = registry.get(plot.type);
+  if (plugin && plugin.layout) plugin.layout(plot);
 }
 
 /**
@@ -108,9 +147,21 @@ function coalesceBlocks(group, data) {
   var colors = null;
   var name = base.name;
   var partial = null;
-  // Flags that change what is drawn between bins. First non-null wins, the same
-  // rule `name` follows — they are block metadata, not per-slot data.
-  var flags = { connect: base.connect, step: base.step, fill: base.fill };
+  // Block-level metadata that changes what is drawn: how the bins are joined,
+  // and — for the laned types — which lanes exist and what scale colours them.
+  // First non-null wins, the same rule `name` follows.
+  //
+  // The laned entries matter more than they look: two fetch blocks that each
+  // derived their own lane order or their own colour range would draw the same
+  // series in a different row and a different colour on either side of the
+  // block margin.
+  var flags = {
+    connect: base.connect, step: base.step, fill: base.fill,
+    lanes: base.lanes, colorScale: base.colorScale,
+    vmin: base.vmin, vmax: base.vmax, horizonBands: base.horizonBands,
+    totals: base.totals, waterfallColors: base.waterfallColors,
+    roles: base.roles, candleColors: base.candleColors,
+  };
   for (const i of group) {
     var blk = data[i];
     if (blk.percentiles && !merged.percentiles) merged.percentiles = blk.percentiles;
@@ -325,12 +376,24 @@ export function plotSeriesIds(plot) {
 export function resolveColor(plot, i, t) {
   var override = plot.series_colors && plot.series_colors[i];
   if (!override) return seriesColor(i, t);
-  if (override[0] === '#' && override.length === 7) {
+  return withAlpha(override, t);
+}
+
+// A CSS colour at alpha `t`. Hex gets an alpha byte appended so it matches the
+// translucency of the auto-hashed colours; named/hsla/rgba pass through, since
+// they already carry their own alpha and rewriting them would need a parser.
+//
+// Split out of resolveColor because a renderer sometimes has a colour that is
+// not a series colour at all — horizon's negative-direction fill — and needs the
+// same alpha ramp on it. Doing that with globalAlpha instead would fight the
+// tier cross-fade, which owns globalAlpha for the whole draw call.
+function withAlpha(color, t) {
+  if (typeof color === 'string' && color[0] === '#' && color.length === 7) {
     var a = Math.round(t * 255).toString(16);
     if (a.length < 2) a = '0' + a;
-    return override + a;
+    return color + a;
   }
-  return override;
+  return color;
 }
 
 function highlight_multibar(plot, n, item, rctx) {
@@ -762,6 +825,187 @@ function waterfall(plot, rctx) {
     }
   }
   c.lineWidth = 1;
+}
+
+// ── Laned renderers ──────────────────────────────────────────────────────────
+//
+// heatmap and horizon put each series on its own horizontal band and show the
+// value some other way — by colour, and by a band-local fill. Both are binned,
+// and both declare `lanes: true` plus a `layout` hook so the y-axis is labelled
+// with series names instead of numbers. The lane machinery itself is shared with
+// gantt, which is a *span* renderer: the axis follows the renderer, not the data
+// shape.
+
+/**
+ * One lane per series, top to bottom. Lane k owns the value band
+ * [laneCount-k-1, laneCount-k), matching how gantt lays out its rows, and its
+ * label is centred in that band.
+ *
+ * `plot.lanes` ([{id, label}]) fixes the order and the names; without it the
+ * series order from plotSeriesIds is used. Pure and idempotent — it runs every
+ * frame, so it must never accumulate.
+ */
+function laneLayout(plot) {
+  var ids = plot.lanes
+    ? plot.lanes.map(function (l) { return String(l.id); })
+    : plotSeriesIds(plot);
+  plot.laneCount = Math.max(1, ids.length);
+  plot._laneIds = ids;
+  plot.yticks = ids.map(function (id, k) {
+    var label = id;
+    if (plot.lanes && plot.lanes[k])
+      label = plot.lanes[k].label != null ? plot.lanes[k].label : plot.lanes[k].id;
+    return { y: plot.laneCount - k - 0.5, label: String(label) };
+  });
+  return plot;
+}
+
+/**
+ * The value range a laned block's colours or fills are scaled against.
+ *
+ * Measured over the **whole block**, not the viewport, and for the same reason
+ * the waterfall total accumulates from the first slot: a scale that rescaled
+ * itself as you panned would recolour every cell on every drag, so the same
+ * value would read as two different colours a second apart.
+ *
+ * `plot.vmin`/`plot.vmax` pin it explicitly, which is what a consumer wants when
+ * two charts have to be comparable.
+ */
+function laneRange(plot) {
+  if (plot.vmin != null && plot.vmax != null) return { lo: plot.vmin, hi: plot.vmax };
+  var lo = plot.vmin != null ? plot.vmin : Infinity;
+  var hi = plot.vmax != null ? plot.vmax : -Infinity;
+  for (var s in plot.data) {
+    for (var k in plot.data[s]) {
+      var v = plot.data[s][k];
+      if (v == null) continue;
+      if (plot.vmin == null && v < lo) lo = v;
+      if (plot.vmax == null && v > hi) hi = v;
+    }
+  }
+  if (!isFinite(lo) || !isFinite(hi)) return { lo: 0, hi: 1 };
+  return { lo: lo, hi: hi };
+}
+
+// #rgb / #rrggbb to [r,g,b]; null for anything else (named, hsla, rgba).
+function hexRGB(h) {
+  if (typeof h !== 'string' || h[0] !== '#') return null;
+  if (h.length === 4)
+    return [parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16), parseInt(h[3] + h[3], 16)];
+  if (h.length === 7)
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  return null;
+}
+
+// Position t (0…1) along a list of colour stops. Non-hex stops cannot be blended,
+// so they snap to the nearest one rather than producing an invalid fillStyle —
+// an invalid one would silently keep the previous colour for the whole frame.
+function lerpScale(stops, t) {
+  var n = stops.length - 1;
+  if (n <= 0) return stops[0];
+  var i = Math.min(n - 1, Math.max(0, Math.floor(t * n)));
+  var f = t * n - i;
+  var a = hexRGB(stops[i]), b = hexRGB(stops[i + 1]);
+  if (!a || !b) return stops[Math.min(n, Math.round(t * n))];
+  return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * f) + ','
+                + Math.round(a[1] + (b[1] - a[1]) * f) + ','
+                + Math.round(a[2] + (b[2] - a[2]) * f) + ')';
+}
+
+/**
+ * Colour for one cell. `plot.colorScale` (a list of hex stops) is the explicit
+ * sequential palette; without it the cell takes its **own series colour** at an
+ * intensity that follows the value.
+ *
+ * That default is deliberate: it re-themes with everything else for free, needs
+ * no palette the library would otherwise have to own and keep readable in four
+ * themes, and it keeps two lanes distinguishable at a glance — which a single
+ * shared ramp does not.
+ */
+function laneColor(plot, id, v, lo, hi) {
+  var t = hi > lo ? (v - lo) / (hi - lo) : 1;
+  t = Math.max(0, Math.min(1, t));
+  if (plot.colorScale && plot.colorScale.length) return lerpScale(plot.colorScale, t);
+  return resolveColor(plot, id, 0.08 + 0.87 * t);
+}
+
+// heatmap — one coloured cell per slot per lane. Time across, category down,
+// value in the colour.
+function heatmap(plot, rctx) {
+  var { c, Y, margin, plotWidth, hidden } = rctx;
+  if (plot.category === 'point') return;          // binned series only
+  laneLayout(plot);
+  var ids = plot._laneIds;
+  var rng = laneRange(plot);
+  for (const s of sortedSlots(plot)) {
+    var g = binGeom(plot, s, rctx);
+    if (!g) continue;
+    if (g.x0 + g.w < margin.left || g.x0 > margin.left + plotWidth) continue;
+    var slot = plot.data[s];
+    for (var k = 0; k < ids.length; k++) {
+      // A hidden lane is left blank rather than closed up: the lane axis has to
+      // stay put, or hiding one series would relabel every row below it.
+      if (hidden && hidden.has(ids[k])) continue;
+      var v = slot[ids[k]];
+      if (v == null) continue;
+      var yTop = Y(plot.laneCount - k);
+      var yBot = Y(plot.laneCount - k - 1);
+      c.fillStyle = laneColor(plot, ids[k], v * g.k, rng.lo, rng.hi);
+      c.fillRect(g.x0, yTop, Math.max(g.w, 1), Math.max(yBot - yTop, 1));
+    }
+  }
+}
+
+// horizon — each series folded into its own flat band: the value is cut into
+// `horizonBands` slices of equal height, and the slices are drawn on top of one
+// another with rising intensity. That is what buys the compression — a band a
+// third the height reads as well as the full-height line would.
+function horizon(plot, rctx) {
+  var { c, Y, margin, plotWidth, hidden } = rctx;
+  if (plot.category === 'point') return;          // binned series only
+  laneLayout(plot);
+  var ids = plot._laneIds;
+  var nb = Math.max(1, plot.horizonBands || 3);
+  var rng = laneRange(plot);
+  // Folded against the largest magnitude either way, so a series crossing zero
+  // keeps one scale for both halves and the two are comparable.
+  var span = Math.max(Math.abs(rng.hi), Math.abs(rng.lo)) || 1;
+  var unit = span / nb;
+  var neg = plot.horizonNegative;
+
+  for (const s of sortedSlots(plot)) {
+    var g = binGeom(plot, s, rctx);
+    if (!g) continue;
+    if (g.x0 + g.w < margin.left || g.x0 > margin.left + plotWidth) continue;
+    var slot = plot.data[s];
+    for (var k = 0; k < ids.length; k++) {
+      if (hidden && hidden.has(ids[k])) continue;
+      var v = slot[ids[k]];
+      if (v == null) continue;
+      v = v * g.k;
+      var down = v < 0;
+      var mag = Math.abs(v);
+      var laneTop = Y(plot.laneCount - k);
+      var laneBot = Y(plot.laneCount - k - 1);
+      var laneH = laneBot - laneTop;
+      for (var b = 0; b < nb; b++) {
+        // How much of this band's slice the value fills: 1 for every slice it
+        // has passed, a fraction for the one it ends in, 0 above that.
+        var frac = Math.max(0, Math.min(1, (mag - b * unit) / unit));
+        if (frac <= 0) break;
+        var h = laneH * frac;
+        // Slices stack from the band's baseline, each darker than the last.
+        // Alpha goes on the colour, never on globalAlpha — that belongs to the
+        // tier cross-fade, and writing it here would cancel the dissolve.
+        var alpha = Math.min(0.18 + 0.24 * b, 0.95);
+        c.fillStyle = (down && neg) ? withAlpha(neg, alpha)
+                                    : resolveColor(plot, ids[k], alpha);
+        // Negative values mirror downward from the band's top edge, so the two
+        // directions never overprint each other's ink.
+        c.fillRect(g.x0, down ? laneTop : laneBot - h, Math.max(g.w, 1), h);
+      }
+    }
+  }
 }
 
 // ── Ladder renderers ─────────────────────────────────────────────────────────
@@ -1244,3 +1488,20 @@ registerRenderer({ type: 'ohlc',        draw: ohlc,        values: 'array' });
 // No coalesce: the running total is accumulated from the block's own first slot,
 // so merging two blocks would restart it somewhere else and move every bar.
 registerRenderer({ type: 'waterfall',   draw: waterfall,   cumulative: true });
+// The laned pair: a categorical y-axis, one band per series. `layout` is what
+// gives the axis its laneCount/yticks before draw time — the same hook gantt
+// hangs layoutSpans on, which is the whole point of the hook being generic.
+registerRenderer({
+  type: 'heatmap',
+  draw: heatmap,
+  lanes: true,
+  layout: laneLayout,
+  coalesce: areaCoalesce,
+});
+registerRenderer({
+  type: 'horizon',
+  draw: horizon,
+  lanes: true,
+  layout: laneLayout,
+  coalesce: areaCoalesce,
+});

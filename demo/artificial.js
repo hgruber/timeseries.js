@@ -269,6 +269,23 @@ var artificialOHLCBars = Object.assign({}, artificialCandlesOHLC, {
   type: "ohlc",
 });
 
+// ── Laned types (categorical y-axis: one band per series) ─────────────────────
+//
+// The same slot data as the multibar chart, but each series gets its own row.
+// heatmap shows the value as colour; horizon folds it into a short band, which
+// is what lets six series fit in the height one line chart would need.
+
+var artificialHeatmap = Object.assign({}, artificial, {
+  name: "example heatmap (BinnedSeries)",
+  type: "heatmap",
+});
+
+var artificialHorizon = Object.assign({}, artificial, {
+  name: "example horizon (BinnedSeries)",
+  type: "horizon",
+  horizonBands: 3,
+});
+
 // ── Waterfall (cumulative bars) ───────────────────────────────────────────────
 //
 // Each bar starts where the previous one ended, so the chart reads as a running

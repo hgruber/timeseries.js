@@ -36,6 +36,23 @@ for a reader who has not seen the commits.
   series down to the zero line, under the stroke, clamped to the plot box so a
   far-off zero line cannot paint over the axis. Series are filled independently
   and therefore overlap; use `stackarea` to stack them.
+- **`heatmap` and `horizon`, and a lane axis that is no longer gantt's alone.**
+  A *categorical* y-axis — each series owning a horizontal band, the axis
+  labelled with names rather than numbers — already existed, but it was welded to
+  `category: 'span'`, so `gantt` was the only renderer that could ever have one.
+  It is now a property of the **renderer** (`lanes: true` plus a `layout` hook
+  that stamps `laneCount`/`yticks`), which is what lets a *binned* block have one.
+  **`heatmap`** draws one coloured cell per slot per lane. Its default colour is
+  each series' own colour at an intensity that follows the value, so it re-themes
+  with everything else and two lanes stay distinguishable; `plot.colorScale` takes
+  an explicit sequential palette of hex stops instead.
+  **`horizon`** folds each series into a short band — the value cut into
+  `horizonBands` slices drawn on top of one another with rising intensity, so a
+  band a third the height reads as well as the full line would. Negatives mirror
+  from the band's top edge, optionally in `horizonNegative`.
+  Both take `plot.lanes` to fix the row order and labels, and `vmin`/`vmax` to pin
+  the range their colours are scaled against — which is measured over the whole
+  block, never the viewport, so panning cannot recolour a cell.
 - **`waterfall`** — cumulative bars, where each starts where the previous one
   ended, so the chart reads as a running total broken into its contributions.
   `plot.totals` names the slots that restate the sum from zero (the subtotal and
@@ -66,10 +83,13 @@ for a reader who has not seen the commits.
   break on either, which is what the point branch always did. A gap in the *slot
   numbering* is still bridged, unchanged and deliberate: `multiline` is the
   interpolating renderer.
-- **A coalesced block no longer loses `step` and `fill`.** Blocks merged across
-  fetch margins carried `connect` but not the other flags that change what is drawn
-  between bins, so a coalesced area block drew differently from the blocks it was
-  built from.
+- **A coalesced block no longer loses its draw-affecting metadata.** Blocks merged
+  across fetch margins carried `connect` but nothing else, so a coalesced block
+  drew differently from the blocks it was built from. `step`, `fill`, `lanes`,
+  `colorScale`, `vmin`/`vmax`, `horizonBands`, `totals`, `waterfallColors`,
+  `roles` and `candleColors` now ride along too — for the laned types that matters
+  most, since two blocks each deriving their own lane order would put the same
+  series in a different row on either side of the margin.
 
 ## [0.10.0] - 2026-08-28
 

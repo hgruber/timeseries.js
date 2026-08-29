@@ -276,6 +276,16 @@ function highlight_gantt(plot, n, item, rctx) {
   c.restore();
 }
 
-registerRenderer({ type: 'gantt', draw: gantt, highlight: highlight_gantt });
+// `lanes` puts this type on the categorical y-axis (rows, labelled by name), and
+// `layout` is how the axis gets `laneCount`/`yticks` before draw time.
+// prepare_grid used to call layoutSpans directly off `category === 'span'`;
+// declaring it here is what lets a *binned* renderer have a lane axis too.
+registerRenderer({
+  type: 'gantt',
+  draw: gantt,
+  highlight: highlight_gantt,
+  lanes: true,
+  layout: layoutSpans,
+});
 
 export default gantt;

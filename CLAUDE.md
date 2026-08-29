@@ -282,6 +282,15 @@ non-mutation, the leader lines and their absence across a slot gap, and — on a
 instance — the extent following the running total rather than the largest step, the extent
 surviving a pan unchanged, and a hit test that returns the raw step and misses *below* a
 bar floating above zero, which is what the stacked branch would have got wrong),
+`test/laned-types.test.mjs` (the categorical y-axis: the lane layout and its idempotence,
+`plot.lanes` fixing order and labels, `layoutPlot` being a no-op for a renderer that
+declares none, heatmap's cell geometry and its colour ramp incl. `colorScale` interpolation
+and `vmin`/`vmax` pinning, horizon's folded slices, its partial slice, its mirrored
+negatives and that it leaves `globalAlpha` to the cross-fade — plus, on a real instance,
+the axis landing on `0…laneCount` rather than on the values, the stamped lane labels, the
+by-row hit test, and that a hidden lane is blanked without moving the others; it also
+asserts `isLanedType('gantt')`, since the rework must not take the lane axis away from the
+renderer it came from),
 and `test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
@@ -430,7 +439,7 @@ means emitting a real CJS build; do not "fix" it by re-adding the claim.
 | `legend.js` | `attachLegend()` — shipped opt-in series-visibility legend overlay (see below) |
 | `intervals.js` | Six standalone interval-arithmetic utility functions (no global side effects) |
 | `rollup.js` | `rollupBinned()` — pure helper deriving a coarser resolution tier from a binned block |
-| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline` (with `step`/`fill`), `stackarea`, `waterfall`, `multipoint`, `scatter`, and the ladder five (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc`) |
+| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline` (with `step`/`fill`), `stackarea`, `waterfall`, `heatmap`, `horizon`, `multipoint`, `scatter`, and the ladder five (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc`) |
 | `gantt.js` | `gantt` renderer + `layoutSpans()` row packing for `category: 'span'` plots |
 | `sources.js` | Data source plugin registry + built-in adapters: `zabbix`, `artificial`, `caldav` |
 | `jpZabbix.js` | Standalone Zabbix JSON-RPC client (Promise-based, reusable independently) |
@@ -605,6 +614,61 @@ all of it. Things worth knowing before touching this family:
 - **`fill` clamps its closing edge to the plot box.** The zero line can sit far outside the
   viewport, and an unclamped fill paints over the axis and the margins on its way there.
   The data vertices themselves are *not* clamped, matching every other renderer.
+
+### The lane axis — a renderer property, not a data shape
+
+A **categorical y-axis**: each series or lane owns a horizontal band, the axis prints names
+instead of numbers, and the plot occupies the fixed value space `0…laneCount` whatever its
+values are. `gantt`, `heatmap` and `horizon` all use it.
+
+This used to be welded to `category === 'span'` — `prepare_grid` called `layoutSpans()` by
+name and keyed the extent shortcut off the category — which is why `gantt` was the only
+renderer that could ever have a lane axis. The two concerns are now separate:
+
+- **`lanes: true`** declares the axis; `isLanedType()` reports it. It sits beside
+  `values: 'array'`, `stacked` and `cumulative` as the fourth thing a renderer tells the
+  core that the core cannot infer.
+- **`layout(plot)`** is the hook that stamps `laneCount` and `yticks` before draw time.
+  `gantt` hangs its existing `layoutSpans` on it; `heatmap`/`horizon` share `laneLayout`,
+  which just gives each series a lane. `layoutPlot(plot)` in `renderers.js` dispatches it
+  and is called for *every* block each frame, so implementations must be idempotent.
+- **The category still decides the *time* extents** (`ptmin`/`ptmax` from `tmin`/`tmax` for
+  span and point, from `interval_start` for binned). Only the *y* axis moved. Keeping those
+  two apart is the whole point — `gantt` is a span renderer and `heatmap` a binned one.
+- **`timeseries.js` imports `./gantt.js` for its side effect only** now. Nothing there needs
+  `layoutSpans` by name any more, but dropping the import would unregister the type.
+- Lane *k* owns `[laneCount-k-1, laneCount-k)`, and the hit test finds a cell from the row
+  and the slot alone — structurally the span branch, not the value branches.
+- **A hidden lane is blanked, not closed up.** Removing the row would relabel every lane
+  below it, so the axis would shift under the user's pointer.
+
+`test/gantt.test.mjs` and `test/gantt-hittest.test.mjs` passing *unchanged* is the
+regression proof for this rework; `test/laned-types.test.mjs` asserts `isLanedType('gantt')`
+for the same reason.
+
+### `heatmap` and `horizon`
+
+Both binned, both laned, both sharing `laneLayout` and `laneRange`.
+
+- **The colour/fill range is measured over the whole block, not the viewport** — same call
+  as the waterfall total accumulating from the first slot. A scale that rescaled itself on
+  every pan would make one value read as two colours a second apart. `vmin`/`vmax` pin it.
+- **`heatmap`'s default colour is the *series* colour at a value-dependent alpha**, not a
+  sequential palette of the library's own. That re-themes for free across all four themes,
+  costs no palette to maintain, and keeps two lanes apart at a glance — which one shared
+  ramp does not. `plot.colorScale` (hex stops, interpolated) is the explicit opt-in; non-hex
+  stops snap to the nearest rather than blending, since an invalid `fillStyle` would
+  silently keep the previous colour for the rest of the frame.
+- **`horizon` puts its alpha ramp on the colour, never on `globalAlpha`** — that belongs to
+  the tier cross-fade, and writing it inside a renderer cancels the dissolve. `withAlpha()`
+  was split out of `resolveColor` precisely so the negative-direction colour, which is not a
+  series colour, can take the same ramp.
+- **`coalesceBlocks` carries `lanes`/`colorScale`/`vmin`/`vmax`/`horizonBands`.** Two fetch
+  blocks that each derived their own lane order or colour range would draw the same series
+  in a different row and a different colour on either side of the block margin.
+  Note the y-extent is still computed per block, *before* the merge — so blocks whose series
+  sets differ can still disagree on `laneCount`. Pass `plot.lanes` explicitly if a source
+  pushes blocks that do not all carry every series.
 
 ### `waterfall` — the one cumulative type
 
@@ -945,7 +1009,8 @@ Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts
 `TimeSeries.rollupBinned(plot, coarseInterval, opts)`,
 `TimeSeries.ladderPairs(npct)` / `TimeSeries.isBandedType(type)` (see *Ladder renderers*),
 `TimeSeries.isStackedType(type)` / `TimeSeries.isCumulativeType(type)` /
-`TimeSeries.waterfallLevels(plot)` (see the renderer contract and *`waterfall`* above).
+`TimeSeries.waterfallLevels(plot)` / `TimeSeries.isLanedType(type)` (see the renderer
+contract, *The lane axis* and *`waterfall`* above).
 
 ### DOM overlays: the tooltip and legend are the shipped exceptions
 

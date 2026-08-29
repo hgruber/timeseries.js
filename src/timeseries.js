@@ -10,9 +10,14 @@
 import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
          plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType, isStackedType,
-         isCumulativeType, waterfallLevels, ladderPairs } from './renderers.js';
+         isCumulativeType, waterfallLevels, isLanedType, layoutPlot,
+         ladderPairs } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
-import { layoutSpans } from './gantt.js';
+// Imported for its side effect only: loading the module registers the `gantt`
+// renderer. Its layoutSpans() used to be called from prepare_grid by name; the
+// renderer now declares it as its `layout` hook, so nothing here needs the
+// binding — but dropping the import entirely would unregister the type.
+import './gantt.js';
 import { lttb } from './lttb.js';
 import { rollupBinned } from './rollup.js';
 import { attachTooltip } from './tooltip.js';
@@ -1848,6 +1853,33 @@ export default function TimeSeries(options) {
           return { plot: i, n: e, key: ev.id != null ? ev.id : String(e), value: ev };
       }
     }
+    // laned binned identification (heatmap, horizon) — structurally the span
+    // branch above rather than the value branches below: y names the *lane*, not
+    // a value, so the cell under the pointer is found by row and slot alone.
+    // The span case is excluded because it has its own branch and its own
+    // per-event geometry.
+    for (const i of activePlot) {
+      if (!data[i] || !isLanedType(data[i].type)) continue;
+      if (data[i].category === 'span' || data[i].category === 'point') continue;
+      var lp = data[i];
+      if (!lp.laneCount || !lp._laneIds) continue;
+      if (data[i]._fade != null && data[i]._fade < 0.5) continue;
+      var lrow = Math.floor(lp.laneCount - py);
+      if (lrow < 0 || lrow >= lp._laneIds.length) continue;
+      var lid = lp._laneIds[lrow];
+      if (hiddenSeries.has(lid)) continue;        // not drawn → not hittable
+      if (!(lp.interval_start * 1000 <= t && t <= lp.interval_end * 1000)) continue;
+      var ln = Math.floor((+t / 1000 - lp.interval_start) / lp.interval);
+      if (!lp.data || !lp.data[ln]) continue;
+      if (lp._partial && lp._partial.slot === ln) {
+        if (lp._partial.skip) continue;
+        var lStart = (lp.interval_start + ln * lp.interval) * 1000;
+        if (+t > lStart + lp.interval * 1000 * lp._partial.frac) continue;
+      }
+      var lval = lp.data[ln][lid];
+      if (lval == null) continue;                 // a blank cell is not a hit
+      return { plot: i, n: ln, key: lid, value: lval };
+    }
     // ladder identification — blocks whose per-series value is an *array*
     // (quantile-bands, quantile-steps, error-bars, candlestick). There is no
     // stack to walk here: the whole ladder is the value and the bin is the hit
@@ -1944,7 +1976,10 @@ export default function TimeSeries(options) {
       // cumulative one floats between two running totals rather than stacking up
       // from zero. Both have their own branch above; letting either fall through
       // to this arithmetic would report a hit on a bar that is not there.
-      if (isBandedType(data[i].type) || isCumulativeType(data[i].type)) continue;
+      // A laned block is excluded for a third reason: its y is a row index, so
+      // this branch would compare a value against a category.
+      if (isBandedType(data[i].type) || isCumulativeType(data[i].type)
+          || isLanedType(data[i].type)) continue;
       // Mid-cross-fade both resolutions are active and overlap. Only the
       // dominant one is hittable, so the tooltip follows what is actually
       // visible instead of whichever tier happens to sit first in activePlot.
@@ -2121,12 +2156,13 @@ export default function TimeSeries(options) {
         // earlier frame would otherwise survive setPartialBins('full') and keep
         // clipping a bar nobody asked to clip.
         plot._partial = null;
+        // Whatever the renderer needs the axis to know before draw time — for a
+        // laned type, laneCount and yticks. gantt derives them by packing events
+        // into rows, heatmap and horizon by giving each series a lane; the core
+        // does not need to know which. Idempotent, so it is safe every frame.
+        layoutPlot(plot);
         var ptmin, ptmax;
         if (plot.category === 'span') {
-          // Rows and the vertical extent come from the packing, which the
-          // renderer would otherwise not compute until draw time — the y-axis
-          // needs it now.
-          layoutSpans(plot);
           ptmin = plot.tmin;
           ptmax = plot.tmax;
         } else if (plot.category === 'point') {
@@ -2148,10 +2184,13 @@ export default function TimeSeries(options) {
         var pp = plotpercentage(ptmin, ptmax);
         if (pp > 0) {
           activePlot.push(i);
-          if (plot.category === 'span') {
-            // Span plots occupy a fixed row space of 0…laneCount regardless of
-            // what is on screen, so the viewport scan below does not apply.
-            ymax_array.push([i, plot.laneCount, pp]);
+          if (isLanedType(plot.type)) {
+            // A laned plot occupies the fixed row space 0…laneCount regardless
+            // of what its values are or what is on screen, so the viewport scan
+            // below does not apply. Keyed on the renderer rather than on
+            // `category === 'span'`, so a binned laned type (heatmap, horizon)
+            // gets the same axis.
+            ymax_array.push([i, plot.laneCount || 0, pp]);
             ymin_array.push([i, 0, pp]);
             return;
           }
@@ -2405,13 +2444,13 @@ export default function TimeSeries(options) {
     ymin = -_downMax;
 
     ygrid = [];
-    // A span plot labels its axis with lane names at row centres, not numeric
+    // A laned plot labels its axis with lane names at row centres, not numeric
     // ticks — row indices carry no quantity worth printing. Only honoured when
     // it is the sole active plot, since the shared axis cannot mean two things
     // at once.
     var _spanTicks = null;
     if (activePlot.length === 1 && data[activePlot[0]]
-        && data[activePlot[0]].category === 'span')
+        && isLanedType(data[activePlot[0]].type))
       _spanTicks = data[activePlot[0]].yticks || [];
 
     if (ymax > ymin) {
@@ -3369,6 +3408,8 @@ TimeSeries.isStackedType = isStackedType;
 // it so a consumer can reproduce the levels the renderer and the axis agree on.
 TimeSeries.isCumulativeType = isCumulativeType;
 TimeSeries.waterfallLevels = waterfallLevels;
+// …and the fourth: does it put its series on a categorical y-axis?
+TimeSeries.isLanedType = isLanedType;
 TimeSeries.attachTooltip = attachTooltip;
 TimeSeries.attachLegend = attachLegend;
 TimeSeries.lttb = lttb;

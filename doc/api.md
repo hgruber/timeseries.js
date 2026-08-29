@@ -240,6 +240,7 @@ TimeSeries.isStackedType(type);   // does this plot type sum its series per slot
 TimeSeries.isCumulativeType(type);// does this plot type draw a running total?
 TimeSeries.waterfallLevels(plot); // {slot: {series: {base, top, total}}} — the levels
                                   // the waterfall renderer, axis and hit test share
+TimeSeries.isLanedType(type);     // does this plot type use a categorical y-axis?
 
 TimeSeries.themes;    // { light, dark, highContrast, warm }
 TimeSeries.VERSION;   // '0.9.0'

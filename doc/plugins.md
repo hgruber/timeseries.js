@@ -23,6 +23,8 @@ TimeSeries.registerRenderer({
   values: 'scalar',                     // optional — 'array' for a ladder renderer
   stacked: false,                       // optional — true if you sum series per slot
   cumulative: false,                    // optional — true if you draw a running total
+  lanes: false,                         // optional — true for a categorical y-axis
+  layout(plot) { … },                   // optional — stamp laneCount/yticks before draw
 });
 ```
 
@@ -69,6 +71,26 @@ Omitting it measures the chart from its largest single step, which is almost nev
 height: twelve steps of +10 reach 120 and would be drawn on an axis that stops at 10.
 
 `waterfall` declares it; `TimeSeries.isCumulativeType(type)` reports it back.
+
+### `lanes: true` and `layout` — a categorical y-axis
+
+Say this when your renderer gives each series (or lane) a horizontal band and shows the
+value some other way — by colour, by a band-local fill, by a bar's start and end. The plot
+then occupies the fixed value space `0…laneCount` whatever its numbers are, and the axis is
+labelled with names rather than quantities.
+
+`layout(plot)` is where you stamp what the axis needs *before* draw time: `laneCount`, and
+`yticks` as `[{y, label}]` with `y` in that value space. It runs every frame, so it must be
+idempotent. Lane *k* conventionally owns the band `[laneCount-k-1, laneCount-k)`.
+
+`gantt` derives its lanes by packing events into rows (`layoutSpans`); `heatmap` and
+`horizon` simply give each series one. `prepare_grid` used to call `layoutSpans` by name
+off `category === 'span'`, which is why the lane axis was available to exactly one
+renderer — the hook is what made it general. `TimeSeries.isLanedType(type)` reports the
+declaration back.
+
+Note this is a property of the **renderer**, not of the data: `gantt` is a span renderer and
+`heatmap` a binned one, and both are laned.
 
 ### Drawing across fetch blocks (`coalesce`)
 

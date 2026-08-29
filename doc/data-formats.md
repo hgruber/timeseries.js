@@ -328,6 +328,8 @@ or the old layout is reused.
 | `candlestick` | ✓ | | | Wick and body per bin; OHLC via `roles` |
 | `ohlc` | ✓ | | | High–low bar, open ticked left and close right |
 | `waterfall` | ✓ | | | Cumulative bars: each starts where the last ended |
+| `heatmap` | ✓ | | | One coloured cell per slot per lane |
+| `horizon` | ✓ | | | Each series folded into its own short band |
 | `gantt` | | | ✓ | Duration bars packed into rows |
 
 The five ladder renderers take a slot value that is an **array**
@@ -375,5 +377,29 @@ Two things follow from the running total being *cumulative*, and both matter:
 Each series accumulates independently, and several visible series are dodged
 apart within the bin. A slot a series is missing from contributes nothing and
 does not break its total.
+
+### Laned blocks — `heatmap` and `horizon`
+
+An ordinary binned block, drawn on a **categorical y-axis**: each series owns a
+horizontal band, the axis is labelled with names instead of numbers, and the
+value is shown some other way — by colour (`heatmap`) or by a band-local fill
+(`horizon`). This is the same lane axis `gantt` uses; it belongs to the
+*renderer*, not to the data shape, so a binned block can have one too.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `lanes` | `[{id, label}]` | Optional. Fixes the row order and the axis labels. Without it, lanes follow the series order and are labelled by series id |
+| `colorScale` | `string[]` | `heatmap`. Hex stops for a sequential palette, interpolated. Without it each cell takes its **own series colour** at an intensity that follows the value — which re-themes for free and keeps two lanes distinguishable |
+| `vmin`, `vmax` | `number` | Pin the value range the colours or fills are scaled against. Set both when two charts have to be comparable |
+| `horizonBands` | `number` | `horizon`. How many slices the value is folded into (default 3) |
+| `horizonNegative` | `string` | `horizon`. Colour for the downward direction; negatives mirror from the band's top edge |
+
+Two things to know:
+
+- **The colour range is measured over the whole block, not the viewport.** A
+  scale that rescaled itself as you panned would recolour every cell on every
+  drag, so the same value would read as two colours a second apart.
+- **Hiding a series blanks its row but does not remove it.** The axis has to stay
+  put — closing the row up would relabel every lane below it.
 
 Registering your own is two dozen lines — see [Plugins](plugins.md).

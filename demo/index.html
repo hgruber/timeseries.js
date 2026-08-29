@@ -773,6 +773,44 @@
                             </label>
                         </div>
                     </div>
+                    <!-- heatmap — BinnedSeries on a lane axis -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">heatmap</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-heatmap"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-heatmap','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-heatmap','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-heatmap','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-heatmap',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
+                    <!-- horizon — BinnedSeries on a lane axis -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">horizon</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-horizon"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-horizon','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-horizon','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-horizon','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-horizon',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
                     <!-- waterfall — BinnedSeries, cumulative -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -972,6 +1010,9 @@
         { id: 'tc-stackarea',   source: artificialStackArea,  initialView: 'yesterday' },
         // Cumulative bars: the one type whose height is a running total.
         { id: 'tc-waterfall',   source: artificialWaterfall,  initialView: 'yesterday' },
+        // The laned pair: a categorical y-axis, one band per series.
+        { id: 'tc-heatmap',     source: artificialHeatmap,    initialView: 'yesterday' },
+        { id: 'tc-horizon',     source: artificialHorizon,    initialView: 'yesterday' },
       ];
 
       defs.forEach(function (d) {
