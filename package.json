@@ -1,6 +1,6 @@
 {
   "name": "@hgruber/timeseries.js",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Canvas-based interactive time series visualization",
   "type": "module",
   "main": "dist/timeseries.js",
