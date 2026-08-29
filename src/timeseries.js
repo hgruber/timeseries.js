@@ -10,7 +10,7 @@
 import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
          plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType, isStackedType,
-         ladderPairs } from './renderers.js';
+         isCumulativeType, waterfallLevels, ladderPairs } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
@@ -1901,12 +1901,50 @@ export default function TimeSeries(options) {
       }
     }
     if (bestHit) return bestHit;
+    // waterfall identification — its own branch for the same reason the ladder
+    // has one: there is no stack to walk up from zero here. A bar floats between
+    // the running total before its value and after it, so the hit test asks
+    // waterfallLevels() for exactly the pair the renderer drew between.
+    for (const i of activePlot) {
+      if (!data[i] || !isCumulativeType(data[i].type)) continue;
+      if (data[i].category === 'point' || data[i].category === 'span') continue;
+      if (data[i]._fade != null && data[i]._fade < 0.5) continue;
+      var wp = data[i];
+      if (!(wp.interval_start * 1000 <= t && t <= wp.interval_end * 1000)) continue;
+      var wn = Math.floor((+t / 1000 - wp.interval_start) / wp.interval);
+      if (!wp.data || !wp.data[wn]) continue;
+      if (wp._partial && wp._partial.slot === wn) {
+        if (wp._partial.skip) continue;             // not drawn → not hittable
+        var wStart = (wp.interval_start + wn * wp.interval) * 1000;
+        if (+t > wStart + wp.interval * 1000 * wp._partial.frac) continue;
+      }
+      var wlv = waterfallLevels(wp)[wn];
+      if (!wlv) continue;
+      var wvs = wp._vscale != null ? wp._vscale : 1;
+      for (const wkey in wlv) {
+        // Honours hidden series, like the ladder branch and unlike the stacked
+        // one below: what is not drawn must not be hoverable.
+        if (hiddenSeries.has(wkey)) continue;
+        var wlo = Math.min(wlv[wkey].base, wlv[wkey].top) * wvs;
+        var whi = Math.max(wlv[wkey].base, wlv[wkey].top) * wvs;
+        // A zero-value step is drawn as a 1px line and would be unhittable on
+        // its value range alone — the tolerance POINT_RADIUS.multiline encodes,
+        // in value space.
+        var wtol = ppv > 0 ? 2 / ppv : 0;
+        if (py < wlo - wtol || py > whi + wtol) continue;
+        // The raw step goes back, not the level it accumulated to: a tooltip
+        // reports the contribution this bar represents.
+        return { plot: i, n: wn, key: wkey, value: wp.data[wn][wkey] };
+      }
+    }
     // multibar identification
     for (const i of activePlot) {
       if (!data[i] || data[i].category === 'point' || data[i].category === 'span') continue;
-      // A ladder block stores an array per series, not a stackable scalar —
-      // handled by its own branch above, never by this arithmetic.
-      if (isBandedType(data[i].type)) continue;
+      // A ladder block stores an array per series, not a stackable scalar, and a
+      // cumulative one floats between two running totals rather than stacking up
+      // from zero. Both have their own branch above; letting either fall through
+      // to this arithmetic would report a hit on a bar that is not there.
+      if (isBandedType(data[i].type) || isCumulativeType(data[i].type)) continue;
       // Mid-cross-fade both resolutions are active and overlap. Only the
       // dominant one is hittable, so the tooltip follows what is actually
       // visible instead of whichever tier happens to sit first in activePlot.
@@ -2136,6 +2174,13 @@ export default function TimeSeries(options) {
           // core having to learn its name.
           var stacked = isStackedType(plot.type);
           var banded  = isBandedType(plot.type);
+          // A cumulative type's drawn height is the pair of levels around a
+          // slot, not the slot's own value, so the levels are derived once for
+          // the whole block here. They must be accumulated from the block's
+          // first slot rather than from the viewport edge, or the zero point —
+          // and with it every bar — would move as the user pans.
+          var cumulative = isCumulativeType(plot.type);
+          var wfLevels = cumulative ? waterfallLevels(plot) : null;
           if (plot.category === 'point') {
             // Point series carry {t, values} and no slot grid, so the binned
             // scan below cannot address them (it would compute NaN slot times
@@ -2169,6 +2214,25 @@ export default function TimeSeries(options) {
                 // once, below. Neither is applied twice.
                 var ks = part ? part.scale : 1;
                 var slot = plot.data[sk];
+                if (cumulative) {
+                  // Measured between the two levels the bar is drawn between.
+                  // `ks` is deliberately not applied: the area-true scaling of a
+                  // partial bin means "accumulated over part of a bin", and a
+                  // waterfall bar's value is a difference of levels, not an
+                  // amount with an area — the renderer skips it for the same
+                  // reason, so measuring it here would disagree with the paint.
+                  var lvs = wfLevels[sk];
+                  for (var wk in lvs) {
+                    if (hiddenSeries.has(wk)) continue;
+                    var hiV = Math.max(lvs[wk].base, lvs[wk].top);
+                    var loV = Math.min(lvs[wk].base, lvs[wk].top);
+                    if (hiV > upSum) upSum = hiV;
+                    if (-loV > downSum) downSum = -loV;
+                  }
+                  if (upSum   > vpUpMax)   vpUpMax   = upSum;
+                  if (downSum > vpDownMax) vpDownMax = downSum;
+                  continue;
+                }
                 for (var key in slot) {
                   // A hidden series is not drawn, so it must not stretch the
                   // axis either — otherwise hiding the tallest series leaves
@@ -3301,6 +3365,10 @@ TimeSeries.isBandedType = isBandedType;
 // The same question for the other axis-shaping declaration: does this type sum
 // its series per slot? Both are registry facts, so both are askable.
 TimeSeries.isStackedType = isStackedType;
+// …and the third: does it draw a running total? waterfallLevels is exposed with
+// it so a consumer can reproduce the levels the renderer and the axis agree on.
+TimeSeries.isCumulativeType = isCumulativeType;
+TimeSeries.waterfallLevels = waterfallLevels;
 TimeSeries.attachTooltip = attachTooltip;
 TimeSeries.attachLegend = attachLegend;
 TimeSeries.lttb = lttb;

@@ -773,6 +773,25 @@
                             </label>
                         </div>
                     </div>
+                    <!-- waterfall — BinnedSeries, cumulative -->
+                    <div class="type-card">
+                        <div class="type-card-header">
+                            <span class="type-card-title">waterfall</span>
+                            <span class="type-badge type-badge-binned">BinnedSeries</span>
+                        </div>
+                        <div class="canvas-wrap">
+                            <canvas id="tc-waterfall"></canvas>
+                        </div>
+                        <div class="type-card-nav">
+                            <button class="btn-ghost" onclick="tcNav('tc-waterfall','yesterday')">&#8249; Prev</button>
+                            <button class="btn-primary" onclick="tcNav('tc-waterfall','yesterday')">Yesterday</button>
+                            <button class="btn-ghost" onclick="tcNav('tc-waterfall','today')">Today &#8250;</button>
+                            <label class="sync-label">
+                                <input type="checkbox" onchange="tcSync('tc-waterfall',this.checked)">
+                                Sync
+                            </label>
+                        </div>
+                    </div>
                     <!-- stackarea — BinnedSeries -->
                     <div class="type-card">
                         <div class="type-card-header">
@@ -951,6 +970,8 @@
         { id: 'tc-area',        source: artificialArea,       initialView: 'yesterday' },
         { id: 'tc-step',        source: artificialStepLine,   initialView: 'yesterday' },
         { id: 'tc-stackarea',   source: artificialStackArea,  initialView: 'yesterday' },
+        // Cumulative bars: the one type whose height is a running total.
+        { id: 'tc-waterfall',   source: artificialWaterfall,  initialView: 'yesterday' },
       ];
 
       defs.forEach(function (d) {

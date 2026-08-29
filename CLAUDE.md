@@ -276,6 +276,12 @@ line bridges a slot gap but breaks on a null, `stackarea`'s bands sitting on the
 total and closing up when a series is hidden, `ohlc`'s tick geometry and its `candleColors`
 direction, and — on a real instance — the y-extent test that **fails without
 `stacked: true`**, paired with `multiline` over the identical data to show the two apart),
+`test/waterfall.test.mjs` (the cumulative type: the levels each bar is drawn between, a
+`totals` bar restating the sum without consuming a value, per-series accumulation,
+non-mutation, the leader lines and their absence across a slot gap, and — on a real
+instance — the extent following the running total rather than the largest step, the extent
+surviving a pan unchanged, and a hit test that returns the raw step and misses *below* a
+bar floating above zero, which is what the stacked branch would have got wrong),
 and `test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across
@@ -424,7 +430,7 @@ means emitting a real CJS build; do not "fix" it by re-adding the claim.
 | `legend.js` | `attachLegend()` — shipped opt-in series-visibility legend overlay (see below) |
 | `intervals.js` | Six standalone interval-arithmetic utility functions (no global side effects) |
 | `rollup.js` | `rollupBinned()` — pure helper deriving a coarser resolution tier from a binned block |
-| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline` (with `step`/`fill`), `stackarea`, `multipoint`, `scatter`, and the ladder five (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc`) |
+| `renderers.js` | Renderer plugin registry + built-in renderers: `multibar`, `multiline` (with `step`/`fill`), `stackarea`, `waterfall`, `multipoint`, `scatter`, and the ladder five (`quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc`) |
 | `gantt.js` | `gantt` renderer + `layoutSpans()` row packing for `category: 'span'` plots |
 | `sources.js` | Data source plugin registry + built-in adapters: `zabbix`, `artificial`, `caldav` |
 | `jpZabbix.js` | Standalone Zabbix JSON-RPC client (Promise-based, reusable independently) |
@@ -599,6 +605,37 @@ all of it. Things worth knowing before touching this family:
 - **`fill` clamps its closing edge to the plot box.** The zero line can sit far outside the
   viewport, and an unclamped fill paints over the axis and the margins on its way there.
   The data vertices themselves are *not* clamped, matching every other renderer.
+
+### `waterfall` — the one cumulative type
+
+A binned block of **deltas**: each bar is drawn between the running total before its value
+and after it. `plot.totals` (slot numbers) marks bars that restate the sum from zero,
+`plot.waterfallColors = {up, down, total}` colours the three roles, `connect: false` drops
+the leader lines.
+
+- **`waterfallLevels(plot)` is the one place the levels are derived**, and the renderer,
+  the y-extent scan in `prepare_grid` and the hit test in `get_element` all call it. Three
+  consumers agreeing on where a bar is, by construction — the same arrangement `barRect()`
+  in `gantt.js` has to maintain by hand.
+- **It is recomputed every frame, deliberately not cached** the way `layoutSpans` stamps
+  `_laidOut`. A cache would need invalidating on every path that edits a block, and
+  `pushData` edits blocks in place when a polling source supersedes slots. This is the same
+  call `partialOf` makes for `data_until`: reading the truth each frame beats maintaining a
+  horizon.
+- **The total accumulates from the block's first slot, never from the viewport edge.** A
+  zero point that moved as you panned would make every bar jump on every drag.
+  `test/waterfall.test.mjs` pins this by panning and re-reading the extent.
+- **`cumulative: true` is why the y-extent is right.** Measuring a waterfall like an
+  ordinary binned block gives the largest single step, which is almost never the height of
+  the chart. Third of the same family as `values: 'array'` and `stacked: true`.
+- **It has no `coalesce`**, unlike the other bin-local renderers: the running total is
+  accumulated from the block's own first slot, so merging two fetch blocks would restart it
+  somewhere else and move every bar.
+- **`binGeom`'s `k` (the partial bin's area-true factor) is deliberately not applied**, in
+  the renderer *and* in the extent scan. That factor means "this amount was accumulated
+  over part of a bin", and a waterfall bar's value is a difference between two levels, not
+  an amount with an area. Only `skip` and the narrowing apply. The two must skip it
+  together or the paint and the axis disagree.
 
 ### Ladder renderers — one block, five ways to draw it
 
@@ -907,7 +944,8 @@ Statics: `TimeSeries.attachTooltip(ts, opts)`, `TimeSeries.attachLegend(ts, opts
 `TimeSeries.resolveColor(plot, id, alpha)`,
 `TimeSeries.rollupBinned(plot, coarseInterval, opts)`,
 `TimeSeries.ladderPairs(npct)` / `TimeSeries.isBandedType(type)` (see *Ladder renderers*),
-`TimeSeries.isStackedType(type)` (see the renderer contract above).
+`TimeSeries.isStackedType(type)` / `TimeSeries.isCumulativeType(type)` /
+`TimeSeries.waterfallLevels(plot)` (see the renderer contract and *`waterfall`* above).
 
 ### DOM overlays: the tooltip and legend are the shipped exceptions
 

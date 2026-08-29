@@ -327,6 +327,7 @@ or the old layout is reused.
 | `error-bars` | ✓ | | | Marker plus whiskers per bin |
 | `candlestick` | ✓ | | | Wick and body per bin; OHLC via `roles` |
 | `ohlc` | ✓ | | | High–low bar, open ticked left and close right |
+| `waterfall` | ✓ | | | Cumulative bars: each starts where the last ended |
 | `gantt` | | | ✓ | Duration bars packed into rows |
 
 The five ladder renderers take a slot value that is an **array**
@@ -350,5 +351,29 @@ A line bridges a gap in the slot numbering; a *missing value* in a slot that
 exists breaks it. The filled forms (`stackarea`, `quantile-steps`) break on an
 absent slot as well — shading across unmeasured time asserts more than a line
 through it does.
+
+### Waterfall blocks
+
+An ordinary binned block of **deltas**. Each bar starts where the previous one
+ended, so the chart reads as a running total broken into its contributions.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `data` | `{slot: {series: delta}}` | The change this slot contributes, not the level it reaches |
+| `totals` | `number[]` | Slots that restate the running sum from zero — the subtotal and total bars. They consume no value of their own, so the running total passes through them |
+| `waterfallColors` | `{up, down, total}` | Optional. Without it every bar takes the series colour and only the geometry shows direction |
+| `connect` | `false` | Drops the leader lines between bars |
+
+Two things follow from the running total being *cumulative*, and both matter:
+
+- **It is accumulated from the block's first slot, never from the left edge of
+  the viewport.** A zero point that moved as you panned would make every bar jump
+  on every drag.
+- **The y-axis follows the running total**, not the largest single step. Twelve
+  steps of +10 reach 120, and the axis says so.
+
+Each series accumulates independently, and several visible series are dodged
+apart within the bin. A slot a series is missing from contributes nothing and
+does not break its total.
 
 Registering your own is two dozen lines — see [Plugins](plugins.md).

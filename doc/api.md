@@ -237,6 +237,9 @@ TimeSeries.ladderPairs(n);        // { centre, pairs } — how the ladder render
                                   //   plot.percentiles; see doc/data-formats.md
 TimeSeries.isBandedType(type);    // does this plot type store an array per slot?
 TimeSeries.isStackedType(type);   // does this plot type sum its series per slot?
+TimeSeries.isCumulativeType(type);// does this plot type draw a running total?
+TimeSeries.waterfallLevels(plot); // {slot: {series: {base, top, total}}} — the levels
+                                  // the waterfall renderer, axis and hit test share
 
 TimeSeries.themes;    // { light, dark, highContrast, warm }
 TimeSeries.VERSION;   // '0.9.0'

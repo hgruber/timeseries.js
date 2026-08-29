@@ -22,6 +22,7 @@ TimeSeries.registerRenderer({
   coalesce(plot) { … },                 // optional — see "Drawing across fetch blocks"
   values: 'scalar',                     // optional — 'array' for a ladder renderer
   stacked: false,                       // optional — true if you sum series per slot
+  cumulative: false,                    // optional — true if you draw a running total
 });
 ```
 
@@ -55,6 +56,19 @@ single series, so the top of every stack is drawn above the plot area and simply
 
 It also puts your type on the list of block types `pushData` will concatenate when a new
 block overlaps an older one, which is what a polling source relies on.
+
+### `cumulative: true` — declaring a running total
+
+The third and last of these. A cumulative renderer's bar is drawn between the running total
+*before* a slot's value and *after* it, so a slot's drawn extent is not its own value at
+all. `prepare_grid` asks `TimeSeries.waterfallLevels(plot)` for those levels instead of
+reading `plot.data`, and so does the hit test — all three read the same function, which is
+the only way they can agree on where a bar is.
+
+Omitting it measures the chart from its largest single step, which is almost never its
+height: twelve steps of +10 reach 120 and would be drawn on an axis that stops at 10.
+
+`waterfall` declares it; `TimeSeries.isCumulativeType(type)` reports it back.
 
 ### Drawing across fetch blocks (`coalesce`)
 

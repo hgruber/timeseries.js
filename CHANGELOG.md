@@ -36,6 +36,20 @@ for a reader who has not seen the commits.
   series down to the zero line, under the stroke, clamped to the plot box so a
   far-off zero line cannot paint over the axis. Series are filled independently
   and therefore overlap; use `stackarea` to stack them.
+- **`waterfall`** — cumulative bars, where each starts where the previous one
+  ended, so the chart reads as a running total broken into its contributions.
+  `plot.totals` names the slots that restate the sum from zero (the subtotal and
+  total bars), `plot.waterfallColors` colours rising, falling and total apart,
+  and `connect: false` drops the leader lines. Two things follow from the total
+  being cumulative and both are load-bearing: it accumulates from the block's
+  first slot rather than from the left edge of the viewport, so panning cannot
+  make every bar jump; and the y-axis follows the running total rather than the
+  largest single step, so twelve steps of +10 are drawn on an axis reaching 120.
+- **`cumulative: true` in the renderer contract**, with
+  `TimeSeries.isCumulativeType(type)` and `TimeSeries.waterfallLevels(plot)`.
+  The renderer, the y-extent scan and the hit test all read the same levels from
+  that one function, which is the only way three consumers can agree on where a
+  floating bar actually is.
 - **`stacked: true` in the renderer contract**, with `TimeSeries.isStackedType(type)`
   to read it back. Whether a type sums its series per slot decides how the y-extent
   is measured, and the core previously knew it only as a literal comparison against

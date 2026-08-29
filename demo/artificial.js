@@ -269,6 +269,43 @@ var artificialOHLCBars = Object.assign({}, artificialCandlesOHLC, {
   type: "ohlc",
 });
 
+// ── Waterfall (cumulative bars) ───────────────────────────────────────────────
+//
+// Each bar starts where the previous one ended, so the chart reads as a running
+// total broken into its contributions. The last slot is listed in `totals`,
+// which makes it restate the sum from zero instead of adding to it.
+
+var _wfSteps = [40, 25, -18, 32, -12, 15, -8, 22, -30, 18, 12, 0];
+var _wfData = {};
+var _wfRun = 0;
+var _wfMin = 0;
+var _wfMax = 0;
+for (var _w = 0; _w < _wfSteps.length; _w++) {
+  _wfData[_w] = { change: _wfSteps[_w] };
+  // The closing bar spans 0…total, so it cannot push the extent past what the
+  // running total already reached.
+  if (_w < _wfSteps.length - 1) {
+    _wfRun += _wfSteps[_w];
+    if (_wfRun < _wfMin) _wfMin = _wfRun;
+    if (_wfRun > _wfMax) _wfMax = _wfRun;
+  }
+}
+
+var artificialWaterfall = {
+  "source-type": "artificial",
+  name: "example waterfall (BinnedSeries)",
+  type: "waterfall",
+  interval: 2 * 3600,
+  interval_start: _intervalStart,
+  interval_end: _intervalStart + _wfSteps.length * 2 * 3600,
+  count: _wfSteps.length,
+  totals: [_wfSteps.length - 1],
+  waterfallColors: { up: '#2f8f4e', down: '#c04a3d', total: '#2d6a9f' },
+  min: Math.floor(_wfMin),
+  max: Math.ceil(_wfMax),
+  data: _wfData,
+};
+
 // ── Butterfly stacked variant ─────────────────────────────────────────────────
 // Same multibar data, but series 1, 3, 5 stack DOWN from y=0 while 0, 2, 4
 // stack UP. The renderer reads `series_directions` to decide direction.

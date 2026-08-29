@@ -28,6 +28,13 @@ const bandedTypes = new Set();
 // same move `values: 'array'` makes above, for the same reason.
 const stackedTypes = new Set();
 
+// Types whose bars are a *running total*: each starts where the previous ended,
+// so a slot's drawn extent is not its own value but the pair of levels around
+// it. The y-extent scan has to ask waterfallLevels() for those levels instead of
+// reading plot.data — measuring a waterfall like an ordinary binned block gives
+// the largest single step, which is almost never the height of the chart.
+const cumulativeTypes = new Set();
+
 /**
  * Register a renderer plugin for a given plot type.
  * @param {{ type: string, draw: function, highlight?: function,
@@ -40,6 +47,8 @@ export function registerRenderer(plugin) {
   else bandedTypes.delete(plugin.type);
   if (plugin.stacked) stackedTypes.add(plugin.type);
   else stackedTypes.delete(plugin.type);
+  if (plugin.cumulative) cumulativeTypes.add(plugin.type);
+  else cumulativeTypes.delete(plugin.type);
 }
 
 /**
@@ -55,6 +64,13 @@ export function isBandedType(type) {
  */
 export function isStackedType(type) {
   return stackedTypes.has(type);
+}
+
+/**
+ * Does this plot type draw a running total? See `cumulativeTypes` above.
+ */
+export function isCumulativeType(type) {
+  return cumulativeTypes.has(type);
 }
 
 /**
@@ -636,6 +652,118 @@ function stackarea(plot, rctx) {
   }
 }
 
+/**
+ * Where each waterfall bar starts and ends: the running total before the slot's
+ * value, and after it. One entry per slot per series, `{base, top, total}`.
+ *
+ * Deliberately recomputed from scratch every frame rather than cached on the
+ * plot the way layoutSpans stamps `_laidOut`. A cache here would have to be
+ * invalidated on every path that edits a block — and pushData edits blocks in
+ * place, trimming slots when a polling source supersedes them — so reading the
+ * truth each frame is both cheaper to reason about and impossible to get stale.
+ * It is the same call partialOf makes for `data_until`.
+ *
+ * The running total starts at the block's first slot, NOT at the left edge of
+ * the viewport: a cumulative chart whose zero point moved as you panned would
+ * have every bar jump on every drag.
+ *
+ * `plot.totals` (a list of slot numbers) marks bars that restate the running sum
+ * from zero instead of adding to it — the subtotal/total bars a waterfall ends
+ * on. They consume no value of their own, so the running total passes through.
+ */
+export function waterfallLevels(plot) {
+  var levels = {};
+  var running = Object.create(null);
+  var totals = plot.totals ? new Set(plot.totals.map(Number)) : null;
+  for (const s of sortedSlots(plot)) {
+    var slot = plot.data[s];
+    var out = {};
+    var isTotal = totals ? totals.has(s) : false;
+    for (var id in slot) {
+      var v = slot[id];
+      if (v == null) continue;
+      var prev = running[id] || 0;
+      if (isTotal) {
+        out[id] = { base: 0, top: prev, total: true };
+      } else {
+        out[id] = { base: prev, top: prev + v, total: false };
+        running[id] = prev + v;
+      }
+    }
+    levels[s] = out;
+  }
+  return levels;
+}
+
+// waterfall — each bar starts where the previous one ended, so the chart reads
+// as a running total broken into its contributions. `plot.totals` names the
+// slots that restate the sum from zero; `plot.connect === false` drops the
+// leader lines between bars.
+function waterfall(plot, rctx) {
+  var { c, Y, margin, plotWidth, hidden } = rctx;
+  if (plot.category === 'point') return;          // binned series only
+  var ids = visibleIds(plot, hidden);
+  if (!ids.length) return;
+  var levels = waterfallLevels(plot);
+  var wc = plot.waterfallColors;
+  var connect = plot.connect !== false;
+  var slots = sortedSlots(plot);
+
+  // Leader lines first, so the bars are painted over their own connectors.
+  if (connect) {
+    for (var ki = 0; ki < ids.length; ki++) {
+      var id = ids[ki];
+      c.strokeStyle = resolveColor(plot, id, 0.35);
+      c.lineWidth = 1;
+      c.beginPath();
+      for (var si = 0; si + 1 < slots.length; si++) {
+        // Only between neighbouring bins: a gap in the slot numbering is a gap
+        // in the data, and a connector across it would draw a total that was
+        // never accumulated.
+        if (slots[si + 1] !== slots[si] + 1) continue;
+        var ga = binGeom(plot, slots[si], rctx);
+        var gb = binGeom(plot, slots[si + 1], rctx);
+        if (!ga || !gb) continue;
+        var la = levels[slots[si]][id];
+        var lb = levels[slots[si + 1]][id];
+        if (!la || !lb) continue;
+        var da = dodgeBin(ga.x0, ga.w, ids.length, ki);
+        var db = dodgeBin(gb.x0, gb.w, ids.length, ki);
+        var yJoin = Y(la.top);
+        c.moveTo(da.cx + da.w * 0.35, yJoin);
+        c.lineTo(db.cx - db.w * 0.35, yJoin);
+      }
+      c.stroke();
+    }
+  }
+
+  for (const s of slots) {
+    var g = binGeom(plot, s, rctx);
+    if (!g) continue;
+    if (g.x0 + g.w < margin.left || g.x0 > margin.left + plotWidth) continue;
+    for (var kj = 0; kj < ids.length; kj++) {
+      var lv = levels[s][ids[kj]];
+      if (!lv) continue;
+      var d = dodgeBin(g.x0, g.w, ids.length, kj);
+      var bw = Math.max(d.w * 0.7, 1);
+      var bx = d.cx - bw / 2;
+      // Note `g.k` is deliberately not applied: the area-true scaling of a
+      // partial bin means "this value was accumulated over part of a bin", and a
+      // waterfall bar's value is the *difference between two levels*, not an
+      // amount with an area. Only `skip` and the narrowing apply.
+      var yTop = Y(lv.top);
+      var yBase = Y(lv.base);
+      var top = Math.min(yTop, yBase);
+      // A zero-value step still has to be visible as a line on the running total.
+      var h = Math.max(Math.abs(yBase - yTop), 1);
+      var role = lv.total ? 'total' : (lv.top >= lv.base ? 'up' : 'down');
+      c.fillStyle = (wc && wc[role]) || resolveColor(plot, ids[kj], lv.total ? 0.9 : 0.8);
+      c.fillRect(bx, top, bw, h);
+    }
+  }
+  c.lineWidth = 1;
+}
+
 // ── Ladder renderers ─────────────────────────────────────────────────────────
 //
 // Four renderers share one data shape: a binned block whose every slot holds,
@@ -1113,3 +1241,6 @@ registerRenderer({
 registerRenderer({ type: 'error-bars',  draw: errorbars,   values: 'array' });
 registerRenderer({ type: 'candlestick', draw: candlestick, values: 'array' });
 registerRenderer({ type: 'ohlc',        draw: ohlc,        values: 'array' });
+// No coalesce: the running total is accumulated from the block's own first slot,
+// so merging two blocks would restart it somewhere else and move every bar.
+registerRenderer({ type: 'waterfall',   draw: waterfall,   cumulative: true });
