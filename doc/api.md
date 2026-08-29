@@ -57,13 +57,24 @@ The chart tracks "now" like a seismograph, scrolling the window as time passes.
 
 ```js
 ts.follow(fraction);   // start; fraction 0–100 = where "now" sits, 0 = right edge … 100 = left
-ts.previewNow();       // jump to now without locking into follow mode
+ts.followNow();        // animate to now at the left edge, then roll — the window looks ahead
+ts.previewNow();       // animate to now at the right edge, then roll — the window looks back
+ts.stop();             // leave follow mode, keeping the window where it is
 ts.onFollow(fn);       // called when follow mode (re)starts, with the percentage
 ts.onStop(fn);         // called when follow mode stops
 ```
 
+All three entry points keep the current window **width** and only move it. `follow()` snaps
+there in one frame; `followNow()` and `previewNow()` animate, and are the same call at the
+two ends of the fraction — both end up rolling, so use `stop()` if you want the viewport
+moved without entering follow mode.
+
 Set `autoFollow: true` in the constructor to enter follow mode automatically once the
 viewport's right edge reaches the present.
+
+Every navigation method (`today()`, `zoom()`, a pan, …) leaves follow mode on its own, so
+`stop()` is only needed when a UI of your own has to leave the rolling state without moving
+the viewport. `onStop` is what keeps a follow toggle in step with both paths.
 
 ## Viewport sync groups
 

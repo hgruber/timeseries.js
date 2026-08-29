@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format follows
 **Versioning.** The project is pre-1.0 and follows the usual 0.x convention: a
 **minor** bump (`0.9.0` → `0.10.0`) may break the public API, a **patch** bump
 (`0.9.0` → `0.9.1`) never does. Pin a minor range (`^0.9.0`, or `@0.9` on a CDN
-URL) to get fixes without breakage. See [Versioning](README.md#versioning).
+URL) to get fixes without breakage. See [Versioning](doc/getting-started.md#versioning).
 
 Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
