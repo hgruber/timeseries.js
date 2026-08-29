@@ -307,3 +307,35 @@ test('a laned plot reports its series to the legend', async () => {
   const { ts } = await build(lanedSource('heatmap'));
   assert.deepEqual(ts.getSeries().map(s => s.id).sort(), ['a', 'b', 'c']);
 });
+
+test('a third-party span renderer still gets a lane axis without declaring one',
+  async () => {
+    // The back-compat half of the rework. Before `lanes` existed, prepare_grid
+    // gave every span block a lane axis off its *category*; a span renderer
+    // registered against that contract declares neither `lanes` nor `layout`.
+    // Without the fallback it falls through to the binned extent scan, which
+    // reads plot.data as a slot map — and a span block's data is an array.
+    TimeSeries.registerRenderer({ type: 'legacy-span', draw() {} });
+    const id = 'legacy-span-plot';
+    makeCanvas(id);
+    const ts = new TimeSeries({
+      canvas: id,
+      initialView: null,
+      sources: [{
+        'source-type': 'artificial', type: 'legacy-span', category: 'span',
+        name: 'legacy', layout: 'calendar',
+        tmin: START * 1000, tmax: (START + SLOTS * 3600) * 1000,
+        lanes: [{ id: 'L1', label: 'One' }, { id: 'L2', label: 'Two' }],
+        data: [
+          { id: 'e1', lane: 'L1', start: (START + 3600) * 1000, end: (START + 2 * 3600) * 1000 },
+          { id: 'e2', lane: 'L2', start: (START + 3600) * 1000, end: (START + 2 * 3600) * 1000 },
+        ],
+      }],
+    });
+    await setView(ts, START * 1000, (START + SLOTS * 3600) * 1000);
+    const vr = ts.getValueRange();
+    // Two lanes → the axis is 0…2, not something derived from the event values.
+    assert.equal(vr.ymax, 2);
+    assert.equal(vr.ymin + 0, 0);
+    assert.equal(ts.getActiveData()[0].laneCount, 2);
+  });

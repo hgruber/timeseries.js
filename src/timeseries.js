@@ -13,11 +13,12 @@ import { plotData as _plotData, highlight as _highlight, registerRenderer, serie
          isCumulativeType, waterfallLevels, isLanedType, layoutPlot,
          ladderPairs } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
-// Imported for its side effect only: loading the module registers the `gantt`
-// renderer. Its layoutSpans() used to be called from prepare_grid by name; the
-// renderer now declares it as its `layout` hook, so nothing here needs the
-// binding — but dropping the import entirely would unregister the type.
-import './gantt.js';
+// Loading the module also registers the `gantt` renderer, which is why this
+// import may never be dropped. layoutSpans is no longer called for gantt itself
+// — the renderer declares it as its `layout` hook — but prepare_grid still needs
+// it for the back-compat path that gives *any* span block a lane axis, whether
+// or not its renderer declares one.
+import { layoutSpans } from './gantt.js';
 import { lttb } from './lttb.js';
 import { rollupBinned } from './rollup.js';
 import { attachTooltip } from './tooltip.js';
@@ -2161,6 +2162,13 @@ export default function TimeSeries(options) {
         // into rows, heatmap and horizon by giving each series a lane; the core
         // does not need to know which. Idempotent, so it is safe every frame.
         layoutPlot(plot);
+        // Back-compat: a span block has always had a lane axis, and used to get
+        // it from its *category* rather than from its renderer. A third-party
+        // span renderer registered before `lanes`/`layout` existed declares
+        // neither, so pack its rows here or it would fall through to the binned
+        // extent scan — which reads plot.data as a slot map, and a span block's
+        // data is an array.
+        if (plot.category === 'span' && !plot._laidOut) layoutSpans(plot);
         var ptmin, ptmax;
         if (plot.category === 'span') {
           ptmin = plot.tmin;
@@ -2184,7 +2192,10 @@ export default function TimeSeries(options) {
         var pp = plotpercentage(ptmin, ptmax);
         if (pp > 0) {
           activePlot.push(i);
-          if (isLanedType(plot.type)) {
+          // `|| category === 'span'` is the back-compat half: see layoutSpans
+          // above. A span block gets the lane axis whether or not its renderer
+          // declares one, which is what it did before `lanes` existed.
+          if (isLanedType(plot.type) || plot.category === 'span') {
             // A laned plot occupies the fixed row space 0…laneCount regardless
             // of what its values are or what is on screen, so the viewport scan
             // below does not apply. Keyed on the renderer rather than on

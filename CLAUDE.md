@@ -635,8 +635,13 @@ renderer that could ever have a lane axis. The two concerns are now separate:
 - **The category still decides the *time* extents** (`ptmin`/`ptmax` from `tmin`/`tmax` for
   span and point, from `interval_start` for binned). Only the *y* axis moved. Keeping those
   two apart is the whole point — `gantt` is a span renderer and `heatmap` a binned one.
-- **`timeseries.js` imports `./gantt.js` for its side effect only** now. Nothing there needs
-  `layoutSpans` by name any more, but dropping the import would unregister the type.
+- **A span block keeps its lane axis whether or not its renderer declares one.** That
+  back-compat path is not decoration: a third-party span renderer written before `lanes`
+  existed declares neither `lanes` nor `layout`, and without it falls through to the *binned*
+  extent scan — which reads `plot.data` as a slot map, while a span block's `data` is an
+  array. So `prepare_grid` still calls `layoutSpans` for an unpacked span block and still
+  ORs `category === 'span'` into the laned test. `test/laned-types.test.mjs` registers a
+  bare span renderer to pin it (verified to fail without the fallback).
 - Lane *k* owns `[laneCount-k-1, laneCount-k)`, and the hit test finds a cell from the row
   and the slot alone — structurally the span branch, not the value branches.
 - **A hidden lane is blanked, not closed up.** Removing the row would relabel every lane
