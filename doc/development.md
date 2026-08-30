@@ -14,6 +14,9 @@ npm run serve:proxy  # same, but node — adds the /dav-proxy route (see below)
 npm test             # test/*.test.mjs with node's built-in runner
 npm run lint         # eslint; must stay at 0 errors
 npm run lint:strict  # warnings fail too (--max-warnings 0); currently green
+npm run bench         # performance comparison: micro (CPU) + browser (TTFR + heap)
+npm run bench:micro   # CPU time per plotAll in the DOM stub, ~10 s, no browser
+npm run bench:browser # TTFR + heap vs uPlot / Chart.js in headless Chromium, ~1 min
 npm run release -- X.Y.Z   # cut a release — see below
 ```
 
@@ -264,6 +267,42 @@ uses `var` throughout, and converting wholesale would be a 300-finding diff with
 immediately. Keep it that way: prefer `===`/`!==` (`== null` is permitted — `eqeqeq` runs in
 `smart` mode), declare each `var` once per function, and do not shadow the outer time-units
 object or the `Y()`/`label()` helpers.
+
+## Performance benchmarks
+
+The `benchmark/` directory compares timeseries.js against uPlot and Chart.js. Two harnesses
+complement each other — one measures the library's CPU cost in isolation, the other measures
+what the user actually sees in a real browser.
+
+**Micro (`npm run bench:micro`)** runs `ts.redraw()` in Node against the canvas no-op stub from
+`test/helpers/dom.mjs`. Every drawing call is a no-op, so what we measure is library CPU —
+`prepare_grid`, the render loop, layout, axis math — with zero backend cost. Five runs per
+size, median; the first run is JIT warm-up and is dropped.
+
+**Browser (`npm run bench:browser`)** spawns headless Chromium via Puppeteer, opens a single
+harness page that mounts one library at a time, and reads back `window.__benchResult` once
+two consecutive `requestAnimationFrame` ticks paint the same bitmap (the *settle contract*).
+What gets reported: **TTFR** in milliseconds and **`performance.memory.usedJSHeapSize`** in
+MiB. Heap is Chromium-only — Firefox and Safari read `null`, and the runner tolerates that.
+Three runs per (library, size) cell, median.
+
+Sizes are 1k / 10k / 100k for the browser run (one million points × three libraries would run
+Chromium's tab close to its memory ceiling). The micro bench goes up to 1M because the canvas
+stub has no such ceiling.
+
+`npm run bench` runs both, micro first (no browser dependency, ~10 seconds) and browser
+after (~1 minute including the Puppeteer Chromium download on a cold `node_modules`).
+
+**What is deliberately not measured:** FPS during pan/zoom (requires CDP tracing or a 60 fps
+rAF loop with event injection — both have been deferred to a second iteration), WebGL
+renderers (ChartGPU, SciChart — not reproducible without a fixed GPU), and timeseries.js' own
+LTTB path (it exists in `src/lttb.js` but the render loop does not call it; sampling fairness
+is only meaningful once the library itself samples).
+
+The full methodology, the LCG dataset generator, and the first measurement on the maintainer's
+machine (2026-08-30, uPlot roughly 2× faster than timeseries.js and Chart.js at 100k points)
+live in [`benchmark/README.md`](../benchmark/README.md). JSON snapshots from each run land in
+`benchmark/results/` (gitignored — `latest` plus a timestamped file per run).
 
 ## Cutting a release
 

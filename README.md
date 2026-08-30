@@ -129,6 +129,7 @@ exactly that pairing. See [the full comparison](doc/comparison.md).
 | [Plugins](doc/plugins.md) | Writing a renderer or a data source |
 | [Recipes](doc/recipes.md) | Copy-paste examples, one per task |
 | [Development](doc/development.md) | Build, test, demos, releasing |
+| [Performance](benchmark/README.md) | CPU time and TTFR against uPlot and Chart.js |
 
 Start at [doc/](doc/) for the full index, including a "what do I want to do" table.
 

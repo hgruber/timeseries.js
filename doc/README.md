@@ -28,6 +28,7 @@ five-minute version; everything else lives here.
 | Show two resolutions of one signal without a visible pop | [Resolution tiers](tiers.md) |
 | See how this differs from a Grafana/Zabbix panel | [Comparison](comparison.md) |
 | Copy a working example | [Recipes](recipes.md) |
+| Compare performance against other libraries | [Performance](../benchmark/README.md) |
 | Build, test or release the project | [Development](development.md) |
 | Understand *why* the core does something the way it does | [Internals](internals/) |
 
@@ -45,6 +46,7 @@ five-minute version; everything else lives here.
 | [comparison.md](comparison.md) | How embedding this chart differs from a Grafana or Zabbix panel |
 | [plugins.md](plugins.md) | The renderer and source plugin contracts |
 | [recipes.md](recipes.md) | Copy-paste examples, one per task |
+| [benchmark/README.md](../benchmark/README.md) | Performance comparison methodology; the micro and browser harness, and the latest numbers |
 | [development.md](development.md) | Build, test, lint, the demo pages, cutting a release |
 | [internals/](internals/) | The design record: why each mechanism exists and what breaks without it. For changing the library, not for using it |
 
