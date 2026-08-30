@@ -63,4 +63,25 @@ export default [
       'no-unused-vars': ['error', { args: 'none', varsIgnorePattern: '^_' }],
     },
   },
+
+  // Benchmark harness — Node-only (micro) or Node-driving-Chromium (browser).
+  // The browser runner evaluates page-side scripts via page.evaluate(),
+  // so window/document are legitimate string contents of that code.
+  {
+    files: ['benchmark/**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.browser },
+    },
+    rules: {
+      'no-unused-vars': ['error', { args: 'none', varsIgnorePattern: '^_' }],
+    },
+  },
+
+  // The browser harness HTML inlines its own scripts; the .html file itself
+  // is plain markup with no JS to lint.
+  {
+    ignores: ['benchmark/**/*.html'],
+  },
 ];

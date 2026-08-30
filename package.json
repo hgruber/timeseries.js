@@ -29,13 +29,17 @@
     "serve:proxy": "node scripts/dev-server.mjs",
     "test": "node --test test/*.test.mjs",
     "lint": "eslint .",
-    "lint:strict": "eslint . --max-warnings 0"
+    "lint:strict": "eslint . --max-warnings 0",
+    "bench:micro": "node benchmark/micro/run.mjs",
+    "bench:browser": "node benchmark/browser/run.mjs",
+    "bench": "npm run bench:micro && npm run bench:browser"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "esbuild": "^0.24.0",
     "eslint": "^10.7.0",
-    "globals": "^17.7.0"
+    "globals": "^17.7.0",
+    "puppeteer": "^25.9.0"
   },
   "license": "MIT",
   "repository": {

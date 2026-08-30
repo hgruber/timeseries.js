@@ -10,3 +10,9 @@ RELEASING.md
 # Personal launch-copy draft (Show HN title/comment, timing notes) — promotional,
 # one-off, not project documentation. Stays local like RELEASING.md above.
 SHOW_HN_DRAFT.md
+
+# Performance benchmark outputs — re-generatable from `npm run bench`. The
+# harness and the methodology (in benchmark/README.md and the .mjs files) are
+# tracked; only the machine-specific measurements stay out.
+benchmark/results/
+benchmark/browser/node_modules/

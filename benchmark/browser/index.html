@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<!--
+  Single-page benchmark harness.
+
+  One HTML file, three libraries, one dataset. ?lib=timeseries|uplot|chartjs
+  picks which library mounts; ?size=1000|10000|100000 picks the dataset
+  cardinality. The browser-bench Puppeteer runner drives it by changing
+  those URL parameters and reading the values window.__benchResult writes
+  once it observes a settled frame.
+
+  Why one page, not three:
+    * Identical viewport (1000x400) for all three. Per-page demos would
+      drift.
+    * Identical dataset via the shared LCG generator. No copy-paste drift.
+    * One URL surface to drive from Puppeteer — load, wait for result,
+      read, repeat.
+
+  Pinned versions (re-check before bumping):
+    * timeseries.js — built fresh from src/ at run time (no CDN), see bench-tag
+      below. The harness loads ./dist/timeseries.js — same file the demo
+      pages use.
+    * uPlot 1.6.32 — https://cdn.jsdelivr.net/npm/uplot@1.6.32
+    * Chart.js 4.5.1 — https://cdn.jsdelivr.net/npm/chart.js@4.5.1
+      Decimation plugin is bundled (auto-registered since v3), no separate
+      script needed.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>timeseries.js benchmark harness</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+<style>
+  body { margin: 0; font: 14px/1.4 sans-serif; background: #fff; color: #111; }
+  #mount { width: 1000px; height: 400px; }
+  #mount > * { width: 100%; height: 100%; }
+  /* uPlot likes the wrapper to set the size, not just the canvas */
+  #mount .uplot { width: 1000px; height: 400px; }
+  #status { padding: 8px; font-family: monospace; background: #f4f4f4; border-bottom: 1px solid #ddd; }
+</style>
+</head>
+<body>
+<div id="status">loading…</div>
+<div id="mount"></div>
+
+<!-- timeseries.js built bundle (same file the demo pages load). The
+     browser-bench runner triggers `npm run build` before launching.
+     Two `..` to climb out of browser/ then benchmark/. -->
+<script src="../../dist/timeseries.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
+<!-- Chart.js needs a date adapter for `scale.x.type: 'time'`. The
+     adapter is auto-detected when registered globally; loading the
+     date-fns bundle before the harness module runs is enough. -->
+<script src="https://cdn.jsdelivr.net/npm/date-fns@3.6.0/cdn.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<script>
+  // Hoist the IIFE bundle's exports onto `window`. The bundle declares
+  // `var TimeSeries = (() => {...})();` (CommonJS-shaped wrapper) and
+  // then re-assigns the same `var` to its `.default` (the constructor)
+  // via the footer line at the very end of the bundle:
+  //   `TimeSeries=TimeSeries.default??TimeSeries;`
+  // After that footer, the bare `TimeSeries` identifier resolves to the
+  // constructor — with static methods like `registerSource` attached.
+  // Our harness lives in a separate `<script>` tag, where the *local*
+  // `var` is technically out of scope, but the *global* `var` declared
+  // by the IIFE script tag is visible because classic-script `var`s
+  // attach to the same shared global lexical scope across script tags.
+  //
+  // (Modules would not see it — that's why the dataset and bench code
+  // here are also classic scripts.)
+  window.TimeSeries = TimeSeries;
+</script>
+
+<!-- Dataset generator — duplicated from benchmark/shared/datasets.mjs
+     so the harness stays a single classic script (the IIFE bundle's
+     `var TimeSeries` is only visible to classic scripts). Keep this in
+     lockstep with the LCG constants in shared/datasets.mjs; the
+     micro-bench reads them from there, the browser bench reads them
+     from here. Same constants, same dataset. -->
+<script>
+const EPOCH_START = Math.floor(Date.UTC(2026, 0, 1) / 1000);
+const DEFAULT_INTERVAL = 60;
+const DEFAULT_SEED = 42;
+function generate({ points, seed = DEFAULT_SEED, interval = DEFAULT_INTERVAL, start = EPOCH_START }) {
+  const out = new Array(points);
+  let rng = seed >>> 0;
+  for (let i = 0; i < points; i++) {
+    rng = (rng * 1664525 + 1013904223) >>> 0;
+    const noise = (rng / 0x100000000) - 0.5;
+    out[i] = { t: start + i * interval, v: 50 + 25 * Math.sin(i / 200) + noise * 20 };
+  }
+  return out;
+}
+
+const params = new URLSearchParams(location.search);
+const LIB = params.get('lib') || 'timeseries';
+const SIZE = Number(params.get('size') || 1000);
+
+const status = document.getElementById('status');
+const mount = document.getElementById('mount');
+status.textContent = `lib=${LIB} size=${SIZE} generating dataset…`;
+
+let result;
+(async () => {
+  // Always generate the dataset with the same parameters, regardless of which
+  // library is about to render it. This is the core fairness guarantee.
+  const dataset = generate({ points: SIZE });
+
+// Convert the shared [{t, v}, ...] array into whatever shape the picked
+// library expects. Each library has its own conventions:
+//   * timeseries.js wants a binned scalar block pushed via a source.
+//   * uPlot wants [xs, ys] two arrays.
+//   * Chart.js wants { x: [...], y: [...] } data points (when parsing:false)
+//     or a generic { labels, datasets } (when parsing:true). We pick parsing:false
+//     with the indexed-array form because that is what Chart.js itself
+//     recommends for performance-critical paths.
+
+// Locate the timeseries.js constructor on globalThis. The IIFE bundle
+// declares `var TimeSeries = (() => {...})();` in classic-script scope,
+// then a footer re-assigns it to `TimeSeries.default ?? TimeSeries`.
+// Neither step is visible from a `<script type="module">` block, so we
+// pick the constructor up from window explicitly.
+const TS_CTOR = globalThis.TimeSeries;
+
+// Set the page title to identify the current cell — useful when capturing
+// a screenshot or watching the harness live in CI logs.
+document.title = `bench ${LIB} N=${SIZE}`;
+
+const t0 = performance.now();
+let result;
+
+// helpers used by all branches
+function settle(wantTwoFrames) {
+  return new Promise(resolve => {
+    let last = null, same = 0;
+    function tick() {
+      // toDataURL is the cheapest, library-agnostic "is the bitmap the same"
+      // probe we have. Two consecutive identical hashes ⇒ the render is stable
+      // (no in-flight animation, no deferred work). wantTwoFrames = 2 is
+      // the minimum that catches a library that paints frame 1 with a
+      // placeholder and frame 2 with the real thing.
+      const url = (mount.firstElementChild && mount.firstElementChild.toDataURL
+        ? mount.firstElementChild.toDataURL()
+        : 'noop');
+      if (url === last) { same++; if (same >= wantTwoFrames) resolve(); else requestAnimationFrame(tick); }
+      else { last = url; same = 1; requestAnimationFrame(tick); }
+    }
+    requestAnimationFrame(tick);
+  });
+}
+
+async function runTimeseries() {
+  // Mount the canvas ourselves — TimeSeries attaches to a canvas it looks
+  // up by id, but our mount div is a <div>, not a canvas. Easiest path:
+  // append a <canvas> to mount, then construct TimeSeries.
+  const canvas = document.createElement('canvas');
+  canvas.id = 'bench-canvas';
+  canvas.width = 1000; canvas.height = 400;
+  mount.appendChild(canvas);
+
+  // Source adapter — feeds a binned scalar block, same shape the live
+  // demo uses for artificial data.
+  const interval = DEFAULT_INTERVAL;
+  const block = {
+    name: 'bench',
+    type: 'multiline',
+    interval_start: EPOCH_START,
+    interval,
+    count: dataset.length,
+    min: Math.min(...dataset.map(p => p.v)) - 1,
+    max: Math.max(...dataset.map(p => p.v)) + 1,
+    data: dataset.reduce((acc, p, i) => { acc[i] = { s1: p.v }; return acc; }, {}),
+  };
+  // Register a transient source type so TimeSeries can find it.
+  // The IIFE bundle re-assigns the local `var TimeSeries` to its
+  // constructor at the very end (the `TimeSeries=TimeSeries.default??TimeSeries;`
+  // footer line), so the static methods like `registerSource` are attached
+  // directly to the constructor function. We use that path rather than
+  // the `.sources` sub-object, which lives on the pre-footer CommonJS
+  // wrapper and isn't reachable through `var TimeSeries` after the footer.
+  window.TimeSeries.registerSource({
+    type: 'bench-source',
+    init(_s, cb) {
+      cb.pushData(block);
+    },
+  });
+
+  const ts = new window.TimeSeries({
+    canvas: 'bench-canvas',
+    sources: [{ 'source-type': 'bench-source' }],
+    initialView: null,
+  });
+  // Wait for first stable frame. TimeSeries renders synchronously inside
+  // its constructor for the initial view, but the source push happens on
+  // the source's first getViewport() call — give it two RAFs to be sure.
+  await settle(2);
+  const t1 = performance.now();
+  // Heap: performance.memory is Chromium-only; on Firefox/Safari it is
+  // undefined and we record null. The runner tolerates that.
+  const heap = performance.memory ? performance.memory.usedJSHeapSize : null;
+  result = { lib: 'timeseries', size: SIZE, ttfrMs: t1 - t0, heap };
+}
+
+async function runUPlot() {
+  // uPlot wants [xs, ys]. The wrapper sets the size.
+  const xs = dataset.map(p => p.t);
+  const ys = dataset.map(p => p.v);
+  const opts = {
+    title: '',
+    width: 1000,
+    height: 400,
+    scales: { x: { time: true } },
+    series: [{}, { stroke: '#3a7' }],
+  };
+  // uPlot mutates the data array — give it copies, not our shared buffer.
+  new uPlot(opts, [xs.slice(), ys.slice()], mount);
+  await settle(2);
+  const t1 = performance.now();
+  const heap = performance.memory ? performance.memory.usedJSHeapSize : null;
+  result = { lib: 'uplot', size: SIZE, ttfrMs: t1 - t0, heap };
+}
+
+async function runChartJS() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1000; canvas.height = 400;
+  mount.appendChild(canvas);
+  // parsing:false + indexed {x, y} data points is what Chart.js itself
+  // recommends for performance — see
+  // https://www.chartjs.org/docs/latest/general/performance.html
+  const data = dataset.map(p => ({ x: p.t, y: p.v }));
+  new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { datasets: [{ label: 'v', data, borderColor: '#37a', pointRadius: 0, parsing: false }] },
+    options: {
+      animation: false,
+      parsing: false,
+      normalized: true,         // pre-sorted x; saves Chart.js the sort
+      spanGaps: true,
+      responsive: false,
+      maintainAspectRatio: false,
+      scales: {
+        x: { type: 'time', time: { unit: 'hour' } },
+        y: { beginAtZero: false },
+      },
+      plugins: {
+        decimation: { enabled: true, algorithm: 'lttb' },
+        legend: { display: false },
+        tooltip: { enabled: false },
+      },
+    },
+  });
+  await settle(2);
+  const t1 = performance.now();
+  const heap = performance.memory ? performance.memory.usedJSHeapSize : null;
+  result = { lib: 'chartjs', size: SIZE, ttfrMs: t1 - t0, heap };
+}
+
+try {
+    if (LIB === 'timeseries') await runTimeseries();
+    else if (LIB === 'uplot') await runUPlot();
+    else if (LIB === 'chartjs') await runChartJS();
+    else throw new Error(`unknown lib: ${LIB}`);
+    // Surface the result two ways: a DOM node the human can read, and a
+    // window-global Puppeteer reads via page.evaluate().
+    status.textContent = JSON.stringify(result);
+    window.__benchResult = result;
+  } catch (err) {
+    status.textContent = 'ERROR: ' + (err && err.stack || err);
+    window.__benchResult = { error: String(err && err.stack || err) };
+  }
+})();
+</script>
+</script>
+</body>
+</html>

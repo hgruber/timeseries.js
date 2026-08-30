@@ -113,11 +113,19 @@ is a deliberate act with its own commit — not a cleanup.
   are hand-kept in sync; `test/gantt-hittest.test.mjs` is what catches it. → `renderers.md`
 - **Do not absorb app-specific analytics into `attachLegend`.** It is a series-visibility
   legend; extend via `formatter`/`extra`/`onItemClick`. → `core.md`
+- **Do not create branches, worktrees, or non-trivial git operations (merge, rebase,
+  stash, reset, force-push) on the user's behalf.** This is a single-maintainer
+  project — branches exist only when an automated background job forces a worktree,
+  never for in-session work, and the maintainer wants to see every commit, not merge
+  it later. If `git status` reports diverged branches, uncommitted changes, or anything
+  else that looks like it needs a git-level decision, **stop and ask**. The same applies
+  if the working tree contains edits without a commit: abort the operation that would
+  touch them. → memory: `solo-project-work-on-main`
 
 ## Development
 
 ```bash
-npm install          # install esbuild + eslint (the only dev dependencies)
+npm install          # install esbuild + eslint (+ puppeteer for bench:browser)
 npm run build        # bundle src/ → dist/timeseries.js (IIFE)
 npm run build:min    # minified build → dist/timeseries.min.js
 npm run watch        # rebuild on file changes
@@ -126,6 +134,7 @@ npm run serve:proxy  # same, but node — adds the /dav-proxy route (CalDAV only
 npm test             # run test/*.test.mjs with node's built-in test runner
 npm run lint         # eslint; must stay at 0 errors
 npm run lint:strict  # same, but warnings fail too (--max-warnings 0); currently green
+npm run bench        # performance vs uPlot / Chart.js; see benchmark/README.md
 npm run release -- X.Y.Z   # cut a release
 ```
 
