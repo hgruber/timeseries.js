@@ -8,7 +8,7 @@ There are three shapes, selected by `category`:
 
 | `category` | Time is… | `data` is… | Use for | Renderers |
 |---|---|---|---|---|
-| *(omitted)* — **binned** | fixed-width slots on a shared grid | an object keyed by slot index | pre-aggregated metrics | `multibar`, `multiline`, `stackarea`, `multipoint`, and the ladder five: `quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc` |
+| *(omitted)* — **binned** | fixed-width slots on a shared grid | an object keyed by slot index | pre-aggregated metrics | `multibar`, `multiline`, `stackarea`, `multipoint`, `waterfall`, `heatmap`, `horizon`, and the ladder five: `quantile-bands`, `quantile-steps`, `error-bars`, `candlestick`, `ohlc` |
 | `'point'` | a timestamp per sample | an array of `{t, values}` | raw samples, irregular data | `multiline`, `multipoint`, `scatter` |
 | `'span'` | a start/end pair per item | an array of `{start, end, …}` | calendar events, jobs, outages | `gantt` |
 
@@ -314,29 +314,7 @@ or the old layout is reused.
 
 ---
 
-## Which renderer accepts which shape
-
-| Renderer | Binned | Point | Span | Draws |
-|---|:--:|:--:|:--:|---|
-| `multibar` | ✓ | | | Stacked bars, negatives downward |
-| `multiline` | ✓ | ✓ | | One line per series; `step` and `fill` below |
-| `stackarea` | ✓ | ✓ | | Filled bands stacked on one another |
-| `multipoint` | ✓ | ✓ | | One marker per sample |
-| `scatter` | | ✓ | | Filled circle per point |
-| `quantile-bands` | ✓ | | | Percentile fan, interpolated between slot centres |
-| `quantile-steps` | ✓ | | | The same fan, flat across each bin |
-| `error-bars` | ✓ | | | Marker plus whiskers per bin |
-| `candlestick` | ✓ | | | Wick and body per bin; OHLC via `roles` |
-| `ohlc` | ✓ | | | High–low bar, open ticked left and close right |
-| `waterfall` | ✓ | | | Cumulative bars: each starts where the last ended |
-| `heatmap` | ✓ | | | One coloured cell per slot per lane |
-| `horizon` | ✓ | | | Each series folded into its own short band |
-| `gantt` | | | ✓ | Duration bars packed into rows |
-
-The five ladder renderers take a slot value that is an **array**
-([ladder blocks](#ladder-blocks-percentiles-minavgmax)); everything else takes a number.
-
-### Line and area options
+## Line and area options
 
 `multiline` takes two per-block options; both apply to binned and point blocks,
 and both combine.
@@ -355,7 +333,7 @@ exists breaks it. The filled forms (`stackarea`, `quantile-steps`) break on an
 absent slot as well — shading across unmeasured time asserts more than a line
 through it does.
 
-### Waterfall blocks
+## Waterfall blocks
 
 An ordinary binned block of **deltas**. Each bar starts where the previous one
 ended, so the chart reads as a running total broken into its contributions.
@@ -379,7 +357,7 @@ Each series accumulates independently, and several visible series are dodged
 apart within the bin. A slot a series is missing from contributes nothing and
 does not break its total.
 
-### Laned blocks — `heatmap` and `horizon`
+## Laned blocks — `heatmap` and `horizon`
 
 An ordinary binned block, drawn on a **categorical y-axis**: each series owns a
 horizontal band, the axis is labelled with names instead of numbers, and the
@@ -404,3 +382,27 @@ Two things to know:
   put — closing the row up would relabel every lane below it.
 
 Registering your own is two dozen lines — see [Plugins](plugins.md).
+
+---
+
+## Which renderer accepts which shape
+
+| Renderer | Binned | Point | Span | Draws |
+|---|:--:|:--:|:--:|---|
+| `multibar` | ✓ | | | Stacked bars, negatives downward |
+| `multiline` | ✓ | ✓ | | One line per series; `step` and `fill` above |
+| `stackarea` | ✓ | ✓ | | Filled bands stacked on one another |
+| `multipoint` | ✓ | ✓ | | One marker per sample |
+| `scatter` | | ✓ | | Filled circle per point |
+| `quantile-bands` | ✓ | | | Percentile fan, interpolated between slot centres |
+| `quantile-steps` | ✓ | | | The same fan, flat across each bin |
+| `error-bars` | ✓ | | | Marker plus whiskers per bin |
+| `candlestick` | ✓ | | | Wick and body per bin; OHLC via `roles` |
+| `ohlc` | ✓ | | | High–low bar, open ticked left and close right |
+| `waterfall` | ✓ | | | Cumulative bars: each starts where the last ended |
+| `heatmap` | ✓ | | | One coloured cell per slot per lane |
+| `horizon` | ✓ | | | Each series folded into its own short band |
+| `gantt` | | | ✓ | Duration bars packed into rows |
+
+The five ladder renderers take a slot value that is an **array**
+([ladder blocks](#ladder-blocks-percentiles-minavgmax)); everything else takes a number.

@@ -9,8 +9,13 @@ exists:
 ```
 
 - [Stacked bars from an array](#stacked-bars-from-an-array-of-rows)
+- [The same stack as filled areas](#the-same-stack-as-filled-areas)
 - [A line chart from irregular samples](#a-line-chart-from-irregular-samples)
 - [Latency percentiles](#latency-percentiles)
+- [Candlesticks from OHLC data](#candlesticks-from-ohlc-data)
+- [A running total (waterfall)](#a-running-total-broken-into-its-contributions)
+- [Many series, one row each (heatmap)](#many-series-one-row-each)
+- [The same rows folded into bands (horizon)](#the-same-rows-folded-into-bands)
 - [Calendar events / job runs](#calendar-events-or-job-runs)
 - [Two synced charts](#two-synced-charts)
 - [Live tail](#live-tail-follow-mode)
@@ -60,6 +65,42 @@ const ts = new TimeSeries({
 TimeSeries.attachTooltip(ts);
 TimeSeries.attachLegend(ts);
 ```
+
+## The same stack as filled areas
+
+`stackarea` takes the identical block — only the `type` changes. Bars read as
+discrete counts per bin; a stacked area reads as a composition changing over
+time, which is the better picture once the bars get narrow enough to touch.
+
+```js
+// Same `data`, `t0` and `max` as above.
+const ts = new TimeSeries({
+  canvas: 'chart',
+  initialView: 'today',
+  yAxisLabel: 'requests',
+  sources: [{
+    'source-type': 'artificial',
+    type: 'stackarea',
+    name: 'requests',
+    step: 'after',            // optional: hold each value across its own bin
+    interval_start: t0,
+    interval_end: t0 + rows.length * INTERVAL,
+    interval: INTERVAL,
+    count: rows.length,
+    min: 0, max,
+    data,
+    series_colors: { ok: '#3d9970', error: '#c0392b' },
+  }],
+});
+
+TimeSeries.attachLegend(ts);
+```
+
+Two things it does that `multiline` with `fill: true` does not: the bands sit on
+the running total rather than overlapping each other, and the y-axis is measured
+from the stacked total. Hiding a series through the legend closes the stack up
+instead of leaving a hole. Leave `step` out for straight interpolation between
+bin centres.
 
 ## A line chart from irregular samples
 
@@ -163,6 +204,129 @@ const ts = new TimeSeries({
 
 Without `roles` the same renderer reads the array as an ascending ladder instead and draws a
 box plot — outermost pair as the wick, next pair in as the body.
+
+## A running total broken into its contributions
+
+`waterfall` takes **deltas**, not levels: each bar is drawn between the running
+total before its value and after it, so the chart shows both the steps and where
+they arrive.
+
+```js
+// steps: [{ label: 'Opening', delta: 1200 }, { label: 'Sales', delta: 430 }, …]
+// One slot per step, on a daily grid so each bar owns a readable bin.
+const DAY = 86400;
+const t0 = Math.floor(Date.now() / 1000 / DAY) * DAY - steps.length * DAY;
+
+const data = {};
+steps.forEach((s, i) => { data[i] = { budget: s.delta }; });
+
+// Slots that restate the sum from zero instead of adding to it. They consume no
+// value of their own, so the running total passes straight through them.
+const totals = steps
+  .map((s, i) => (s.total ? i : -1))
+  .filter(i => i >= 0);
+
+const ts = new TimeSeries({
+  canvas: 'chart',
+  yAxisLabel: '€',
+  // A waterfall is as wide as it has steps, so the window is computed rather
+  // than named. `initialView` must be null for that: it dispatches after the
+  // first paint and would otherwise overwrite the zoom() below.
+  initialView: null,
+  sources: [{
+    'source-type': 'artificial',
+    type: 'waterfall',
+    name: 'budget',
+    interval_start: t0,
+    interval_end: t0 + steps.length * DAY,
+    interval: DAY,
+    count: steps.length,
+    min: 0,
+    max: steps.reduce((a, s) => a + Math.max(0, s.delta), 0),
+    data,
+    totals,
+    waterfallColors: { up: '#3d9970', down: '#c0392b', total: '#34495e' },
+    // connect: false,        // drops the leader lines between bars
+  }],
+});
+
+ts.zoom(t0 * 1000, (t0 + steps.length * DAY) * 1000, 0);
+```
+
+The axis follows the **running total**, not the largest single step: twelve steps
+of +10 reach 120 and the axis says so. The total accumulates from the block's
+first slot and never from the left edge of the viewport, so panning does not move
+the bars. Hover returns the raw delta, not the level the bar happens to sit at.
+
+## Many series, one row each
+
+`heatmap` puts every series on its own row and shows the value as colour — the
+shape to reach for when twenty signals would be twenty unreadable overlapping
+lines.
+
+```js
+// readings: [{ ts, sensors: { 'rack-a': 21.4, 'rack-b': 24.9, … } }, …]
+const INTERVAL = 300;
+const t0 = readings[0].ts;
+
+const data = {};
+readings.forEach(r => { data[(r.ts - t0) / INTERVAL] = r.sensors; });
+const all = readings.flatMap(r => Object.values(r.sensors));
+
+const ts = new TimeSeries({
+  canvas: 'chart',
+  initialView: 'today',
+  sources: [{
+    'source-type': 'artificial',
+    type: 'heatmap',
+    name: 'rack temperatures',
+    interval_start: t0,
+    interval_end: t0 + readings.length * INTERVAL,
+    interval: INTERVAL,
+    count: readings.length,
+    min: Math.min(...all), max: Math.max(...all),
+    data,
+    // Fixes the row order and the axis labels. Without it, rows follow the
+    // series order and are labelled by series id.
+    lanes: [{ id: 'rack-a', label: 'Rack A' }, { id: 'rack-b', label: 'Rack B' }],
+    vmin: 18, vmax: 30,        // pin the colour range — see below
+  }],
+});
+```
+
+Without `colorScale`, each cell is its **own series colour** at an intensity that
+follows the value: that re-themes for free and keeps two rows apart at a glance.
+Pass hex stops to override it with one sequential ramp:
+
+```js
+colorScale: ['#f7fbff', '#6baed6', '#08306b'],
+```
+
+**Set `vmin`/`vmax` whenever two charts have to be comparable.** Without them the
+range is measured over the block, so the same temperature reads as two different
+colours in two charts — or in one chart after new data arrives. The range is
+measured over the whole block and not the viewport, so panning never recolours a
+cell that is already on screen.
+
+Hiding a row through the legend blanks it but keeps it in place: closing the row
+up would relabel every lane below it and move the axis under the pointer.
+
+## The same rows folded into bands
+
+`horizon` reads exactly the block above. Instead of colouring the row it folds
+the value into a few stacked slices, so a row a fraction of the height still
+shows its shape — useful when the rows have to fit into a small chart.
+
+```js
+// Same block as the heatmap, two fields different:
+type: 'horizon',
+horizonBands: 3,             // slices the value is folded into
+horizonNegative: '#c0392b',  // negatives mirror from the band's top edge
+```
+
+`vmin`/`vmax` pin the fold range the same way they pin the colour range, and both
+renderers share the lane layout — so the two are interchangeable on one block and
+a toggle between them costs a `type` swap and a `redraw()`.
 
 ## Calendar events or job runs
 
@@ -373,7 +537,7 @@ with `npm run build && npm run serve`:
 
 | Page | Shows |
 |---|---|
-| `demo/index.html` | Stacked bars, butterfly, lines (plain, stepped, filled), stacked areas, points, scatter, the five ladder types side by side, the resolution cross-fade, follow mode, the legend |
+| `demo/index.html` | All nineteen cards of the type grid: stacked bars, butterfly, lines (plain, stepped, filled), stacked areas, points, scatter, the five ladder types, `waterfall`, `heatmap` and `horizon` — plus the resolution cross-fade, follow mode and the legend |
 | `demo/caldav.html` | Spans and the `gantt` renderer, against static fixtures — no server needed |
 | `demo/zabbix.html` | The real `zabbix` source against a synthetic API — no server needed |
 | `demo/caldav-live.html` | A real CalDAV server, with a connect form |

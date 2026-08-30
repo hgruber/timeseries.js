@@ -254,7 +254,7 @@ arbitrary target is an open relay — and `DAV_PROXY_ALLOW=host1,host2` narrows 
 
 ## What is not built in yet
 
-The [roadmap](../CLAUDE.md#data-source-roadmap) ranks candidates by ecosystem share and fit
+The [roadmap](internals/roadmap.md#data-source-roadmap) ranks candidates by ecosystem share and fit
 to the plugin contract. Highest priority: **Prometheus** (`/api/v1/query_range`, which also
 covers VictoriaMetrics, Thanos, Cortex and Mimir), **Home Assistant** (`/api/history`, bearer
 token), and **InfluxDB** 1.x.

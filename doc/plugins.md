@@ -185,6 +185,21 @@ sources: [{ 'source-type': 'artificial', type: 'steps', interval: 3600, … }]
   sum your series per slot** — see above for what goes quietly wrong otherwise. Both are
   facts only you know and the core cannot infer.
 
+### Helpers to reuse rather than re-derive
+
+Three exports of `src/renderers.js` exist so that a renderer and the core cannot drift
+apart on the same question. Import them from the module build, or reach them through the
+same file if you are working inside the tree:
+
+| Helper | Use instead of |
+|---|---|
+| `plotSeriesIds(plot)` | Enumerating `plot.data` yourself. It is the one place that knows how a point, binned and span block each name their series — `getSeries()` and the hit test call it too, so a renderer that rolls its own can legend one set of series and draw another |
+| `POINT_RADIUS` | A marker half-size of your own. The core hit-tests point plots pixel-nearest against this table; a renderer drawing at a different size is hittable somewhere other than where it is visible |
+| `layoutPlot(plot)` | Calling your own `layout` hook. The core runs it for every block each frame — which is also why your `layout` must be idempotent |
+
+`resolveColor(plot, seriesId, alpha)` is the fourth and is on the constructor as
+`TimeSeries.resolveColor` as well.
+
 ---
 
 ## Custom data source

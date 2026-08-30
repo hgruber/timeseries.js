@@ -29,6 +29,7 @@ five-minute version; everything else lives here.
 | See how this differs from a Grafana/Zabbix panel | [Comparison](comparison.md) |
 | Copy a working example | [Recipes](recipes.md) |
 | Build, test or release the project | [Development](development.md) |
+| Understand *why* the core does something the way it does | [Internals](internals/) |
 
 ## The pages
 
@@ -45,6 +46,7 @@ five-minute version; everything else lives here.
 | [plugins.md](plugins.md) | The renderer and source plugin contracts |
 | [recipes.md](recipes.md) | Copy-paste examples, one per task |
 | [development.md](development.md) | Build, test, lint, the demo pages, cutting a release |
+| [internals/](internals/) | The design record: why each mechanism exists and what breaks without it. For changing the library, not for using it |
 
 ## Conventions used throughout
 
