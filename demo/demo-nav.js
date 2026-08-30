@@ -60,6 +60,10 @@
       { href: 'influxdb.html',      label: 'demo', title: 'InfluxDB 1.x/2.x — synthetic, needs no server' },
       { href: 'influxdb-live.html', label: 'live', title: 'InfluxDB — connects to a real server' }
     ] },
+    { group: 'Adapters', pages: [
+      { href: 'websocket.html',   label: 'WebSocket', title: 'WebSocket adapter — bring your own WS server' },
+      { href: 'duckdb-wasm.html', label: 'DuckDB-WASM', title: 'DuckDB-WASM adapter — bring your own in-browser DB' }
+    ] },
     { href: 'https://github.com/hgruber/timeseries.js', label: 'GitHub', external: true }
   ];
 

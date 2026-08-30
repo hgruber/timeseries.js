@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — DuckDB-WASM adapter</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      /* The whole page frame — reset, themes, header, nav, cards, controls,
+         buttons, .status/.pill/.hint/code — comes from demo.css. The two
+         additions below match the chart-card look without bringing a canvas
+         along. */
+      .code-card pre {
+        margin: 0;
+        padding: 1rem 1.1rem;
+        background: var(--code-bg, #f5f7fb);
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .code-card pre code { background: transparent; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — DuckDB-WASM adapter</h1>
+      <p>SQL queries against an in-browser DuckDB, re-run on every viewport change</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="code-card">
+        <div class="canvas-wrap" style="height: auto; padding: 1rem 1.2rem;">
+          <p class="hint">
+            The DuckDB-WASM adapter needs an <code>AsyncDuckDB</code> instance
+            you bring yourself — there is no synthetic fallback to stub, and the
+            DuckDB-WASM bundle itself is several megabytes so the demo page does
+            not pull it in. Provide the instance via <code>db</code>, or hand the
+            adapter a <code>dbFactory</code> that returns one on first use.
+          </p>
+
+<pre><code>import TimeSeries from '@hgruber/timeseries.js';
+import '@hgruber/timeseries.js/src/adapters/duckdb-wasm.js';
+import { attachTooltip } from '@hgruber/timeseries.js/src/tooltip.js';
+
+const ts = new TimeSeries({
+  canvas: 'chart',
+  sources: [{
+    'source-type': 'duckdb-wasm',
+    dbFactory: () => initDuckDb(),            // returns a connected AsyncDuckDB
+    query: `
+      SELECT epoch_ms(time_bucket(INTERVAL (CAST(:mspp AS INT) || ' ms'), ts)) AS t,
+             avg(cpu) AS cpu, avg(mem) AS mem
+      FROM   metrics
+      WHERE  ts BETWEEN to_timestamp(:tmin / 1000.0)
+                    AND to_timestamp(:tmax / 1000.0)
+      GROUP BY 1
+      ORDER BY 1
+    `,
+    transform(rows) {
+      var data = rows.map(r => ({
+        t: r.t,
+        values: { cpu: r.cpu, mem: r.mem }
+      }));
+      var vals = data.flatMap(p => Object.values(p.values));
+      return {
+        category: 'point', type: 'multiline',
+        tmin: data[0]?.t ?? 0, tmax: data[data.length - 1]?.t ?? 0,
+        min: Math.min(...vals), max: Math.max(...vals),
+        series: [{ id: 'cpu', name: 'CPU %' }, { id: 'mem', name: 'Mem %' }],
+        data
+      };
+    }
+  }]
+});
+
+attachTooltip(ts);</code></pre>
+
+          <p class="hint">
+            Three placeholders are substituted per query: <code>:tmin</code> and
+            <code>:tmax</code> are the viewport edges in milliseconds;
+            <code>:mspp</code> is <code>1 / ppms</code>, the milliseconds per
+            pixel — use it for your <code>GROUP BY</code> bucket size so the
+            result is exactly one row per pixel. A query runs once on
+            construction and again on every viewport change.
+          </p>
+          <p class="hint">
+            The <code>transform</code> function receives Arrow rows as a plain
+            array of <code>{ column: value }</code> objects and must return a
+            valid <code>BinnedSeries</code> or <code>PointSeries</code> plot
+            object — see <a href="doc/data-formats.html">data-formats.md</a>.
+          </p>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

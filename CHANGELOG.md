@@ -14,8 +14,24 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-08-30
+
 ### Added
 
+- **Two opt-in data-source adapters: WebSocket and DuckDB-WASM.** Both live in
+  `src/adapters/` and register a `source-type` on import, so a page that does not
+  use them does not pay for the registration. **WebSocket** keeps a rolling
+  `multiline` `PointSeries` of the most recent `windowMs` (default 1 h) of
+  messages received from a caller-supplied feed; the wire format is yours, and a
+  caller-supplied `transform(msg) → { t, values }` maps it onto the plot shape.
+  **DuckDB-WASM** re-runs a SQL query against an in-browser DuckDB on every
+  viewport change. The SQL is a template with `:tmin` / `:tmax` / `:mspp`
+  placeholders, and the page supplies the `AsyncDuckDB` instance via `db` or a
+  `dbFactory`. Connection failures and SQL errors are reported via
+  `console.warn` and the previous block is kept on screen.
+  See [Data sources → WebSocket](doc/sources.md#websocket-adapter) and
+  [Data sources → DuckDB-WASM](doc/sources.md#duckdb-wasm-adapter). New demo
+  pages: `demo/websocket.html` and `demo/duckdb-wasm.html`.
 - **`initialView` now accepts a `[tmin, tmax]` window** in addition to a named navigation
   method. The window is applied synchronously, before the first paint, so a host that has
   computed its own start window (from data-source metadata or URL parameters) no longer
@@ -32,6 +48,14 @@ for a reader who has not seen the commits.
   rolling once the right edge reaches the present", not "start rolling now". The
   direction semantics of `ts.follow(fraction)` and `previewNow` / `followNow` were also
   corrected in the API reference, where the previous description had 0 and 100 swapped.
+
+### Changed
+
+- **`doc/sources.md` is now in step with the code.** The top-of-page summary lists the six
+  built-in sources plus the two opt-in adapters (previously the adapters were missing and
+  Prometheus / Home Assistant / InfluxDB still appeared under "What is not built in yet").
+  Each adapter has a dedicated section with options, behaviour notes and a
+  copy-pasteable example.
 
 ## [0.10.1] - 2026-08-30
 

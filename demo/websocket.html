@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — WebSocket adapter</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      /* The whole page frame — reset, themes, header, nav, cards, controls,
+         buttons, .status/.pill/.hint/code — comes from demo.css. The two
+         additions below match the chart-card look without bringing a canvas
+         along. */
+      .code-card pre {
+        margin: 0;
+        padding: 1rem 1.1rem;
+        background: var(--code-bg, #f5f7fb);
+        border-radius: 6px;
+        overflow-x: auto;
+        font-size: 0.85rem;
+        line-height: 1.45;
+      }
+      .code-card pre code { background: transparent; padding: 0; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — WebSocket adapter</h1>
+      <p>rolling <code>PointSeries</code> window from a WebSocket feed</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="code-card">
+        <div class="canvas-wrap" style="height: auto; padding: 1rem 1.2rem;">
+          <p class="hint">
+            The WebSocket adapter needs a server you bring yourself — there is no
+            synthetic fallback to stub. Point <code>url</code> at a feed that emits
+            one JSON object per tick, supply a <code>transform</code> that maps
+            each message to <code>{ t, values }</code>, and the chart keeps a
+            rolling window of the most recent <code>windowMs</code> milliseconds
+            (1 h by default).
+          </p>
+
+<pre><code>import TimeSeries from '@hgruber/timeseries.js';
+import '@hgruber/timeseries.js/src/adapters/websocket.js';
+import { attachTooltip } from '@hgruber/timeseries.js/src/tooltip.js';
+
+const ts = new TimeSeries({
+  canvas: 'chart',
+  sources: [{
+    'source-type': 'websocket',
+    url: 'wss://example.com/metrics',
+    windowMs: 30 * 60 * 1000,                 // 30-minute rolling window
+    transform(msg) {
+      // msg arrives as the parsed JSON object the server sent.
+      return {
+        t: msg.timestamp_ms,
+        values: { cpu: msg.cpu, mem: msg.mem }
+      };
+    }
+  }]
+});
+
+attachTooltip(ts);</code></pre>
+
+          <p class="hint">
+            Message shape is yours to choose — only <code>transform</code> has to
+            return <code>{ t: ms, values: { seriesId: number } }</code>. The
+            adapter maintains the buffer and trims it on every tick; a viewport
+            pan or zoom does not re-open the socket.
+          </p>
+          <p class="hint">
+            Need to close the feed (page teardown, theme switch with a different
+            URL): the underlying <code>WebSocket</code> is reachable as
+            <code>source._ws</code> after init.
+          </p>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

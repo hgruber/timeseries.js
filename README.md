@@ -96,7 +96,10 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
   own, so nothing is interpolated across a gap where nothing was measured
 - **Categorical y-axis** — `heatmap`, `horizon` and `gantt` give each series its own row,
   labelled by name instead of by number
-- **Built-in data sources** — Zabbix JSON-RPC, CalDAV calendars, static data
+- **Built-in data sources** — `artificial` (pass-through), `zabbix` (JSON-RPC), `caldav`
+  (WebDAV + iCalendar), `prometheus` (covers VictoriaMetrics, Thanos, Cortex, Mimir),
+  `influxdb` (InfluxQL 1.x and Flux 2.x from one source), `home-assistant`,
+  `websocket` and `duckdb-wasm` adapters
 - **Opt-in tooltip & legend** — one call each, themed from the palette, overridable at every
   level
 - **Plugin architecture** — register your own renderers and sources without touching the
@@ -124,7 +127,7 @@ exactly that pairing. See [the full comparison](doc/comparison.md).
 | [Configuration](doc/configuration.md) | Every constructor option, themes, holidays, keyboard |
 | [API reference](doc/api.md) | Every method and static, grouped by task |
 | [Overlays](doc/overlays.md) | `attachTooltip` and `attachLegend` |
-| [Data sources](doc/sources.md) | Zabbix, CalDAV, complete server recipes, CORS |
+| [Data sources](doc/sources.md) | `artificial`, `zabbix`, `caldav`, `prometheus`, `influxdb`, `home-assistant`; `websocket` and `duckdb-wasm` adapters; CORS |
 | [Resolution tiers](doc/tiers.md) | The cross-fade, `rollupBinned`, the rate axis |
 | [Plugins](doc/plugins.md) | Writing a renderer or a data source |
 | [Recipes](doc/recipes.md) | Copy-paste examples, one per task |

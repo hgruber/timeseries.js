@@ -22,7 +22,7 @@ five-minute version; everything else lives here.
 | Navigate, zoom, follow "now", sync several charts | [API reference → Navigation](api.md#navigation) |
 | Read or change what is on screen at runtime | [API reference](api.md) |
 | Add a hover tooltip or a clickable legend | [Overlays](overlays.md) |
-| Pull data from Zabbix, a CalDAV server, Prometheus… | [Data sources](sources.md) |
+| Pull data from Zabbix, a CalDAV server, Prometheus, InfluxDB, Home Assistant, a WebSocket feed, or DuckDB-WASM | [Data sources](sources.md) |
 | Get past a CORS error | [Data sources → Cross-origin](sources.md#cross-origin-cors) |
 | Write my own renderer or data source | [Plugins](plugins.md) |
 | Show two resolutions of one signal without a visible pop | [Resolution tiers](tiers.md) |
@@ -41,7 +41,7 @@ five-minute version; everything else lives here.
 | [configuration.md](configuration.md) | All constructor options, the palette and the four themes, holidays, keyboard, mobile |
 | [api.md](api.md) | Every instance method and static, grouped by task |
 | [overlays.md](overlays.md) | `attachTooltip` and `attachLegend`: defaults, the override layers, the controller objects |
-| [sources.md](sources.md) | The built-in `artificial`, `zabbix` and `caldav` sources, complete single-file recipes against a real server, and CORS |
+| [sources.md](sources.md) | The built-in sources (`artificial`, `zabbix`, `caldav`, `prometheus`, `influxdb`, `home-assistant`) and the opt-in `websocket` and `duckdb-wasm` adapters, complete single-file recipes against a real server, and CORS |
 | [tiers.md](tiers.md) | Resolution tiers, the cross-fade, `rollupBinned`, and the rate axis (`setRateUnit`) |
 | [comparison.md](comparison.md) | How embedding this chart differs from a Grafana or Zabbix panel |
 | [plugins.md](plugins.md) | The renderer and source plugin contracts |

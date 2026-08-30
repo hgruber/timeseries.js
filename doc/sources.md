@@ -11,7 +11,15 @@ is handed to the plugin named by its `source-type` key.
 | `home-assistant` | `/api/history/period` (Bearer auth) | per-entity mix of `multiline` (numeric sensors) and `gantt` (binary/state sensors) |
 | `influxdb` | InfluxQL `POST /query` (1.x) or Flux `POST /api/v2/query` (2.x) | `multiline` blocks, two resolution tiers |
 | `caldav` | a CalDAV server | `gantt` spans |
+| `websocket` (adapter) | a WebSocket feed (caller-supplied `transform`) | rolling `multiline` block, default 1 h window |
+| `duckdb-wasm` (adapter) | an in-browser DuckDB (caller-supplied `db` or `dbFactory`) | whatever the SQL template returns, re-run on every viewport change |
 | *(yours)* | anything | anything — see [Plugins](plugins.md) |
+
+The six rows above the divider are built-in: they register themselves when the library loads.
+The two adapter rows below are *opt-in* — they live in `src/adapters/` and must be
+`import`ed explicitly so a page that does not use them does not pay for their bundle weight
+(WebSocket pulls nothing extra; DuckDB-WASM expects the caller to ship `@duckdb/duckdb-wasm`
+itself).
 
 ---
 
@@ -315,6 +323,116 @@ viewport and `source.setOptions({mode, db, org, bucket, …})` lets the live dem
 
 ---
 
+## WebSocket (adapter)
+
+Maintains a rolling `multiline` `PointSeries` window of the most recent `windowMs`
+milliseconds of data received from a WebSocket endpoint. The adapter is **opt-in** — it lives
+in `src/adapters/websocket.js` and must be imported explicitly so a page that does not use
+it does not pay for the registration:
+
+```js
+import TimeSeries from '@hgruber/timeseries.js';
+import '@hgruber/timeseries.js/src/adapters/websocket.js';   // registers the source
+```
+
+```js
+sources: [{
+  'source-type': 'websocket',
+  url: 'wss://example.com/metrics',
+  windowMs: 30 * 60 * 1000,                // 30-minute rolling window
+  transform(msg) {                           // msg = the parsed JSON object the server sent
+    return {
+      t: msg.timestamp_ms,
+      values: { cpu: msg.cpu, mem: msg.mem }
+    };
+  }
+}]
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `url` | — | `ws://` or `wss://` endpoint. Required |
+| `windowMs` | `3600000` (1 h) | Buffer size in ms. Points older than `now - windowMs` are trimmed on every tick |
+| `transform` | — | `(parsedMsg) → { t: ms, values: { seriesId: number } }`. Required: the wire format is yours |
+
+The adapter buffers in-memory and trims on every push — pan and zoom do not reopen the
+socket. After init, `source._ws` is the underlying `WebSocket` so the page can close it on
+teardown.
+
+> **Bring your own server.** There is no synthetic fallback: a static demo page cannot fake a
+> live WS feed without a producer in the same origin. See `demo/websocket.html` for a
+> copy-pasteable wiring example.
+
+---
+
+## DuckDB-WASM (adapter)
+
+Re-runs a SQL query against an in-browser DuckDB on every viewport change. The SQL is a
+template with three named placeholders substituted per fetch:
+
+- `:tmin` — viewport start, milliseconds (integer)
+- `:tmax` — viewport end, milliseconds (integer)
+- `:mspp` — milliseconds per pixel — use it for your `GROUP BY` bucket size so the result is
+  exactly one row per pixel
+
+External dependency: the page must initialise [`@duckdb/duckdb-wasm`](https://duckdb.org/docs/api/wasm/overview.html)
+itself and hand the adapter the resulting `AsyncDuckDB` instance via `db`, or pass a
+`dbFactory` that returns one on first use. The adapter is **opt-in** — it lives in
+`src/adapters/duckdb-wasm.js` and must be imported explicitly so a page that does not use
+it does not pull in DuckDB's bundle:
+
+```js
+import TimeSeries from '@hgruber/timeseries.js';
+import '@hgruber/timeseries.js/src/adapters/duckdb-wasm.js';   // registers the source
+```
+
+```js
+sources: [{
+  'source-type': 'duckdb-wasm',
+  dbFactory: () => initMyDuckDb(),              // returns a connected AsyncDuckDB
+  query: `
+    SELECT epoch_ms(time_bucket(INTERVAL (CAST(:mspp AS INT) || ' ms'), ts)) AS t,
+           avg(cpu) AS cpu, avg(mem) AS mem
+    FROM   metrics
+    WHERE  ts BETWEEN to_timestamp(:tmin / 1000.0)
+                  AND to_timestamp(:tmax / 1000.0)
+    GROUP BY 1
+    ORDER BY 1
+  `,
+  transform(rows) {
+    var data = rows.map(r => ({
+      t: r.t,
+      values: { cpu: r.cpu, mem: r.mem }
+    }));
+    var vals = data.flatMap(p => Object.values(p.values));
+    return {
+      category: 'point', type: 'multiline',
+      tmin: data[0]?.t ?? 0, tmax: data[data.length - 1]?.t ?? 0,
+      min: Math.min(...vals), max: Math.max(...vals),
+      series: [{ id: 'cpu', name: 'CPU %' }, { id: 'mem', name: 'Mem %' }],
+      data
+    };
+  }
+}]
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `db` | — | A connected `AsyncDuckDB` instance. Mutually exclusive with `dbFactory` |
+| `dbFactory` | — | `() => Promise<AsyncDuckDB>` — called once, the resolved connection is cached |
+| `query` | — | SQL template with `:tmin` / `:tmax` / `:mspp` placeholders. Required |
+| `transform` | — | `(rows) → plot`. `rows` is an array of plain `{ column: value }` objects (the Arrow table, dereferenced). Must return a valid `BinnedSeries` or `PointSeries` — see [data-formats](data-formats.md) |
+
+The adapter runs the query once on construction and again on every viewport change (pan,
+zoom, resize). Connection failures and SQL errors are reported via `console.warn` and the
+chart keeps the previous block — it does not clear the screen on a transient backend
+hiccup.
+
+> **Bring your own DuckDB.** DuckDB-WASM is several megabytes and the library deliberately
+> does not pull it in. See `demo/duckdb-wasm.html` for a complete wiring example.
+
+---
+
 ## Complete recipes against a real server
 
 One HTML file each, no npm and no checkout. Both **put the file on the web server that
@@ -437,10 +555,7 @@ arbitrary target is an open relay — and `DAV_PROXY_ALLOW=host1,host2` narrows 
 
 ## What is not built in yet
 
-The [roadmap](internals/roadmap.md#data-source-roadmap) ranks candidates by ecosystem share and fit
-to the plugin contract. Highest priority: **Prometheus** (`/api/v1/query_range`, which also
-covers VictoriaMetrics, Thanos, Cortex and Mimir), **Home Assistant** (`/api/history`, bearer
-token), and **InfluxDB** 1.x.
-
-All three are ordinary [source plugins](plugins.md#custom-data-source) — nothing in the core
-needs to change to add one.
+The [roadmap](internals/roadmap.md#data-source-roadmap) ranks candidates by ecosystem share and
+fit to the plugin contract. The eight built-ins cover the common back-ends (six core sources
+plus the WebSocket and DuckDB-WASM adapters); anything beyond them is a custom
+[source plugin](plugins.md#custom-data-source) — the core does not change to add one.
