@@ -14,6 +14,25 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+### Added
+
+- **`initialView` now accepts a `[tmin, tmax]` window** in addition to a named navigation
+  method. The window is applied synchronously, before the first paint, so a host that has
+  computed its own start window (from data-source metadata or URL parameters) no longer
+  sees the default 24 h frame flash before the real window animates in. `Date` objects
+  are accepted alongside ms timestamps. Malformed input (wrong length, `NaN`, `tmax <=
+  tmin`) falls back to the 24 h default with a `console.warn`.
+- **`follow` constructor option** for the explicit rolling start state, independent of
+  the start window. `true` rolls while keeping "now" where it sits in the start window
+  (so an explicit `initialView: [tmin, tmax]` is preserved instead of snapping back onto
+  now); `false` stops; a number `0`–`100` sets the fraction directly. Applied after
+  `initialView`, so the `onStop` / `onFollow` callbacks fire for the start state — a
+  follow toggle can be wired straight to those and stay in sync without a manual
+  `ts.stop()` after construction. `autoFollow` is unchanged: it still means "start
+  rolling once the right edge reaches the present", not "start rolling now". The
+  direction semantics of `ts.follow(fraction)` and `previewNow` / `followNow` were also
+  corrected in the API reference, where the previous description had 0 and 100 swapped.
+
 ## [0.10.1] - 2026-08-30
 
 ### Added

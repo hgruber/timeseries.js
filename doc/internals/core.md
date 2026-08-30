@@ -336,6 +336,31 @@ Everything else, **including `holidays`**, replaces the default wholesale — th
 caller swaps the German holiday set for another country's. `TimeSeries.themes.light` is
 the same object as the built-in default palette, not a copy of it.
 
+### Initial window vs. follow state
+
+Two settings take part in what the user sees at startup, and they have to be applied at
+different points — they look like they should be one thing but are deliberately not.
+
+`initialView`, when it is a `[tmin, tmax]` array, is applied **synchronously**, before the
+first `plotAll()`. The whole point is to avoid the flash of the default 24 h window: a host
+that has computed its own start window (from data-source metadata, a URL parameter, etc.)
+wants that window on screen the instant the constructor returns. The constructor tail's
+`setTimeout(..., 0)` dispatch — preserved for named views — would miss this contract, so
+the array form is consumed directly at the `tmin`/`tmax` initialisation site.
+
+`follow`, by contrast, is applied **deferred**, in the same `setTimeout(..., 0)` and after
+any named `initialView` dispatch. Two reasons. First, `onStop` / `onFollow` are not
+registered until the caller has the instance back — firing them is half the point of the
+option, so firing them synchronously from inside the constructor would always lose them.
+Second, every named view except `last24()` / `next24()` begins with `doStop()`, so applying
+`follow: true` before the named view would simply be undone. The one wrinkle is that a
+named view animates over `zoomDuration`, so when `follow` is set together with a named
+view it is delayed an additional `zoom_onclick_time` — the same dodge `last24()` uses for
+its own deferred `start_follower()`. `follow: false` is the common case that motivated the
+deferral: a host with a follow toggle wants the toggle's `onStop` callback to fire
+straight after construction, so its button ends up in the right state without a manual
+`ts.stop()`.
+
 ## Pointer coordinates
 
 Mouse and touch events carry viewport-relative `clientX/clientY`.

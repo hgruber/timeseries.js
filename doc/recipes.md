@@ -230,9 +230,9 @@ const ts = new TimeSeries({
   canvas: 'chart',
   yAxisLabel: '€',
   // A waterfall is as wide as it has steps, so the window is computed rather
-  // than named. `initialView` must be null for that: it dispatches after the
-  // first paint and would otherwise overwrite the zoom() below.
-  initialView: null,
+  // than named. Passing it as an array is synchronous — the constructor paints
+  // this window on the first frame, no second zoom() needed.
+  initialView: [t0 * 1000, (t0 + steps.length * DAY) * 1000],
   sources: [{
     'source-type': 'artificial',
     type: 'waterfall',
@@ -249,8 +249,6 @@ const ts = new TimeSeries({
     // connect: false,        // drops the leader lines between bars
   }],
 });
-
-ts.zoom(t0 * 1000, (t0 + steps.length * DAY) * 1000, 0);
 ```
 
 The axis follows the **running total**, not the largest single step: twelve steps

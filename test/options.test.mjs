@@ -149,3 +149,105 @@ test('setPanSnap rejects anything that is not a mode', () => {
   }
   assert.equal(warned, 5, 'each refusal should say so');
 });
+
+// ── initialView window ────────────────────────────────────────────────────────
+// The window form of initialView is the starcubes case: a host computes its own
+// [tmin, tmax] from data-source metadata and wants that window on screen before
+// the first paint — `initialView: 'last24'` would brief-case the last 24h in
+// first and animate to the real window afterwards.
+test('initialView: [tmin, tmax] is applied synchronously, before the first paint', () => {
+  const t0 = Date.UTC(2026, 4, 11), t1 = Date.UTC(2026, 4, 18);
+  const ts = build({ initialView: [t0, t1] });
+  // No `await` — the contract is "before the first paint", i.e. before the
+  // constructor returns. A refactor that defers this would slip past every
+  // test that does sleep() first.
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t0);
+  assert.equal(vp.tmax, t1);
+  assert.ok(vp.ppms > 0, 'ppms must reflect the new window, not the 24h default');
+});
+
+test('initialView: [tmin, tmax] also accepts Date objects', () => {
+  const t0 = Date.UTC(2026, 4, 11), t1 = Date.UTC(2026, 4, 18);
+  const ts = build({ initialView: [new Date(t0), new Date(t1)] });
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t0);
+  assert.equal(vp.tmax, t1);
+});
+
+test('initialView: null keeps the 24h default window', () => {
+  const ts = build({ initialView: null });
+  const vp = ts.getViewport();
+  assert.ok(Math.abs((vp.tmax - vp.tmin) - 86400000) < 1000,
+    `expected ~24h, got ${vp.tmax - vp.tmin} ms`);
+});
+
+test('initialView: [tmin, tmax] falls back to 24h on malformed input', () => {
+  const cases = [
+    [1, 2, 3],                   // wrong length
+    [Date.UTC(2026, 4, 18), Date.UTC(2026, 4, 11)],  // tmax < tmin
+    [NaN, Date.UTC(2026, 4, 18)], // NaN in tmin
+    [Date.UTC(2026, 4, 11), NaN], // NaN in tmax
+  ];
+  for (const bad of cases) {
+    const ts = build({ initialView: bad });
+    const vp = ts.getViewport();
+    assert.ok(Math.abs((vp.tmax - vp.tmin) - 86400000) < 1000,
+      `${JSON.stringify(bad)} should fall back to 24h, got ${vp.tmax - vp.tmin} ms`);
+  }
+});
+
+// ── follow option ─────────────────────────────────────────────────────────────
+// `follow` is deferred (not synchronous like the window): onStop/onFollow
+// callbacks are registered after the constructor returns, and firing them is
+// half the point — a host's follow toggle syncs itself from them.
+test('follow: false fires onStop after construction', async () => {
+  const ts = build({ follow: false });
+  let stopCount = 0;
+  ts.onStop(() => { stopCount++; });
+  await sleep(30);
+  assert.equal(stopCount, 1, 'onStop must fire once when follow:false is set');
+});
+
+test('follow: true preserves the explicit initialView window width', async () => {
+  const t0 = Date.UTC(2026, 4, 11), t1 = Date.UTC(2026, 4, 18);
+  const range = t1 - t0;
+  const ts = build({ initialView: [t0, t1], follow: true });
+  let followPct = null;
+  ts.onFollow(p => { followPct = p; });
+  await sleep(30);
+  assert.notEqual(followPct, null, 'onFollow must fire');
+  const vp = ts.getViewport();
+  assert.equal(vp.tmax - vp.tmin, range,
+    'window width must be preserved across follow:true');
+  // The derived fraction is (now − tmin) / (t1 − t0); now > t1 (test runs after
+  // Date.UTC was passed), so it's clamped to 100.
+  assert.equal(followPct, 100);
+});
+
+test('follow: true + a named view fires onFollow after the animation', async () => {
+  const ts = build({ initialView: 'today', follow: true, zoomDuration: 0 });
+  let followPct = null;
+  ts.onFollow(p => { followPct = p; });
+  await sleep(30);
+  assert.notEqual(followPct, null,
+    'onFollow must fire even though `today` calls doStop() — follow overrides it');
+});
+
+test('follow: 0 reports a fraction of 0', async () => {
+  const ts = build({ follow: 0 });
+  let followPct = null;
+  ts.onFollow(p => { followPct = p; });
+  await sleep(30);
+  assert.equal(followPct, 0);
+});
+
+test('absent follow does not fire onStop or onFollow', async () => {
+  const ts = build({});
+  let stopCount = 0, followCount = 0;
+  ts.onStop(() => { stopCount++; });
+  ts.onFollow(() => { followCount++; });
+  await sleep(30);
+  assert.equal(stopCount, 0);
+  assert.equal(followCount, 0);
+});

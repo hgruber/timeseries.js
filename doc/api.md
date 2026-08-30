@@ -12,7 +12,7 @@ are trying to do.
 
 ## Navigation
 
-Any of these method names is also a valid `initialView` value.
+Any of these method names is also a valid `initialView` value. `initialView` additionally accepts a `[tmin, tmax]` window in ms (Date objects are accepted too), which is applied synchronously — before the first paint — for the case where the host has computed the start window itself and wants it on screen without the brief flash of the default window. The follow state is a separate concern: see [Follow mode](#follow-rolling-mode) and the `follow` option in [Configuration](configuration.md).
 
 ```js
 ts.today()       ts.yesterday()   ts.tomorrow()
@@ -56,9 +56,9 @@ See [Keyboard](configuration.md#keyboard) for the key bindings that drive this.
 The chart tracks "now" like a seismograph, scrolling the window as time passes.
 
 ```js
-ts.follow(fraction);   // start; fraction 0–100 = where "now" sits, 0 = right edge … 100 = left
-ts.followNow();        // animate to now at the left edge, then roll — the window looks ahead
-ts.previewNow();       // animate to now at the right edge, then roll — the window looks back
+ts.follow(fraction);   // start; fraction 0–100 = where "now" sits, 0 = left edge … 100 = right
+ts.followNow();        // animate to "now" at the right edge, then roll — the window looks back
+ts.previewNow();       // animate to "now" at the left edge, then roll — the window looks ahead
 ts.stop();             // leave follow mode, keeping the window where it is
 ts.onFollow(fn);       // called when follow mode (re)starts, with the percentage
 ts.onStop(fn);         // called when follow mode stops
@@ -69,8 +69,13 @@ there in one frame; `followNow()` and `previewNow()` animate, and are the same c
 two ends of the fraction — both end up rolling, so use `stop()` if you want the viewport
 moved without entering follow mode.
 
-Set `autoFollow: true` in the constructor to enter follow mode automatically once the
-viewport's right edge reaches the present.
+The constructor option `follow` is the explicit start-state equivalent: `true` rolls,
+keeping "now" where it sits in the start window (so an explicit `initialView: [tmin, tmax]`
+is preserved instead of snapping back onto now); `false` stops; a number sets the fraction
+directly. It is applied **after** `initialView`, so `onStop` and `onFollow` fire for the
+start state — a follow toggle can be wired straight to those callbacks and stay correct
+without a manual `ts.stop()` after construction. Set `autoFollow: true` instead if you want
+follow to begin only once the right edge has reached the present.
 
 Every navigation method (`today()`, `zoom()`, a pan, …) leaves follow mode on its own, so
 `stop()` is only needed when a UI of your own has to leave the rolling state without moving

@@ -277,7 +277,8 @@ export default function TimeSeries(options) {
   var settings = {
     canvas: "timeseries",
     sources: [], // array of data sources
-    initialView: 'last24', // method to call on startup, or null
+    initialView: 'last24', // navigation method name, [tmin, tmax] in ms, or null
+    follow: undefined,     // true | false | 0–100; absent = whatever initialView implies
     zoomDuration: 500,     // animation duration in ms for zoom transitions
     zoomFactor: 0.1,       // wheel-zoom sensitivity (smaller = smoother)
     autoFollow: false,     // automatically enter follow mode when now reaches right edge
@@ -432,8 +433,22 @@ export default function TimeSeries(options) {
   var follow_stop_cb = null;
   var follow_start_cb = null;
   var nowline_timer = null;    // periodic redraw to keep now-line moving when not following
-  var tmax = now;
-  var tmin = tmax - 86400000;
+  // initialView may be a [tmin, tmax] window (synchronous, before first paint), a named
+  // navigation method (dispatched from setTimeout at the end of the constructor), or
+  // null/'last24'. Only the array form is consumed here; named methods are dispatched
+  // from the constructor tail alongside follow.
+  var tmax, tmin;
+  var ivWindow = settings.initialView;
+  if (Array.isArray(ivWindow)) {
+    // `+` coerces Date and number alike; zoom() accepts both.
+    var ivA = +ivWindow[0], ivB = +ivWindow[1];
+    if (ivWindow.length === 2 && isFinite(ivA) && isFinite(ivB) && ivB > ivA) {
+      tmin = ivA; tmax = ivB;
+    } else {
+      console.warn('TimeSeries: initialView must be [tmin, tmax] with tmax > tmin', ivWindow);
+    }
+  }
+  if (tmin === undefined) { tmax = now; tmin = tmax - 86400000; }
   var ymin = 0;
   var ymax = 1;
   var zf = settings.zoomFactor;
@@ -3140,7 +3155,9 @@ export default function TimeSeries(options) {
   }
 
   // Immediate snap: update fraction, reposition view at once, start/continue rolling.
-  this.follow = function (p) {
+  // Named (rather than inline at this.follow) so applyFollow() can call it before
+  // `self` is assigned in the constructor tail without tripping no-use-before-define.
+  function followAt(p) {
     doFollow(p);
     now = Date.now();
     var range = tmax - tmin;
@@ -3148,7 +3165,26 @@ export default function TimeSeries(options) {
     tmax = tmin + range;
     start_follower();
     plotAll();
-  };
+  }
+  this.follow = followAt;
+
+  // Applied from the constructor's deferred dispatch, never synchronously: onStop /
+  // onFollow are registered after the constructor returns, and firing them is half the
+  // point of the option — a host's follow toggle syncs itself from them. Running after
+  // the initialView dispatch is the other half: every named view but last24/next24
+  // calls doStop(), so an earlier follow:true would simply be undone.
+  function applyFollow() {
+    var followArg = settings.follow;
+    if (followArg === undefined || followArg === null) return;
+    if (followArg === false) { doStop(); return; }
+    // `true` means "roll, keeping now where it already sits in the window", so an
+    // explicit initialView window is preserved instead of snapping back onto now.
+    if (followArg === true) {
+      var range = tmax - tmin;
+      followArg = range > 0 ? Math.max(0, Math.min(100, 100 * (Date.now() - tmin) / range)) : 100;
+    }
+    followAt(followArg);
+  }
   this.followNow  = function () { follow_animated(100); };
   this.previewNow = function () { follow_animated(0); };
   this.stop     = function () { doStop(); };
@@ -3394,7 +3430,24 @@ export default function TimeSeries(options) {
   if (settings.watermark) this.setWatermark(settings.watermark);
   plotAll();
   var self = this;
-  if (settings.initialView) setTimeout(function () { self[settings.initialView](); }, 0);
+  // Window is initialised synchronously above; named views and follow are deferred. The
+// setTimeout is needed regardless of initialView's shape for array/null: the test suite
+// asserts getViewport() before any wait, and a named view animates over zoomDuration
+// (so an applyFollow() scheduled at the same tick would fight animate() for tmin/tmax).
+var ivNamed = typeof settings.initialView === 'string';
+var hasFollow = settings.follow !== undefined && settings.follow !== null;
+if (ivNamed || hasFollow) setTimeout(function () {
+  if (ivNamed) {
+    if (typeof self[settings.initialView] === 'function') self[settings.initialView]();
+    else console.warn('TimeSeries: initialView "' + settings.initialView +
+                      '" is not a navigation method');
+  }
+  // A named view animates over zoomDuration; applying follow inside that window
+  // would fight animate() for tmin/tmax. last24() staggers its own start_follower
+  // for exactly this reason.
+  if (ivNamed && hasFollow) setTimeout(applyFollow, zoom_onclick_time);
+  else if (hasFollow) applyFollow();
+}, 0);
 }
 
 // ── Statics ───────────────────────────────────────────────────────────────────

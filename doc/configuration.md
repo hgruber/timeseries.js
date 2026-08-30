@@ -8,7 +8,8 @@ const ts = new TimeSeries({
   canvas:         'chart',       // REQUIRED — id of the target <canvas>
   sources:        [],            // source / plot objects — see doc/data-formats.md
   group:          undefined,     // viewport-sync group; instances sharing it move together
-  initialView:    'last24',      // navigation method to call on load, or null
+  initialView:    'last24',      // navigation method name, [tmin, tmax] window, or null
+  follow:         undefined,     // true | false | 0–100; absent = whatever initialView implies
   zoomDuration:   500,           // ms — zoom transition length
   zoomFactor:     0.1,           // wheel-zoom sensitivity (smaller = finer steps)
   autoFollow:     false,         // enter follow mode when "now" reaches the right edge
@@ -34,10 +35,11 @@ const ts = new TimeSeries({
 | `canvas` | string | `'timeseries'` | `id` of the `<canvas>`. Must be in the DOM with a non-zero CSS size. |
 | `sources` | array | `[]` | Source / plot objects; each needs a `source-type`. |
 | `group` | string | — | Shared viewport-sync group. Same as calling `ts.joinGroup(name)`. |
-| `initialView` | string \| null | `'last24'` | Any navigation method name (`today`, `thisWeek`, `lastMonth`, …). `null` keeps the default window. |
+| `initialView` | string \| [number, number] \| null | `'last24'` | Any navigation method name (`today`, `thisWeek`, `lastMonth`, …). A `[tmin, tmax]` window in ms (Date objects also accepted) is applied synchronously, before the first paint. `null` keeps the default window. |
+| `follow` | boolean \| number (0–100) | — | Explicit follow state, independent of the window. `true` rolls while keeping "now" where it sits in the start window; `false` stops; a number sets the fraction directly. Applied after `initialView`, so `onStop` / `onFollow` fire for the start state too. Absent = whatever `initialView` implies (named `last24`/`next24` start rolling; everything else starts stopped). |
 | `zoomDuration` | number (ms) | `500` | Click / `zoom()` transition length. |
 | `zoomFactor` | number | `0.1` | Mouse-wheel zoom step. |
-| `autoFollow` | boolean | `false` | Start rolling once the right edge reaches the present. |
+| `autoFollow` | boolean | `false` | Start rolling once the right edge reaches the present. `follow` is the explicit "roll now"; `autoFollow` is the trigger that starts it later. |
 | `keyboard` | boolean | `true` | Focusable canvas and arrow-key navigation — see [below](#keyboard). |
 | `panSnap` | string | `'grid'` | `'grid'` snaps keyboard navigation to the labelled axis grid, `'off'` moves continuously — see [below](#keyboard). |
 | `fadeHi` / `fadeLo` | number (px) | `2` / `1` | Resolution-tier switch point and dissolve band — see [Resolution tiers](tiers.md). |
