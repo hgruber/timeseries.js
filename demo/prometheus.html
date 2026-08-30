@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — Prometheus query_range</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      /* The whole page frame — reset, themes, header, nav, cards, controls,
+         buttons, .status/.pill/.hint/code — comes from demo.css. Only the
+         chart height is specific to this page. */
+      .canvas-wrap { height: 420px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — Prometheus</h1>
+      <p>zoom-adaptive <code>/api/v1/query_range</code> with two resolution tiers</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="chart-card">
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div class="controls">
+          <button id="day">Day</button>
+          <button id="week">Week</button>
+          <button id="month">Month</button>
+          <span class="spacer"></span>
+          <span class="status">resolution:<span class="pill" id="tier">…</span></span>
+        </div>
+        <p class="hint">
+          No Prometheus server is configured, so this page installs a synthetic
+          <code>/api/v1/query_range</code> (a stubbed <code>fetch</code>) that answers
+          <code>rate(node_cpu_seconds_total[1m])</code>-style queries with a generated signal —
+          the <em>real</em> <code>prometheus</code> source runs against it unchanged. Zoom in and
+          the fine tier takes over; zoom out and it cross-fades into the coarse one. Point this
+          at a real server by replacing the stub with <code>url</code>/credentials.
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      // ── Synthetic Prometheus stub ──────────────────────────────────────────
+      // The real Prometheus uses the same path, so swapping the stub out for
+      // a `url` is the only change needed to talk to a live server.
+      const QUERY = 'rate(node_cpu_seconds_total[1m])';
+      function base(t) {                       // value at unix-seconds t
+        return 0.55
+          + 0.22 * Math.sin((2 * Math.PI * t) / 86400)        // daily swing
+          + 0.08 * Math.sin((2 * Math.PI * t) / (86400 * 7))  // weekly drift
+          + 0.06 * Math.sin((2 * Math.PI * t) / 3600);        // hourly ripple
+      }
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = function (url, init) {
+        const u = String(url);
+        if (u.indexOf('/api/v1/query_range') === -1) {
+          return Promise.resolve({ status: 404, json: () => Promise.resolve({ status: 'error' }) });
+        }
+        const qs = u.split('?')[1] || '';
+        const params = {};
+        qs.split('&').forEach(function (kv) {
+          const [k, v] = kv.split('=');
+          params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+        });
+        const from = +params.start, to = +params.end, step = +params.step;
+        const values = [];
+        for (let t = Math.ceil(from / step) * step; t <= to; t += step) {
+          values.push([String(t), base(t).toFixed(3)]);
+        }
+        const envelope = {
+          status: 'success',
+          data: { resultType: 'matrix', result: [{ metric: { __name__: 'cpu', instance: 'web01' }, values }] },
+        };
+        return new Promise(r => setTimeout(() => r({
+          status: 200,
+          json: () => Promise.resolve(envelope),
+        }), 80));
+      };
+
+      // ── The chart ───────────────────────────────────────────────────────────
+      const ts = new TimeSeries({
+        canvas: 'chart',
+        initialView: null,
+        sources: [{
+          'source-type': 'prometheus',
+          url: 'http://localhost:9090',            // answered by the stub above
+          query: QUERY,
+          series_colors: { cpu: '#2d6a9f' },
+          name: 'CPU rate',
+        }],
+      });
+
+      attachTooltip(ts);
+
+      window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
+
+      const DAY = 86400e3;
+      const now = Date.now();
+      const view = (days) => ts.zoom(now - days * DAY, now, 600);
+      document.getElementById('day').onclick   = () => view(1);
+      document.getElementById('week').onclick  = () => view(7);
+      document.getElementById('month').onclick = () => view(30);
+
+      const tierPill = document.getElementById('tier');
+      setInterval(() => {
+        const px = 60 * 1000 * ts.getViewport().ppms;
+        tierPill.textContent = px >= 2 ? 'fine (60s)'
+          : px > 1 ? 'cross-fading…'
+          : 'coarse (10× step)';
+      }, 200);
+
+      view(30);
+    </script>
+  </body>
+</html>

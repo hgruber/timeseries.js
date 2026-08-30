@@ -136,6 +136,88 @@ Two demos, and the split between them is deliberate:
   source, which is why it lives in `demo/` and is deployed like the rest — see the banner for
   what that means for a token typed into the Pages copy.
 
+## Prometheus source — `/api/v1/query_range`
+
+`src/jpPrometheus.js` is the standalone client. `fetch + AbortController` is the same pattern
+the CalDAV source uses (and the same fix for the documented `jpZabbix.api()` `ontimeout` gap —
+Zabbix's `XMLHttpRequest`-based client never wires the timeout handler, so a hung request
+settles nothing). The client exposes `queryRange(query, fromMs, toMs, stepSec)` and returns
+the raw envelope; the source does the folding.
+
+The source (`registerSource({type: 'prometheus', …})`) is a textbook two-tier ladder:
+
+- **Fine tier** uses the requested (or auto-derived) `step`; **coarse tier** uses
+  `step × step-factor`. Both are pushed as `multiline` blocks with `category: 'point'` —
+  Prometheus exposes sample timestamps, not pre-aggregated buckets, so the timeseries.js
+  core's `prepare_grid` decides which one to draw at the current zoom. `promStepFor(ppms,
+  plotWidth, step)` enforces the 2-px-per-bucket threshold the [renderers page](renderers.md)
+  documents; an explicit `step` below that threshold is raised with a `console.warn`.
+- **Fold on the way in.** `promFold(ring, matrix, stepSec)` aggregates sub-step samples into
+  `[min, avg, max]` triplets per bucket, dropping Prometheus' literal `NaN` (Counter resets,
+  "no data") rather than silently zero-clamping it. When the input is already at `step`
+  resolution (a `rate()` or `increase()` query), `promFold` skips the fold and emits a scalar.
+- **Series key.** `promSeriesKey(metric, labels)` is `metric + '\x1f' + label1=value1 + '\x1f'
+  + …` with labels sorted, so `{instance:a,job:x}` and `{job:x,instance:a}` collide on the
+  same key (and colour slot). The `\x1f` separator means a label whose value contains `=`
+  cannot collide with another label's name — verified in `test/prometheus.test.mjs`.
+- **Padding.** `promWindow(viewport, padding)` returns the padded window; the source's
+  per-tier `fetched` state lets a pan within ±50% replay from the cache.
+- **NaN / empty.** `promFold` skips `NaN`; an empty `result: []` produces a block with
+  `data: []` and no error. Both verified.
+
+## InfluxDB source — InfluxQL 1.x and Flux 2.x
+
+Two wire formats, one source. `src/jpInfluxdb.js` is the standalone client; the
+`mode: '1x' | '2x'` option picks the request shape and the response parser.
+
+- **1.x** issues `POST /query` with a form-encoded body (`db`, `q`, `epoch=ms`, `from`, `to`).
+  1.x accepts both Bearer (`Authorization: Token …`) and Basic auth. The server returns
+  `{results: [{series: [{name, columns, values}]}]}`; `parse1x` walks that, treats
+  `results[0].error` as a server error (`fail(502, …)`) rather than a silent empty, and
+  normalises everything into `{series: [{name, tags, points: [[t, v]]}]}`.
+- **2.x** issues `POST /api/v2/query` with a JSON body (`org`, `query`, `type: 'flux'`,
+  `dialect: {header: true, annotations: ['group', 'datatype', 'default']}`) and asks for
+  `Accept: text/csv`. JSON is *not* a supported 2.x response shape, so requesting
+  `application/json` would land the client on a stream-parser error path; CSV works because
+  the annotation comment rows (`#group`, `#datatype`) and the named columns (`result`, `table`,
+  `time`, `value`, `_field`, `_measurement`) give the parser everything it needs. `parse2x`
+  uses the `result|table` columns to bucket multiple series out of one Flux query.
+- **Same `promFold` shape**, different helpers. `influxSeriesKey(name, tags)` joins sorted
+  tags with `\x1f` (just like Prometheus), `influxFold` aggregates sub-step samples into
+  `[min, avg, mx]` per bucket and collapses `mn === av === mx` to a scalar, and `influxPlot`
+  builds the `multiline` block.
+- **Timeout-guarded**, CORS-`omit`, sequence guard per tier, and the same `padding: 0.5`
+  cached-window policy as Prometheus.
+
+## Home Assistant source — numeric or span, per entity
+
+Mixed-shape source: one block per entity, with the renderer chosen from the last state on
+each refresh.
+
+- **Routing.** `inferHaRenderType(entityId, lastState, attributes)` decides between
+  `category: 'point'` (multiline) and `category: 'span'` (gantt) at refresh time. Numeric
+  states go to multiline; `'on' | 'off' | 'unavailable' | 'unknown' | 'none'` and any
+  non-numeric state go to gantt. When the routing changes between fetches, the source
+  releases the old `plotId` via `removeData` and pushes the new block — the plot-id sequence
+  is preserved for the entities that did not change.
+- **Per-entity growing cache.** Home Assistant has no notion of tiers; the source keeps a
+  `{from, to, states}` per entity. A pan within the union of all entities' already-fetched
+  windows replays from the cache without a round-trip. A pan past the cached edge widens the
+  window and re-fetches; the response is merged with the previous states (deduped by
+  `last_changed`) so widening past the left edge does not lose older rows.
+- **Attributes are not optional.** HA collapses `attributes` to nothing when you ask for
+  `minimal_response`, but the routing decision needs them — so `jpHomeAssistant.history()`
+  never sets `minimal_response`. The bandwidth cost is small (a handful of bytes per row) and
+  the alternative is routing every entity into the multiline path.
+- **Bearer only.** Basic auth is silently dropped with a `console.warn`; HA's only auth
+  method is the long-lived access token. Without the warning, a misconfigured page would
+  wait for an opaque 401 on the first request.
+- **Open-ended last span.** A sensor currently in `'on'` has no `last_changed` for the
+  `'off'` transition; `haFoldSpan` extends the last span to `max(toMs, Date.now())` so a
+  slow refresh does not show the bar ending at the cached edge.
+- **Seq guard** is per source (one `entitySeq`), not per tier — a superseding fetch
+  invalidates every in-flight response, not just the ones on the same bucket boundary.
+
 ## The README server recipes, and why their URL rules differ
 
 README's *Connect to a real server* hangs two single-file recipes off it (Zabbix, CalDAV),

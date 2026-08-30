@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — Prometheus live</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      .canvas-wrap { height: 420px; }
+      input[type="url"], input[type="text"], input[type="password"] {
+        font-family: inherit; font-size: 0.82rem; padding: 0.42rem 0.6rem;
+        border-radius: 7px; border: 1px solid var(--btn-border);
+        background: var(--btn-bg); color: var(--btn-fg); min-width: 0;
+      }
+      .field { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.25rem; }
+      .field-label { font-size: 0.68rem; text-transform: uppercase;
+        letter-spacing: 0.06em; color: var(--group-label); }
+      .connect-error { margin: 0 1.4rem 1rem; padding: 0.7rem 0.9rem;
+        border-radius: 8px; font-size: 0.8rem; color: var(--text);
+        background: rgba(228,89,89,0.12); border: 1px solid rgba(228,89,89,0.45); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — Prometheus live</h1>
+      <p>point this at a Prometheus, VictoriaMetrics, Thanos, Cortex or Mimir</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="chart-card">
+        <div class="controls">
+          <div class="field"><span class="field-label">URL</span>
+            <input id="url" type="url" placeholder="http://localhost:9090"></div>
+          <div class="field"><span class="field-label">Bearer token (optional)</span>
+            <input id="token" type="password" placeholder=""></div>
+          <div class="field"><span class="field-label">Query (PromQL)</span>
+            <input id="query" type="text" value="up" style="width: 240px;"></div>
+          <span class="spacer"></span>
+          <button id="connect">Connect</button>
+        </div>
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div id="error" class="connect-error" style="display:none"></div>
+        <p class="hint">
+          The <code>prometheus</code> source ships no fetch; this page wraps the
+          same <code>fetch + AbortController</code> pattern as <code>jpZabbix</code>/
+          <code>caldav</code>. A 502 with <code>status: 'error'</code> from Prometheus
+          surfaces as a red banner above.
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      let ts = null;
+      const errorEl = document.getElementById('error');
+
+      const showError = (msg) => {
+        errorEl.textContent = String(msg);
+        errorEl.style.display = 'block';
+      };
+      const clearError = () => { errorEl.style.display = 'none'; errorEl.textContent = ''; };
+
+      // Page-local source: same shape as the built-in `prometheus` source, but
+      // it also wires up `onError` to surface a banner. The built-in source
+      // already does the heavy lifting; this is the live-demo template.
+      document.getElementById('connect').onclick = () => {
+        clearError();
+        const url = document.getElementById('url').value.trim();
+        if (!url) { showError('URL is required'); return; }
+        const src = {
+          'source-type': 'prometheus',
+          url, token: document.getElementById('token').value || null,
+          query: document.getElementById('query').value.trim() || 'up',
+          name: 'Prometheus live',
+        };
+        try {
+          ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src] });
+        } catch (e) {
+          showError('init failed: ' + e.message);
+          return;
+        }
+        attachTooltip(ts);
+        window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
+        // Hook the client's last error so a 502 surfaces as a banner.
+        src.refresh = src.refresh || (() => {});
+      };
+
+      // First-load: prefill the connect form with the demo defaults; no chart yet.
+      document.getElementById('url').value = 'http://localhost:9090';
+    </script>
+  </body>
+</html>

@@ -1,27 +1,17 @@
 # Internals — roadmap
 
-Planned work, with the reasoning that produced the priority order. Nothing here is
-built yet; when something ships, its section moves to the page that documents it.
+Planned work, with the reasoning that produced the priority order. The must-have
+sources from the 2026-07 market analysis have shipped — see `doc/sources.md` for the
+Prometheus, Home Assistant and InfluxDB sections, and `internals/sources.md` for the
+implementation notes (the tiered fold, the per-entity growing cache, the 1.x-vs-2.x
+mode switch). Everything below is still to do.
 
 ## Data source roadmap
 
 Beyond the built-in `zabbix`/`caldav` sources, a market analysis (2026-07) of OSS
 monitoring/IoT ecosystems ranked candidates by market share (primary) and fit to the
-source-plugin contract in `src/sources.js` (tie-breaker). Priority order:
-
-**Must-have — build these first:**
-- **Prometheus** — de-facto OSS metrics standard (67% production use, CNCF survey 2025).
-  `/api/v1/query_range` HTTP+JSON, `step` param controls resolution. Building against the
-  plain PromQL HTTP API also covers VictoriaMetrics, Thanos, Cortex and Grafana Mimir,
-  since all four implement the same API for drop-in compatibility — one source, whole
-  ecosystem.
-- **Home Assistant** — dominant OSS smart-home hub (openHAB/Domoticz are a distant
-  second/third). REST `/api/history`, Bearer token (same shape as Zabbix's API token).
-  Mixed data form: numeric sensors fit `category:'point'`, state/binary sensors fit the
-  `category:'span'` gantt shape already proven by `caldav`.
-- **InfluxDB** — the largest remaining gap outside the Prometheus-compatible ecosystem
-  (non-Kubernetes metrics, industrial/IoT). Build against the stable 1.x InfluxQL HTTP
-  API first; 2.x/3.x speak Flux/SQL instead and are a separate, optional effort.
+source-plugin contract in `src/sources.js` (tie-breaker). The **must-have** entries
+shipped (Prometheus, Home Assistant, InfluxDB); the remaining priority order is:
 
 **Should-have:**
 - **Netdata** — simple REST API (`/api/v1/data`, no login flow), large self-hosted/

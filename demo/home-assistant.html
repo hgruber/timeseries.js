@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — Home Assistant history</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      .canvas-wrap { height: 420px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — Home Assistant</h1>
+      <p>mixed-shape: numeric sensors become multiline, binary/state sensors become gantt</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="chart-card">
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div class="controls">
+          <button id="day">Day</button>
+          <button id="week">Week</button>
+          <button id="month">Month</button>
+          <span class="spacer"></span>
+          <span class="status">render:<span class="pill" id="route">…</span></span>
+        </div>
+        <p class="hint">
+          No Home Assistant server is configured, so this page installs a synthetic
+          <code>/api/history/period</code> stub that answers two entities —
+          <code>sensor.demo_temp</code> (numeric → multiline) and
+          <code>binary_sensor.demo_door</code> (binary → gantt). The source decides
+          per entity which renderer to use; both kinds can sit on the same chart.
+          Point this at a real Home Assistant by replacing the stub with
+          <code>url</code>/<code>token</code>.
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      // ── Synthetic Home Assistant stub ──────────────────────────────────────
+      // Two entities, one numeric (multiline), one binary (gantt). The real
+      // endpoint accepts a comma-joined `filter_entity_id` and returns one
+      // array per entity — re-keyed by `entity_id` for safety.
+      function base(t) { return 21 + 4 * Math.sin((2 * Math.PI * t) / 86400); }
+      function iso(ms) { return new Date(ms).toISOString(); }
+      const FROM = Date.now() - 86400000;
+      const TO = Date.now();
+      const tempRows = [];
+      for (let t = FROM; t <= TO; t += 300000) {
+        tempRows.push({ entity_id: 'sensor.demo_temp', state: base(Math.floor(t / 1000)).toFixed(1),
+          last_changed: iso(t), attributes: { unit_of_measurement: '°C' } });
+      }
+      const doorRows = [];
+      // 12 random on/off transitions across the window.
+      for (let i = 0; i < 12; i++) {
+        const t = FROM + Math.floor((TO - FROM) * (i / 12));
+        doorRows.push({ entity_id: 'binary_sensor.demo_door',
+          state: i % 2 === 0 ? 'on' : 'off', last_changed: iso(t),
+          attributes: { device_class: 'door' } });
+      }
+      globalThis.fetch = function (url) {
+        return new Promise(r => setTimeout(() => r({
+          status: 200,
+          json: () => Promise.resolve([tempRows, doorRows]),
+        }), 80));
+      };
+
+      // ── The chart ───────────────────────────────────────────────────────────
+      const ts = new TimeSeries({
+        canvas: 'chart',
+        initialView: null,
+        sources: [{
+          'source-type': 'home-assistant',
+          url: 'http://localhost:8123',
+          token: 'fake',
+          'entity-ids': ['sensor.demo_temp', 'binary_sensor.demo_door'],
+          'series-colors': { 'sensor.demo_temp': '#2d6a9f', 'binary_sensor.demo_door': '#cc7a2d' },
+          name: 'Home Assistant',
+        }],
+      });
+      attachTooltip(ts);
+      window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
+
+      const DAY = 86400e3;
+      const now = Date.now();
+      const view = (days) => ts.zoom(now - days * DAY, now, 600);
+      document.getElementById('day').onclick   = () => view(1);
+      document.getElementById('week').onclick  = () => view(7);
+      document.getElementById('month').onclick = () => view(30);
+
+      const routePill = document.getElementById('route');
+      setInterval(() => {
+        const blocks = ts.getActiveData();
+        const kinds = blocks.map(b => b.type + '/' + b.category);
+        routePill.textContent = kinds.length ? kinds.join(' + ') : '…';
+      }, 200);
+
+      view(1);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — InfluxDB 1.x / 2.x</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      .canvas-wrap { height: 420px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — InfluxDB</h1>
+      <p>zoom-adaptive query: InfluxQL <code>POST /query</code> or Flux <code>POST /api/v2/query</code></p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="chart-card">
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div class="controls">
+          <button id="day">Day</button>
+          <button id="week">Week</button>
+          <button id="month">Month</button>
+          <span class="spacer"></span>
+          <span class="status">mode:<span class="pill" id="mode">1x</span></span>
+          <span class="status">resolution:<span class="pill" id="tier">…</span></span>
+          <button id="swap">Switch to 2.x</button>
+        </div>
+        <p class="hint">
+          No InfluxDB server is configured, so this page installs a synthetic
+          <code>fetch</code> stub. The dropdown at the top-right toggles between
+          <code>mode: '1x'</code> (InfluxQL, form-encoded POST <code>/query</code>) and
+          <code>mode: '2x'</code> (Flux, JSON POST <code>/api/v2/query</code>, CSV response).
+          The chart and the cross-fade behaviour are identical in both modes — only the wire
+          format differs. Point this at a real server by replacing the stub with
+          <code>url</code>/<code>token</code>/<code>db</code>.
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      // ── Synthetic InfluxDB stub ────────────────────────────────────────────
+      // Two paths, one shared body. 1.x speaks InfluxQL (POST /query, form
+      // body); 2.x speaks Flux (POST /api/v2/query, JSON body, CSV stream).
+      function base(t) {
+        return 10
+          + 5 * Math.sin((2 * Math.PI * t) / 86400)
+          + 2 * Math.sin((2 * Math.PI * t) / 3600);
+      }
+      const QUERY_1X = 'SELECT mean(value) FROM cpu GROUP BY host';
+      const QUERY_2X = 'from(bucket:"db") |> range(start: v.timeStart, stop: v.timeStop) |> filter(fn: (r) => r._measurement == "cpu") |> mean()';
+      globalThis.fetch = function (url, init) {
+        const u = String(url);
+        if (u.indexOf('/api/v2/query') !== -1) {
+          // 2.x — request body is JSON; response is CSV (header + #group + #datatype + rows).
+          const body = JSON.parse(init && init.body || '{}');
+          const from = Date.parse(body.query.match(/start: v\.timeStart/)?.[0] ? '0' : '0');
+          // The stub fixes the window for clarity.
+          const stepMs = 60000;
+          const fromMs = Date.now() - 86400000 * 30;
+          let csv = '#group,false,false,true,true\n';
+          csv += '#datatype,string,long,dateTime:RFC3339,dateTime:RFC3339,dateTime:RFC3339,long,string,string\n';
+          csv += 'result,table,_start,_stop,time,value,_field,_measurement,host\n';
+          for (let t = fromMs; t <= Date.now(); t += stepMs) {
+            const v = base(Math.floor(t / 1000));
+            csv += `cpu0,0,${new Date(fromMs).toISOString()},${new Date(Date.now()).toISOString()},${new Date(t).toISOString()},${v.toFixed(3)},mean,cpu,web01\n`;
+          }
+          return new Promise(r => setTimeout(() => r({
+            status: 200,
+            headers: { get: () => 'text/csv' },
+            text: () => Promise.resolve(csv),
+          }), 80));
+        }
+        if (u.indexOf('/query') !== -1) {
+          // 1.x — request body is form-encoded; response is JSON envelope.
+          const body = (init && init.body) || '';
+          const params = {};
+          body.split('&').forEach(function (kv) {
+            const [k, v] = kv.split('=');
+            params[decodeURIComponent(k)] = decodeURIComponent(v || '');
+          });
+          const from = +(params.from || 0), to = +(params.to || 0), stepMs = 60000;
+          const values = [];
+          for (let t = from; t <= to; t += stepMs) {
+            values.push([String(t), base(Math.floor(t / 1000)).toFixed(3)]);
+          }
+          const envelope = {
+            results: [{ statement_id: 0,
+              series: [{ name: 'cpu0', columns: ['time', 'mean'], values }] }],
+          };
+          return new Promise(r => setTimeout(() => r({
+            status: 200,
+            headers: { get: () => 'application/json' },
+            json: () => Promise.resolve(envelope),
+          }), 80));
+        }
+        return Promise.resolve({ status: 404, json: () => Promise.resolve({}) });
+      };
+
+      // ── The chart ───────────────────────────────────────────────────────────
+      let mode = '1x';
+      let ts = null;
+      const buildTs = () => new TimeSeries({
+        canvas: 'chart',
+        initialView: null,
+        sources: [{
+          'source-type': 'influxdb',
+          url: 'http://localhost:8086',
+          mode,
+          db: mode === '1x' ? 'mydb' : undefined,
+          org: mode === '2x' ? 'myorg' : undefined,
+          bucket: mode === '2x' ? 'db' : undefined,
+          query: mode === '1x' ? QUERY_1X : QUERY_2X,
+          series_colors: { cpu0: '#2d6a9f' },
+          name: 'CPU mean',
+        }],
+      });
+      ts = buildTs();
+      attachTooltip(ts);
+      window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
+
+      const DAY = 86400e3;
+      const now = Date.now();
+      const view = (days) => ts.zoom(now - days * DAY, now, 600);
+      document.getElementById('day').onclick   = () => view(1);
+      document.getElementById('week').onclick  = () => view(7);
+      document.getElementById('month').onclick = () => view(30);
+      document.getElementById('swap').onclick  = () => {
+        mode = mode === '1x' ? '2x' : '1x';
+        document.getElementById('mode').textContent = mode;
+        document.getElementById('swap').textContent = 'Switch to ' + (mode === '1x' ? '2.x' : '1.x');
+        ts = buildTs();
+        view(30);
+      };
+      document.getElementById('swap').textContent = 'Switch to 2.x';
+
+      const tierPill = document.getElementById('tier');
+      setInterval(() => {
+        const px = 60 * 1000 * ts.getViewport().ppms;
+        tierPill.textContent = px >= 2 ? 'fine (60s)'
+          : px > 1 ? 'cross-fading…'
+          : 'coarse (10× step)';
+      }, 200);
+
+      view(30);
+    </script>
+  </body>
+</html>

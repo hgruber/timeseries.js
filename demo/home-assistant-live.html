@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — Home Assistant live</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      .canvas-wrap { height: 420px; }
+      input[type="url"], input[type="text"], input[type="password"] {
+        font-family: inherit; font-size: 0.82rem; padding: 0.42rem 0.6rem;
+        border-radius: 7px; border: 1px solid var(--btn-border);
+        background: var(--btn-bg); color: var(--btn-fg); min-width: 0;
+      }
+      .field { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.25rem; }
+      .field-label { font-size: 0.68rem; text-transform: uppercase;
+        letter-spacing: 0.06em; color: var(--group-label); }
+      .connect-error { margin: 0 1.4rem 1rem; padding: 0.7rem 0.9rem;
+        border-radius: 8px; font-size: 0.8rem; color: var(--text);
+        background: rgba(228,89,89,0.12); border: 1px solid rgba(228,89,89,0.45); }
+      select { font-family: inherit; font-size: 0.82rem; padding: 0.42rem 0.6rem;
+        border-radius: 7px; border: 1px solid var(--btn-border);
+        background: var(--btn-bg); color: var(--btn-fg); max-width: 360px; }
+      select[multiple] { min-width: 280px; padding: 0.25rem; }
+      select[multiple] option { padding: 0.12rem 0.3rem; }
+      .entity-list { padding: 0 1.4rem 1rem; font-size: 0.78rem; color: var(--muted); }
+      .badge { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 6px;
+        font-size: 0.7rem; margin-left: 0.4rem; }
+      .badge.num { background: rgba(45,106,159,0.18); color: #2d6a9f; }
+      .badge.bin { background: rgba(204,122,45,0.18); color: #cc7a2d; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — Home Assistant live</h1>
+      <p>numeric sensors → multiline; binary/state sensors → gantt</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="chart-card">
+        <div class="controls">
+          <div class="field"><span class="field-label">URL</span>
+            <input id="url" type="url" placeholder="http://localhost:8123"></div>
+          <div class="field"><span class="field-label">Long-lived access token</span>
+            <input id="token" type="password"></div>
+          <span class="spacer"></span>
+          <button id="fetch">Fetch entities</button>
+          <button id="connect">Connect</button>
+        </div>
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div class="entity-list" id="picker"></div>
+        <div id="error" class="connect-error" style="display:none"></div>
+        <p class="hint">
+          After <em>Fetch entities</em>, tick the rows you want to include.
+          Each entity has a <span class="badge num">numeric</span> /
+          <span class="badge bin">binary</span> badge showing which renderer
+          the source will use. The bearer token travels in
+          <code>Authorization</code>; HA rejects basic auth with a 401
+          (the source warns and drops it).
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      let ts = null;
+      let entityIds = [];
+      const errorEl = document.getElementById('error');
+      const pickerEl = document.getElementById('picker');
+      const showError = (m) => { errorEl.textContent = m; errorEl.style.display = 'block'; };
+      const clearError = () => { errorEl.style.display = 'none'; errorEl.textContent = ''; };
+
+      const headers = () => {
+        const h = { 'Content-Type': 'application/json' };
+        const t = document.getElementById('token').value;
+        if (t) h.Authorization = 'Bearer ' + t;
+        return h;
+      };
+      const baseUrl = () => document.getElementById('url').value.replace(/\/+$/, '');
+
+      // Infer render type the same way the source does, for the badge.
+      const inferKind = (state, attrs) => {
+        if (state == null) return 'bin';
+        const s = String(state);
+        if (s === 'unavailable' || s === 'unknown' || s === 'none' || s === '') return 'bin';
+        if (s === 'on' || s === 'off') return 'bin';
+        if (+s === +s) return 'num';
+        return 'bin';
+      };
+
+      document.getElementById('fetch').onclick = async () => {
+        clearError();
+        pickerEl.innerHTML = '';
+        try {
+          const r = await fetch(baseUrl() + '/api/states', { headers: headers() });
+          if (!r.ok) { showError('HTTP ' + r.status + ' fetching entities'); return; }
+          const all = await r.json();
+          all.sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+          const wrap = document.createElement('select');
+          wrap.id = 'entity-select'; wrap.multiple = true; wrap.size = 12;
+          for (const e of all) {
+            const opt = document.createElement('option');
+            opt.value = e.entity_id;
+            opt.textContent = e.entity_id + ' (' + e.state + ')';
+            wrap.appendChild(opt);
+          }
+          pickerEl.appendChild(wrap);
+          entityIds = all.map(e => e.entity_id);
+        } catch (err) {
+          showError('Fetch failed: ' + err.message);
+        }
+      };
+
+      document.getElementById('connect').onclick = () => {
+        clearError();
+        const url = document.getElementById('url').value.trim();
+        const token = document.getElementById('token').value;
+        if (!url || !token) { showError('URL and token are required'); return; }
+        const sel = document.getElementById('entity-select');
+        if (!sel) { showError('Click "Fetch entities" first'); return; }
+        const picked = Array.from(sel.selectedOptions).map(o => o.value);
+        if (!picked.length) { showError('Pick at least one entity'); return; }
+        const src = {
+          'source-type': 'home-assistant', url, token, 'entity-ids': picked,
+          name: 'Home Assistant live',
+        };
+        ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src] });
+        attachTooltip(ts);
+        window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
+      };
+
+      document.getElementById('url').value = 'http://localhost:8123';
+    </script>
+  </body>
+</html>

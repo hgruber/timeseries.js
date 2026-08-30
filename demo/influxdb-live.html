@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>timeseries.js — InfluxDB live</title>
+    <link rel="stylesheet" href="./demo.css">
+    <style>
+      .canvas-wrap { height: 420px; }
+      input[type="url"], input[type="text"], input[type="password"] {
+        font-family: inherit; font-size: 0.82rem; padding: 0.42rem 0.6rem;
+        border-radius: 7px; border: 1px solid var(--btn-border);
+        background: var(--btn-bg); color: var(--btn-fg); min-width: 0;
+      }
+      .field { display: flex; flex-direction: column; gap: 0.15rem; padding: 0 0.25rem; }
+      .field-label { font-size: 0.68rem; text-transform: uppercase;
+        letter-spacing: 0.06em; color: var(--group-label); }
+      .connect-error { margin: 0 1.4rem 1rem; padding: 0.7rem 0.9rem;
+        border-radius: 8px; font-size: 0.8rem; color: var(--text);
+        background: rgba(228,89,89,0.12); border: 1px solid rgba(228,89,89,0.45); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>timeseries<span>.js</span> — InfluxDB live</h1>
+      <p>InfluxQL 1.x or Flux 2.x — same chart, two wire formats</p>
+      <div id="demo-nav"></div>
+    </header>
+    <script src="./demo-nav.js"></script>
+
+    <main>
+      <div class="chart-card">
+        <div class="controls">
+          <div class="field"><span class="field-label">Mode</span>
+            <select id="mode">
+              <option value="1x">1.x (InfluxQL · POST /query)</option>
+              <option value="2x">2.x (Flux · POST /api/v2/query)</option>
+            </select></div>
+          <div class="field"><span class="field-label">URL</span>
+            <input id="url" type="url" placeholder="http://localhost:8086"></div>
+          <div class="field"><span class="field-label">Token</span>
+            <input id="token" type="password"></div>
+          <div class="field"><span class="field-label" id="db-label">Database / bucket</span>
+            <input id="db" type="text"></div>
+          <div class="field"><span class="field-label" id="org-label" style="display:none">Org</span>
+            <input id="org" type="text" style="display:none"></div>
+          <div class="field"><span class="field-label">Query</span>
+            <input id="query" type="text" value="SELECT mean(value) FROM cpu GROUP BY host" style="width: 320px;"></div>
+          <span class="spacer"></span>
+          <button id="connect">Connect</button>
+        </div>
+        <div class="canvas-wrap"><canvas id="chart"></canvas></div>
+        <div id="error" class="connect-error" style="display:none"></div>
+        <p class="hint">
+          Switching modes swaps the entire request: form-encoded InfluxQL
+          becomes JSON Flux, and the response parser flips from a JSON envelope
+          to annotated CSV (with <code>#group</code> / <code>#datatype</code> comment rows).
+          The chart code is the same in both modes.
+        </p>
+      </div>
+    </main>
+
+    <script type="module">
+      import TimeSeries from '../src/timeseries.js';
+      import { attachTooltip } from '../src/tooltip.js';
+
+      let ts = null;
+      const errorEl = document.getElementById('error');
+      const showError = (m) => { errorEl.textContent = m; errorEl.style.display = 'block'; };
+      const clearError = () => { errorEl.style.display = 'none'; errorEl.textContent = ''; };
+
+      // Mode-switch UI: show/hide the org field and retitle the db label.
+      const modeSel = document.getElementById('mode');
+      const updateUi = () => {
+        const m = modeSel.value;
+        document.getElementById('org-label').style.display = m === '2x' ? '' : 'none';
+        document.getElementById('org').style.display        = m === '2x' ? '' : 'none';
+        document.getElementById('db-label').textContent     = m === '1x' ? 'Database' : 'Bucket';
+        if (m === '1x') document.getElementById('query').value = 'SELECT mean(value) FROM cpu GROUP BY host';
+        else            document.getElementById('query').value = 'from(bucket:"db") |> range(start: v.timeStart, stop: v.timeStop) |> filter(fn: (r) => r._measurement == "cpu") |> mean()';
+      };
+      modeSel.onchange = updateUi;
+      updateUi();
+
+      document.getElementById('connect').onclick = () => {
+        clearError();
+        const mode = modeSel.value;
+        const url = document.getElementById('url').value.trim();
+        if (!url) { showError('URL is required'); return; }
+        const src = {
+          'source-type': 'influxdb', url, mode,
+          token: document.getElementById('token').value || null,
+        };
+        if (mode === '1x') {
+          src.db = document.getElementById('db').value.trim();
+          if (!src.db) { showError('Database is required for 1.x'); return; }
+        } else {
+          src.org = document.getElementById('org').value.trim();
+          src.bucket = document.getElementById('db').value.trim();
+          if (!src.org || !src.bucket) { showError('Org and bucket are required for 2.x'); return; }
+        }
+        src.query = document.getElementById('query').value.trim();
+        src.name = 'InfluxDB live';
+        try {
+          ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src] });
+        } catch (e) {
+          showError('init failed: ' + e.message);
+        }
+        attachTooltip(ts);
+        window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
+      };
+
+      document.getElementById('url').value = 'http://localhost:8086';
+      document.getElementById('db').value = 'mydb';
+    </script>
+  </body>
+</html>

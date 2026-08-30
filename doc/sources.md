@@ -7,6 +7,9 @@ is handed to the plugin named by its `source-type` key.
 |---|---|---|
 | `artificial` | nothing — the object *is* the data | whatever shape you wrote |
 | `zabbix` | Zabbix JSON-RPC API | a ladder block (`quantile-bands` by default), two resolution tiers |
+| `prometheus` | `/api/v1/query_range` (Prometheus, VictoriaMetrics, Thanos, Cortex, Mimir) | `multiline` blocks, two resolution tiers |
+| `home-assistant` | `/api/history/period` (Bearer auth) | per-entity mix of `multiline` (numeric sensors) and `gantt` (binary/state sensors) |
+| `influxdb` | InfluxQL `POST /query` (1.x) or Flux `POST /api/v2/query` (2.x) | `multiline` blocks, two resolution tiers |
 | `caldav` | a CalDAV server | `gantt` spans |
 | *(yours)* | anything | anything — see [Plugins](plugins.md) |
 
@@ -129,6 +132,186 @@ which still renders as a single bar.
 > lets a present-but-`undefined` key overwrite the 20-second default with nothing — and the
 > abort timer is then never armed, so a hung request stays pending forever. Set the key or
 > omit it; do not forward an optional variable unconditionally.
+
+---
+
+## Prometheus
+
+Zoom-adaptive: a fine tier (the requested `step`) and a coarse one (`step × step-factor`) are
+held as two `multiline` blocks and dissolved into each other as you zoom. The same code path
+serves Prometheus itself, VictoriaMetrics, Thanos, Cortex and Mimir — all of them expose
+`/api/v1/query_range` with the same envelope.
+
+```js
+sources: [{
+  'source-type': 'prometheus',
+  url: 'http://prom.example.org:9090',     // may be relative; auth below
+  token: 'ey…',                              // or `headers: { 'X-Scope-OrgID': '…' }`
+  query: 'rate(node_cpu_seconds_total[1m])',
+  // step: undefined,                  // auto-derive so each bucket is ≥ 2 px wide
+  // 'step-factor': 10,                 // coarse tier = fine × this
+  // render: 'multiline',               // or 'multipoint' / 'scatter'
+  padding: 0.5,
+  'series-colors': { cpu: '#2d6a9f' },
+  name: 'CPU rate',
+  // timeout: 20000,                   // ms; only set the key if you mean it
+}]
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `url` | — | May be **relative** — it goes through `new URL(path, url)` |
+| `token` | — | Bearer auth header (`Authorization: Bearer …`). Preferred: revocable |
+| `username` / `password` | — | Basic auth |
+| `headers` | — | Extra request headers — merged *after* auth, so an explicit `Authorization` overrides the calculated one. Use this for `X-Scope-OrgID` (Cortex/Mimir/Thanos) |
+| `proxy` | — | Same-origin forwarder base URL, see [CORS](#cross-origin-cors) |
+| `query` | — | A PromQL expression. The source wraps it into a `query_range` call; `/api/v1/query` (instant) is **not** used |
+| `step` | auto | Bucket size in seconds. The source picks a value so each bucket is at least 2 px wide at the current zoom; an explicit value below that threshold is raised to the safe one with a `console.warn` |
+| `'step-factor'` | `10` | The coarse tier uses `step × step-factor` |
+| `render` | `'multiline'` | `'multiline'`, `'multipoint'` or `'scatter'`. Anything else falls back to `'multiline'` with a warning |
+| `padding` | `0.5` | Fraction of the viewport prefetched either side |
+| `'series-colors'` | — | Map of series key (the stable `metric` + sorted labels string, see below) → CSS colour |
+| `name` | — | Plot name |
+| `timeout` | `20000` ms | See the CalDAV note below — only pass the key if you set it |
+
+After init, `source.client` is the `jpPrometheus` instance, `source.refresh()` re-evaluates
+the current viewport, and `source.setOptions({…})` lets the live demo swap auth or query
+without a full rebuild.
+
+The series key is `metric + '\x1f' + label1=value1 + '\x1f' + label2=value2` with the labels
+sorted, so two series that differ only in label order map to the same colour slot and a label
+whose value contains `=` cannot collide with another label's name.
+
+> **Empty `result: []`** renders as a block with `data: []` and no error — the chart simply
+> shows the empty window. Same goes for Prometheus' literal `NaN` (Counter resets, "no data"):
+> it is dropped during the fold, not silently zero-clamped.
+
+---
+
+## Home Assistant
+
+Mixed-shape: numeric sensors become `multiline` blocks (`category: 'point'`), binary and state
+sensors become `gantt` spans (`category: 'span'`). One source can carry both kinds on the same
+chart — the routing decision is made per entity on every refresh.
+
+```js
+sources: [{
+  'source-type': 'home-assistant',
+  url: 'http://homeassistant.local:8123',
+  token: '<long-lived access token>',         // HA accepts only Bearer auth
+  'entity-ids': ['sensor.cpu_temp', 'binary_sensor.front_door'],
+  padding: 0.5,
+  'series-colors': { 'sensor.cpu_temp': '#2d6a9f', 'binary_sensor.front_door': '#cc7a2d' },
+  name: 'Home Assistant',
+}]
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `url` | — | Base URL, must be absolute |
+| `token` | — | Bearer token (HA's "long-lived access token"). Required: HA does not accept basic auth |
+| `entity-ids` | — | Array of entity ids. One block per id; pass the right ids for the chart you want |
+| `padding` | `0.5` | Fraction of the viewport prefetched either side |
+| `name` | `'Home Assistant'` | Plot name prefix; each block is `name · entity-id` |
+| `'series-colors'` | — | Per-entity CSS colour map |
+| `proxy` | — | Same-origin forwarder, see [CORS](#cross-origin-cors) |
+| `timeout` | `20000` ms | Only pass the key if you set it |
+
+### Routing numeric vs span
+
+The source picks the renderer from the **last** state and its attributes:
+
+- Finite numeric state → `multiline` (`category: 'point'`)
+- `'on'` / `'off'` / `'unavailable'` / `'unknown'` / `'none'` / non-numeric state → `gantt`
+  (`category: 'span'`)
+
+When an entity's routing changes between fetches (a sensor flipped from numeric to `'on'`),
+the old `plotId` is released via `removeData` and the new block is pushed with `pushData`. The
+plot id sequence is preserved for the unchanged entities.
+
+> **`attributes` is the common source of trouble.** HA collapses most attributes when you
+> pass `minimal_response`, which is exactly what the source needs to disambiguate a sensor
+> that has gone `unavailable` — so `jpHomeAssistant.history()` deliberately does **not** set
+> `minimal_response`, even though it costs a few KB per row.
+
+> **Basic auth is silently dropped.** The token is the only thing HA accepts. If a page is
+> misconfigured with `username` / `password`, `jpHomeAssistant` emits a `console.warn` instead
+> of waiting for an opaque 401 on the first request.
+
+After init, `source.client` is the `jpHomeAssistant` instance. `source.refresh()` re-runs
+against the current viewport; the source keeps a per-entity growing cache so a pan within the
+already-fetched window replays without a round-trip.
+
+---
+
+## InfluxDB
+
+Zoom-adaptive source that drives both **InfluxQL 1.x** and **Flux 2.x** from the same
+constructor. The mode is decided by the `mode` option; the request body, content type and
+response parser all swap accordingly.
+
+```js
+// InfluxQL (1.x) — form-encoded POST /query
+sources: [{
+  'source-type': 'influxdb',
+  mode: '1x',
+  url: 'http://influx.example.org:8086',
+  token: '<token>',                          // or username + password
+  db: 'telegraf',
+  query: 'SELECT mean(usage_idle) FROM cpu WHERE host=~/web.*/ GROUP BY host, time(60s)',
+  // step: undefined, 'step-factor': 10,
+  padding: 0.5,
+  'series-colors': { 'host=web01': '#2d6a9f' },
+  name: 'CPU idle',
+}]
+
+// Flux (2.x) — JSON POST /api/v2/query, CSV response
+sources: [{
+  'source-type': 'influxdb',
+  mode: '2x',
+  url: 'https://us-east-1-1.aws.cloud2.influxdata.com',
+  token: '<token>',
+  org: 'my-org',
+  bucket: 'my-bucket',
+  query: 'from(bucket: "my-bucket") |> range(start: v.timeStart, stop: v.timeStop) '
+       + '|> filter(fn: (r) => r._measurement == "cpu") |> mean()',
+}]
+```
+
+| Option | Default | Notes |
+|---|---|---|
+| `url` | — | Absolute base URL |
+| `mode` | `'1x'` | `'1x'` (InfluxQL) or `'2x'` (Flux). Anything else throws on construction |
+| `db` (1.x) | — | Database name; required for 1.x |
+| `org` (2.x) | — | Organisation; required for 2.x |
+| `bucket` (2.x) | — | Bucket name; required for 2.x |
+| `token` | — | `Authorization: Token <token>`. 2.x accepts only this; 1.x falls back to basic |
+| `username` / `password` | — | Basic auth for 1.x; ignored in 2.x |
+| `query` | — | The full query. 1.x has its time window appended automatically; 2.x relies on `range(start: v.timeStart, stop: v.timeStop)` |
+| `step` | auto | Bucket size in seconds; see the Prometheus section for the 2-px threshold |
+| `'step-factor'` | `10` | Coarse tier multiplier |
+| `render` | `'multiline'` | `'multiline'`, `'multipoint'`, or `'quantile-bands'` |
+| `padding` | `0.5` | Fraction of the viewport prefetched either side |
+| `'series-colors'` | — | Map of series key (the joined tags, see below) → CSS colour |
+| `name` | — | Plot name |
+| `proxy` | — | Same-origin forwarder |
+| `timeout` | `20000` ms | Only pass the key if you set it |
+
+The series key is `tag1=value1\x1ftag2=value2` with the tags sorted; measurements without tags
+collapse to just the measurement name, so `series_colors` keys match `host=web01` and not
+`host="web01"`.
+
+> **2.x with `Accept: application/json` does not work.** The Flux endpoint streams CSV when
+> asked nicely (with `dialect: {header: true}`), and a JSON parse of that stream fails. The
+> client therefore requests `text/csv` and parses the annotated CSV (with `#group` /
+> `#datatype` comment rows) itself.
+
+> **`results[0].error` is a server error**, not an empty envelope. The client throws with
+> code 502 and the source pushes an empty block rather than waiting for a follow-up request.
+
+After init, `source.client` is the `jpInfluxdb` instance; `source.refresh()` re-evaluates the
+viewport and `source.setOptions({mode, db, org, bucket, …})` lets the live demo flip between
+1.x and 2.x without rebuilding the chart.
 
 ---
 

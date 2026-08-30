@@ -48,6 +48,18 @@
       { href: 'zabbix.html',      label: 'demo', title: 'Zabbix — synthetic, needs no server' },
       { href: 'zabbix-live.html', label: 'live', title: 'Zabbix — connects to a real server' }
     ] },
+    { group: 'Prometheus', pages: [
+      { href: 'prometheus.html',      label: 'demo', title: 'Prometheus — synthetic, needs no server' },
+      { href: 'prometheus-live.html', label: 'live', title: 'Prometheus — connects to a real server (also VictoriaMetrics, Thanos, Cortex, Mimir)' }
+    ] },
+    { group: 'Home Assistant', pages: [
+      { href: 'home-assistant.html',      label: 'demo', title: 'Home Assistant — synthetic, needs no server' },
+      { href: 'home-assistant-live.html', label: 'live', title: 'Home Assistant — connects to a real server' }
+    ] },
+    { group: 'InfluxDB', pages: [
+      { href: 'influxdb.html',      label: 'demo', title: 'InfluxDB 1.x/2.x — synthetic, needs no server' },
+      { href: 'influxdb-live.html', label: 'live', title: 'InfluxDB — connects to a real server' }
+    ] },
     { href: 'https://github.com/hgruber/timeseries.js', label: 'GitHub', external: true }
   ];
 
