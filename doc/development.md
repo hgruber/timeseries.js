@@ -191,14 +191,15 @@ each override level, palette re-theming, edge flip, `destroy()`, and that an app
 own hover handler survives alongside it), `test/legend.test.mjs` (the shipped legend:
 inert until attached, one clickable row per series, click-to-toggle dimming, each
 override level incl. `formatter`/`extra`/`onItemClick`, palette re-theming, anchoring,
-drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
+drag-and-pin, `destroy()` unsubscribe, and registration with the chart so the `l` key can
+reach it), `test/options.test.mjs`
 (option merging, statics, `zoom()` duration), `test/intervals.test.mjs` and
 `test/lttb.test.mjs` (both previously untested pure modules), `test/memory.test.mjs`
 (bounded growth of `data[]` under a polling source), `test/series.test.mjs`
 (series enumeration, visibility, y-axis rescaling, point hit test),
 `test/keyboard.test.mjs` (focusability, all four arrows and their shift variants, the
-five follow keys, the six calendar keys incl. the ISO-week and DST boundary cases, and the
-modifier escape hatch),
+five follow keys, the six calendar keys incl. the ISO-week and DST boundary cases, the two
+switches and the modifier escape hatch),
 `test/offset.test.mjs`
 (hit testing survives the canvas moving in the viewport — see below),
 `test/zabbix.test.mjs` (the zoom-adaptive Zabbix source: the pure ring helpers

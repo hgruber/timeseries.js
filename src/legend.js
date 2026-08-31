@@ -289,7 +289,7 @@ export function attachLegend(ts, options) {
   applyTheme();
   refresh();
 
-  return {
+  var api = {
     el: el,
     // Rebuild from the current getSeries() — after a data load, after changing
     // options, or when the app's own label/colour lookups have new data.
@@ -306,10 +306,21 @@ export function attachLegend(ts, options) {
     destroy: function () {
       if (typeof offSeries === 'function') offSeries();
       if (typeof offColors === 'function') offColors();
+      // Only clear the slot if we are still the one in it: a second legend
+      // attached to the same chart has replaced us, and it is still alive.
+      if (typeof ts.getLegend === 'function' && ts.getLegend() === api &&
+          typeof ts.setLegend === 'function') ts.setLegend(null);
       el.removeEventListener('mousedown', onDown);
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
       if (el.parentNode) el.parentNode.removeChild(el);
     },
   };
+
+  // Register with the chart so its keyboard can reach toggle() — the chart has
+  // no other way to know an overlay was attached. Guarded like every other ts
+  // call in this file: attachLegend() also runs against a host's own object.
+  if (typeof ts.setLegend === 'function') ts.setLegend(api);
+
+  return api;
 }

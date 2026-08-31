@@ -40,6 +40,7 @@ ts.zoomStep(dir, opts);            // dir > 0 in, < 0 out; halves/doubles the wi
 ts.snapView();                     // align the window to the grid without moving it on
 ts.setPanSnap(mode);               // 'grid' (default) | 'off'
 ts.getPanSnap();
+ts.togglePanSnap();                // flip between the two; returns the mode now in force
 ts.getSnapGrid();                  // { unit, mult, k, tmin, tmax } currently in force
 ```
 
@@ -143,10 +144,17 @@ ts.getValueRange();    // { ymin, ymax }              — the value range the y-
 ts.getRenderBounds();  // { tmin, tmax }              — the time range at the plot's pixel edges
 ts.getPlotArea();      // { margin, plotWidth, plotHeight }
 ts.getCanvas();        // the <canvas> element
+ts.setLegend(ctrl);    // register a legend the `l` key can flip — any { toggle() }
+ts.getLegend();        // the registered controller, or null
+ts.toggleLegend();     // flip it; inert when nothing is registered
 ts.getColors();        // the current palette (a copy)
 ts.getHolidays();      // the current holiday map (a copy)
 ts.getRateUnit();      // the current rate unit, or null
 ```
+
+`attachLegend()` calls `setLegend()` itself, so the `l` key works as soon as the shipped
+legend is attached — see [Overlays → Controller](overlays.md#controller-1). The slot exists
+so the keyboard has something to reach; a host with its own panel can take it instead.
 
 `getValueRange()` reflects hidden series and any tier cross-fade in progress, so it is what
 is *actually* on the axis, not what the data would suggest.

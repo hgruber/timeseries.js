@@ -292,6 +292,16 @@ around new year — 31 Dec 2025 is week 1 of 2026 while `getFullYear()` says 202
 Everything here resolves on local midnight via `dayStart()`, never by adding 86400000: a
 23-hour DST day has to end where the axis says it does.
 
+Two more are switches: `g` is `togglePanSnap()`, and `l` is `toggleLegend()`. The second is
+the one place the core holds a reference to an overlay, in `_legend`, and it does so for
+exactly one reason — the keyboard has no other route to a controller `attachLegend()` handed
+back to the *host*. The coupling is kept as thin as it can be: the core only ever calls
+`toggle()` on it, so any object carrying one qualifies, and the registration is defensive on
+both sides (`legend.js` guards every `ts` call because it also runs against a host's own
+object). `destroy()` clears the slot only if it is still the controller in it, so a second
+legend outliving the first is not unregistered by it. `toggleLegend()` on an empty slot is
+silent, not a warning: a page without a legend is not a misconfiguration.
+
 **A viewport is a grid state `{unit, mult, k, lo}`, not a pair of timestamps.** That framing
 is the whole feature and two earlier designs died without it:
 

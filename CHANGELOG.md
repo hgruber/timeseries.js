@@ -52,6 +52,16 @@ for a reader who has not seen the commits.
   boundaries, so a day across a daylight-saving change is 23 or 25 hours rather than a
   wrong 24, and `zoomWeekAt()` gets the week right across new year, where the ISO
   week-numbering year and the calendar year disagree.
+- **Two more keys are switches rather than movement.** `l` shows or hides the legend, and
+  `g` turns grid snapping for the arrow keys on or off (`togglePanSnap()`, new alongside
+  `setPanSnap`/`getPanSnap`; it returns the mode now in force). `g` deliberately does not
+  move the window onto the grid — it changes what the *next* arrow press does.
+- **`attachLegend()` now registers its controller with the chart**, which is what lets `l`
+  reach it: the controller used to go to the caller only, leaving the chart with no way to
+  know an overlay existed. `destroy()` unregisters again. The slot is public as
+  `ts.setLegend(ctrl)` / `ts.getLegend()` / `ts.toggleLegend()` and accepts any object
+  carrying a `toggle()`, so a host that built its own panel can register that and inherit
+  the same key. `toggleLegend()` with nothing registered does nothing, silently.
 
 ### Changed
 

@@ -14,6 +14,9 @@
 //
 // Six more jump to a calendar unit: t today, and d/w/m/y the day, ISO week,
 // month or year the middle of the window falls in.
+//
+// Two are switches rather than movement: l flips the legend overlay, g flips
+// whether the arrows snap to the axis grid.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -422,4 +425,75 @@ test('a calendar key leaves follow mode instead of entering it', async () => {
   assert.equal(vp.tmin, new Date(2026, 4, 1).getTime(), 'and the window stays put');
   await sleep(200);
   assert.equal(ts.getViewport().tmin, vp.tmin, 'nothing is rolling it along');
+});
+
+// -- The switches --------------------------------------------------------------
+// Neither moves the viewport. g flips the snap policy, which only shows on the
+// next arrow press; l flips the legend, and is bound whether or not one is
+// attached so the binding never depends on what the host hung off the chart.
+
+test('g flips the snap policy back and forth', async () => {
+  const { ts, canvas } = build();
+  assert.equal(ts.getPanSnap(), 'grid', 'grid is the default');
+
+  let e = keyEvent('g');
+  canvas.onkeydown(e);
+  assert.equal(e.prevented, true);
+  assert.equal(ts.getPanSnap(), 'off');
+
+  e = keyEvent('g');
+  canvas.onkeydown(e);
+  assert.equal(e.prevented, true);
+  assert.equal(ts.getPanSnap(), 'grid', 'and back');
+});
+
+test('after g the arrows pan unsnapped, by the exact width', async () => {
+  // The same assertion as the panSnap: 'off' constructor test, reached through
+  // the key instead — proof that g moves the real policy, not just a flag.
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11, 18, 55).getTime();
+  const t1 = new Date(2026, 4, 11, 20, 4).getTime();
+  await setView(ts, t0, t1);
+
+  canvas.onkeydown(keyEvent('g'));
+  canvas.onkeydown(keyEvent('ArrowRight'));
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t1, 'continuous pan starts where the window ended');
+  assert.equal(vp.tmax - vp.tmin, t1 - t0, 'width preserved exactly');
+});
+
+test('l toggles whatever legend is registered with the chart', async () => {
+  // Against the registered controller rather than a real legend: this chart has
+  // no series, and an empty legend hides itself regardless of the key. That the
+  // shipped legend registers itself, and that toggling it moves the actual
+  // element, is covered end to end in legend.test.mjs.
+  const { ts, canvas } = build();
+  let flips = 0;
+  ts.setLegend({ toggle() { flips++; } });
+
+  const e = keyEvent('l');
+  canvas.onkeydown(e);
+  assert.equal(e.prevented, true);
+  assert.equal(flips, 1);
+
+  canvas.onkeydown(keyEvent('l'));
+  assert.equal(flips, 2, 'it is a toggle, not a one-way switch');
+});
+
+test('l is harmless when no legend is attached', async () => {
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11).getTime();
+  const t1 = new Date(2026, 4, 18).getTime();
+  await setView(ts, t0, t1);
+
+  const e = keyEvent('l');
+  canvas.onkeydown(e);          // must not throw
+  await sleep(200);
+
+  assert.equal(e.prevented, true, 'bound regardless of what the host attached');
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t0, 'and moves nothing');
+  assert.equal(vp.tmax, t1);
 });

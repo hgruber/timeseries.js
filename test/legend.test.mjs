@@ -259,6 +259,57 @@ test('destroy removes the element and unsubscribes from series changes', async (
     'stale row untouched — refresh unsubscribed');
 });
 
+test('attaching registers the controller with the chart', async () => {
+  // The chart has no other way to know an overlay exists, and the keyboard's
+  // `l` needs it: without this registration the key would have nothing to flip.
+  const { ts } = await buildInstance();
+  assert.equal(ts.getLegend(), null, 'nothing registered before attaching');
+
+  const lg = TimeSeries.attachLegend(ts);
+  assert.equal(ts.getLegend(), lg, 'attachLegend registers itself');
+
+  ts.toggleLegend();
+  assert.equal(lg.el.style.display, 'none', 'the chart drives the same toggle');
+  ts.toggleLegend();
+  assert.equal(lg.el.style.display, 'block');
+  lg.destroy();
+});
+
+test('destroy clears the slot, and toggleLegend is then inert', async () => {
+  const { ts } = await buildInstance();
+  const lg = TimeSeries.attachLegend(ts);
+  lg.destroy();
+
+  assert.equal(ts.getLegend(), null, 'destroy unregisters');
+  ts.toggleLegend();   // must not throw, and must not touch the detached element
+  assert.equal(lg.el.parentNode, null, 'still detached');
+});
+
+test('a second legend takes the slot, and the first destroy leaves it alone', async () => {
+  const { ts } = await buildInstance();
+  const first = TimeSeries.attachLegend(ts);
+  const second = TimeSeries.attachLegend(ts);
+  assert.equal(ts.getLegend(), second, 'the later attach wins the slot');
+
+  first.destroy();
+  assert.equal(ts.getLegend(), second, 'and is not unregistered by the earlier one');
+  second.destroy();
+  assert.equal(ts.getLegend(), null);
+});
+
+test('setLegend accepts any object carrying a toggle', async () => {
+  // A host that built its own panel can register it and inherit the same key.
+  const { ts } = await buildInstance();
+  let flips = 0;
+  ts.setLegend({ toggle() { flips++; } });
+  ts.toggleLegend();
+  ts.toggleLegend();
+  assert.equal(flips, 2);
+  ts.setLegend(null);
+  ts.toggleLegend();
+  assert.equal(flips, 2, 'cleared again');
+});
+
 test('onSeriesChange hands back a working unsubscribe', async () => {
   const { ts } = await buildInstance();
 

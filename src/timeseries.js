@@ -439,6 +439,7 @@ export default function TimeSeries(options) {
   var follow_stop_cb = null;
   var follow_start_cb = null;
   var nowline_timer = null;    // periodic redraw to keep now-line moving when not following
+  var _legend = null;          // attachLegend()'s controller, so the keyboard can reach it
   // initialView may be a [tmin, tmax] window (synchronous, before first paint), a named
   // navigation method (dispatched from setTimeout at the end of the constructor), or
   // null/'last24'. Only the array form is consumed here; named methods are dispatched
@@ -1446,6 +1447,15 @@ export default function TimeSeries(options) {
 
   this.getPanSnap = function () { return settings.panSnap; };
 
+  // Returns the mode now in force, so a host's own button can relabel itself.
+  // Deliberately does not snapView(): the caller asked to flip the policy, not
+  // to have the viewport moved onto the grid under them. The change shows on
+  // the next arrow press.
+  this.togglePanSnap = function () {
+    self.setPanSnap(settings.panSnap === 'off' ? 'grid' : 'off');
+    return settings.panSnap;
+  };
+
   function snapEnabled(opts) {
     if (opts && opts.snap === false) return false;
     return settings.panSnap !== 'off';
@@ -1770,7 +1780,8 @@ export default function TimeSeries(options) {
         canvas.setAttribute('aria-label',
           'Time series chart. Left and right arrow keys page through time, up and down zoom; hold shift for a single step. ' +
           'T, D, W, M and Y jump to today, or to the day, week, month or year in the middle of the window. ' +
-          'F, P and C follow the present at the right edge, the left edge or the centre.');
+          'F, P and C follow the present at the right edge, the left edge or the centre. ' +
+          'L shows or hides the legend, G turns grid snapping on or off.');
     }
 
     canvas.onkeydown = function (e) {
@@ -1807,6 +1818,12 @@ export default function TimeSeries(options) {
       else if (e.key === 'w')          self.zoomWeekAt(midTime());
       else if (e.key === 'm')          self.zoomMonthAt(midTime());
       else if (e.key === 'y')          self.zoomYearAt(midTime());
+      // The two switches. Neither moves the viewport: l flips an overlay, g
+      // flips whether the arrows snap — which shows on the next press, not now.
+      // l is bound whether or not a legend is attached, so what the key does
+      // never depends on what the host happened to hang off the chart.
+      else if (e.key === 'l')          self.toggleLegend();
+      else if (e.key === 'g')          self.togglePanSnap();
       else return;                     // leave every other key to the browser
       e.preventDefault();              // ... but don't let the page scroll
     };
@@ -3312,6 +3329,19 @@ export default function TimeSeries(options) {
   // Overlays need the element to track the pointer against; the core resolves
   // it from settings.canvas and is the only one that knows which it got.
   this.getCanvas = function () { return canvas; };
+
+  // The legend is an opt-in overlay the host attaches, and the chart keeps a
+  // reference for exactly one reason: so the keyboard can reach it. Anything
+  // carrying a toggle() is accepted, so a host that built its own panel can
+  // register that instead and inherit the same key. attachLegend() registers
+  // itself, and its destroy() clears the slot again.
+  this.setLegend    = function (ctrl) { _legend = ctrl || null; };
+  this.getLegend    = function () { return _legend; };
+  // Silently does nothing when no legend is attached: a page without one is not
+  // an error, and the key simply has nothing to flip there.
+  this.toggleLegend = function () {
+    if (_legend && typeof _legend.toggle === 'function') _legend.toggle();
+  };
   this.onStop   = function (fn) { follow_stop_cb = fn; };
   this.onFollow = function (fn) { follow_start_cb = fn; };
 

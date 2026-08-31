@@ -214,7 +214,7 @@ The default is the German set (`Neujahr`, `Karfreitag`, `Tag der Einheit`, …).
 
 With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`,
 `role="application"`, and an `aria-label` unless the page set one) and binds the arrows for
-navigation, six letters for the calendar and five for follow mode.
+navigation, six letters for the calendar, five for follow mode and two switches.
 
 **Navigation**
 
@@ -244,6 +244,24 @@ navigation, six letters for the calendar and five for follow mode.
 | c | the middle | `ts.centerNow()` |
 | F | the right edge, stretching there | `ts.followNowStretch()` |
 | P | the left edge, stretching there | `ts.previewNowStretch()` |
+
+**Display**
+
+| Key | Toggles | API equivalent |
+|---|---|---|
+| l | the legend overlay | `ts.toggleLegend()` |
+| g | grid snapping for the arrows | `ts.togglePanSnap()` |
+
+### The two switches
+
+`l` needs a legend to flip: `attachLegend()` registers its controller with the chart, so the
+key works from the moment you attach one and does nothing at all on a page without one. A
+host that built its own panel can register that instead — `ts.setLegend(ctrl)` takes any
+object with a `toggle()` — see [Overlays](overlays.md#controller-1).
+
+`g` switches `panSnap` between `'grid'` and `'off'`. Nothing happens on screen when you
+press it: it changes what the **next** arrow press does, and deliberately does not move the
+window onto the grid on its own.
 
 ### The calendar keys
 
@@ -293,7 +311,8 @@ snapped and release the grid; the next key press attaches a fresh one.
 
 `panSnap: 'off'` turns this off: ←/→ then move by the exact current width and ↑/↓ zoom by a
 factor of two, with no rounding anywhere. It can also be switched at runtime with
-`ts.setPanSnap(mode)`, and `ts.getSnapGrid()` reports the grid currently in force.
+`ts.setPanSnap(mode)` or flipped with `ts.togglePanSnap()` — which is what the `g` key does —
+and `ts.getSnapGrid()` reports the grid currently in force.
 
 Handlers are bound to the canvas, not the document, so on a page with several charts only
 the focused one moves. `keyboard: false` leaves the element untouched.

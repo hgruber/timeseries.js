@@ -141,7 +141,21 @@ const legend = TimeSeries.attachLegend(ts);
 legend.refresh();
 legend.setOptions({ title: 'Hosts' });
 legend.show(); legend.hide(); legend.toggle();
-legend.destroy();   // removes the element and unsubscribes
+legend.destroy();   // removes the element, unsubscribes, unregisters
+```
+
+`attachLegend()` **registers its controller with the chart**, which is how the `l` key
+reaches it — the chart otherwise has no way to know an overlay was attached. `destroy()`
+unregisters again, and only if this controller is still the registered one, so attaching a
+second legend and destroying the first leaves the live one alone.
+
+The slot is public, and takes anything carrying a `toggle()`:
+
+```js
+ts.setLegend(myOwnPanel);   // any { toggle() } — inherits the `l` key
+ts.getLegend();             // the registered controller, or null
+ts.toggleLegend();          // what `l` calls; does nothing when nothing is registered
+ts.setLegend(null);         // release the slot
 ```
 
 ---
