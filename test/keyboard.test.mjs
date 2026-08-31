@@ -8,9 +8,12 @@
 // the nav buttons, at any zoom level.
 //
 // Five letters enter follow mode, anchored where the letter says: f/F right
-// edge, p/P left, m centre. All five end in the same rolling state; shift only
+// edge, p/P left, c centre. All five end in the same rolling state; shift only
 // picks the span left on screen — slide the current width onto now, or pin the
 // far edge and stretch to it.
+//
+// Six more jump to a calendar unit: t today, and d/w/m/y the day, ISO week,
+// month or year the middle of the window falls in.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -217,8 +220,8 @@ test('panSnap: off pans by the exact width instead of snapping', async () => {
 
 const HOUR = 3600000;
 
-test('f, p and m roll with now at the right edge, the left and the centre', async () => {
-  for (const [key, pct] of [['f', 100], ['p', 0], ['m', 50]]) {
+test('f, p and c roll with now at the right edge, the left and the centre', async () => {
+  for (const [key, pct] of [['f', 100], ['p', 0], ['c', 50]]) {
     const { ts, canvas } = build();
     const t0 = Date.now() - 6 * HOUR;
     await setView(ts, t0, t0 + HOUR);
@@ -313,7 +316,7 @@ test('a modifier hands the key back to the browser', async () => {
   const t0 = new Date(2026, 4, 11).getTime();
   await setView(ts, t0, t0 + 7 * 24 * HOUR);
 
-  for (const key of ['f', 'p', 'm', 'ArrowRight']) {
+  for (const key of ['f', 'p', 'c', 'm', 'w', 'ArrowRight']) {
     const e = keyEvent(key, false, true);
     canvas.onkeydown(e);
     assert.equal(e.prevented, false, `Ctrl+${key} must be left to the browser`);
@@ -323,4 +326,100 @@ test('a modifier hands the key back to the browser', async () => {
   const vp = ts.getViewport();
   assert.equal(vp.tmin, t0, 'and must not move the viewport');
   assert.equal(vp.tmax, t0 + 7 * 24 * HOUR);
+});
+
+// -- The calendar keys ---------------------------------------------------------
+// t jumps to today; d/w/m/y to the day, ISO week, month or year the middle of
+// the window falls in. Unlike the follow keys these land on exact calendar
+// boundaries and stay there, so the assertions are exact.
+
+// Wed 13 May 2026, 06:00-18:00 local: the middle is Wed 12:00, and no edge of
+// this window is already a day, week, month or year boundary — zoom() returns
+// early when the target equals the current window, which would make a key that
+// did nothing look like it worked.
+const WED = new Date(2026, 4, 13, 6, 0).getTime();
+const WED_END = new Date(2026, 4, 13, 18, 0).getTime();
+
+async function pressOn(key, t0, t1) {
+  const { ts, canvas } = build();
+  await setView(ts, t0, t1);
+  const e = keyEvent(key);
+  canvas.onkeydown(e);
+  assert.equal(e.prevented, true, `${key} should preventDefault`);
+  await sleep(700);
+  return ts.getViewport();
+}
+
+test('d goes to the day the middle of the window is in', async () => {
+  const vp = await pressOn('d', WED, WED_END);
+  assert.equal(vp.tmin, new Date(2026, 4, 13).getTime(), 'local midnight, Wed');
+  assert.equal(vp.tmax, new Date(2026, 4, 14).getTime(), 'to local midnight, Thu');
+});
+
+test('w goes to the ISO week the middle of the window is in', async () => {
+  const vp = await pressOn('w', WED, WED_END);
+  assert.equal(vp.tmin, new Date(2026, 4, 11).getTime(), 'Monday starts the week');
+  assert.equal(vp.tmax, new Date(2026, 4, 18).getTime(), 'to the Monday after');
+});
+
+test('m goes to the month the middle of the window is in', async () => {
+  const vp = await pressOn('m', WED, WED_END);
+  assert.equal(vp.tmin, new Date(2026, 4, 1).getTime());
+  assert.equal(vp.tmax, new Date(2026, 5, 1).getTime());
+});
+
+test('y goes to the year the middle of the window is in', async () => {
+  const vp = await pressOn('y', WED, WED_END);
+  assert.equal(vp.tmin, new Date(2026, 0, 1).getTime());
+  assert.equal(vp.tmax, new Date(2027, 0, 1).getTime());
+});
+
+test('t goes to today, whatever the window was showing', async () => {
+  const vp = await pressOn('t', WED, WED_END);
+  const today = new Date();
+  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const tomorrow = new Date(midnight);
+  tomorrow.setDate(midnight.getDate() + 1);
+  assert.equal(vp.tmin, midnight.getTime());
+  assert.equal(vp.tmax, tomorrow.getTime());
+});
+
+test('w across new year uses the ISO week-numbering year, not the calendar one', async () => {
+  // Wed 31 Dec 2025 is in ISO week 1 of *2026*, which starts Mon 29 Dec 2025.
+  // Going through zoomWeek(getFullYear(), getWeek(...)) would ask for week 1 of
+  // 2025 and land a year early; walking back to the Monday never names a year.
+  const t0 = new Date(2025, 11, 31, 6, 0).getTime();
+  const vp = await pressOn('w', t0, t0 + 12 * HOUR);
+  assert.equal(vp.tmin, new Date(2025, 11, 29).getTime(), 'Mon 29 Dec 2025');
+  assert.equal(vp.tmax, new Date(2026, 0, 5).getTime(), 'to Mon 5 Jan 2026');
+});
+
+test('d lands on local midnight across a DST transition', async () => {
+  // 29 Mar 2026 is the spring-forward Sunday in Europe/Berlin: the day is 23
+  // hours long. Comparing against Date's own boundaries keeps this exact in
+  // every zone, and catches any attempt to reach the next day by adding 864e5.
+  const t0 = new Date(2026, 2, 29, 6, 0).getTime();
+  const vp = await pressOn('d', t0, t0 + 6 * HOUR);
+  const start = new Date(2026, 2, 29).getTime();
+  const end = new Date(2026, 2, 30).getTime();
+  assert.equal(vp.tmin, start, 'starts at local midnight, not 01:00');
+  assert.equal(vp.tmax, end);
+  if (end - start !== 24 * HOUR)
+    assert.equal(end - start, 23 * HOUR, 'a DST zone gives a 23-hour day');
+});
+
+test('a calendar key leaves follow mode instead of entering it', async () => {
+  const { ts, canvas } = build();
+  await setView(ts, WED, WED_END);
+  let followed = false;
+  ts.onFollow(() => { followed = true; });
+
+  canvas.onkeydown(keyEvent('m'));
+  await sleep(700);
+
+  assert.equal(followed, false, 'm is the month now, not centerNow()');
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, new Date(2026, 4, 1).getTime(), 'and the window stays put');
+  await sleep(200);
+  assert.equal(ts.getViewport().tmin, vp.tmin, 'nothing is rolling it along');
 });

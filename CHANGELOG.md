@@ -32,7 +32,7 @@ for a reader who has not seen the commits.
   turn it on. See [Version watermark](doc/configuration.md#version-watermark).
 - **Follow mode is reachable from the keyboard**, which until now could pan and zoom but
   never get back to the rolling state. Five letters enter it, anchored where the letter
-  says: `f` puts "now" at the right edge, `p` at the left, `m` in the middle. All three
+  says: `f` puts "now" at the right edge, `p` at the left, `c` in the middle. All three
   keep the current window width and slide it onto now, animating over `zoomDuration`.
   `F` and `P` are the same two anchors with the other span: rather than sliding, they pin
   the far edge and stretch the window out to now — `F` holds the left edge, `P` the right —
@@ -42,6 +42,16 @@ for a reader who has not seen the commits.
   lowercase behaviour. The three new anchors are on the API too, as `centerNow()`,
   `followNowStretch()` and `previewNowStretch()`, next to the existing `followNow()` and
   `previewNow()`. See [Configuration → Keyboard](doc/configuration.md#keyboard).
+- **Six keys jump to a calendar unit**, the counterpart to the follow keys: `t` goes to
+  today 00:00–24:00, and `d`, `w`, `m` and `y` to the day, ISO week (Monday to Monday),
+  month or year that **the middle of the window you are looking at** falls in — from a
+  window over last March, `m` gives you last March. Like every navigation they leave follow
+  mode. New on the API as `zoomDayAt(t)`, `zoomWeekAt(t)`, `zoomMonthAt(t)` and
+  `zoomYearAt(t)`: the timestamp counterparts to `zoomWeek`/`zoomMonth`/`zoomYear`, for a
+  caller holding a moment rather than calendar numbers. All four resolve on local
+  boundaries, so a day across a daylight-saving change is 23 or 25 hours rather than a
+  wrong 24, and `zoomWeekAt()` gets the week right across new year, where the ISO
+  week-numbering year and the calendar year disagree.
 
 ### Changed
 

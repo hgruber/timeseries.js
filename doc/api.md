@@ -26,8 +26,12 @@ ts.last24()      ts.next24()
 ts.zoom(tmin, tmax, animationMs);  // explicit window; tmin/tmax in Unix MILLISECONDS
                                    // animationMs: omit for the configured zoomDuration, 0 = jump
 ts.zoomWeek(year, week);           // ISO 8601 week number
-ts.zoomMonth(year, month);         // month is 1–12
+ts.zoomMonth(year, month);         // month is 0–11, as Date takes it
 ts.zoomYear(year);
+ts.zoomDayAt(t);                   // the calendar unit containing the moment t —
+ts.zoomWeekAt(t);                  // the timestamp counterparts to the three above,
+ts.zoomMonthAt(t);                 // for a caller holding a moment rather than
+ts.zoomYearAt(t);                  // calendar numbers. Local boundaries throughout.
 ts.pan(dir, opts);                 // one screenful; dir < 0 back, > 0 forward
                                    // opts: { cells: n } move n grid cells instead of a page
                                    //       { snap: false } move by the exact width, unsnapped
@@ -44,6 +48,12 @@ labelled and fits the window**, so they land on readable boundaries at any zoom:
 pages to 20:00–21:00, a six-hour window pages six full hours on without changing width, a
 month-wide viewport lands on month boundaries rather than drifting by 30 days, and a 23-hour
 DST day still pans to local midnight.
+
+The `…At(t)` four resolve their boundaries in **local** time, so a day spanning a
+daylight-saving change comes out 23 or 25 hours long rather than a wrong 24, and a week runs
+Monday to Monday. `zoomWeekAt()` is not `zoomWeek()` with a week number worked out for you:
+the ISO week-numbering year is not the calendar year around new year — 31 December 2025 sits
+in week 1 of 2026 — and walking back to the Monday sidesteps that entirely.
 
 The grid is attached once — rounding the window onto whole cells by at most 20 % of its width
 — and then held, so repeated paging is exact and never drifts. Wheel, drag and pinch are never

@@ -214,7 +214,9 @@ The default is the German set (`Neujahr`, `Karfreitag`, `Tag der Einheit`, …).
 
 With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`,
 `role="application"`, and an `aria-label` unless the page set one) and binds the arrows for
-navigation and five letters for follow mode:
+navigation, six letters for the calendar and five for follow mode.
+
+**Navigation**
 
 | Key | Movement | API equivalent |
 |---|---|---|
@@ -222,17 +224,43 @@ navigation and five letters for follow mode:
 | Shift+←/→ | one grid cell back/forward | `ts.pan(∓1, { cells: 1 })` |
 | ↑/↓ | zoom in/out, halving or doubling the window | `ts.zoomStep(±1)` |
 | Shift+↑/↓ | one cell narrower/wider | `ts.zoomStep(±1, { cells: 1 })` |
-| f | follow, now at the right edge | `ts.followNow()` |
-| p | follow, now at the left edge | `ts.previewNow()` |
-| m | follow, now in the middle | `ts.centerNow()` |
-| F | follow at the right edge, stretching there | `ts.followNowStretch()` |
-| P | follow at the left edge, stretching there | `ts.previewNowStretch()` |
+
+**Calendar** — the unit the middle of the window falls in
+
+| Key | Jumps to | API equivalent |
+|---|---|---|
+| t | today, 00:00–24:00 | `ts.today()` |
+| d | that day | `ts.zoomDayAt(t)` |
+| w | that ISO week, Monday to Monday | `ts.zoomWeekAt(t)` |
+| m | that month | `ts.zoomMonthAt(t)` |
+| y | that year | `ts.zoomYearAt(t)` |
+
+**Follow**
+
+| Key | Anchors "now" at | API equivalent |
+|---|---|---|
+| f | the right edge | `ts.followNow()` |
+| p | the left edge | `ts.previewNow()` |
+| c | the middle | `ts.centerNow()` |
+| F | the right edge, stretching there | `ts.followNowStretch()` |
+| P | the left edge, stretching there | `ts.previewNowStretch()` |
+
+### The calendar keys
+
+`d`, `w`, `m` and `y` are read relative to **the middle of the window you are looking at**,
+not to the present: from a window over last March, `m` gives you last March. `t` is the one
+exception — today is today whatever the window shows. All five land on exact calendar
+boundaries in local time, so a day across a daylight-saving change is 23 or 25 hours long
+rather than a wrong 24.
+
+Like every other navigation they leave follow mode. There are no shifted variants: unlike
+the follow keys, there is no second span a capital could sensibly pick.
 
 ### The follow keys
 
 All five end in the **same** rolling state: the window keeps its width and slides so that
 "now" stays at the anchor the letter names — right edge for `f`/`F`, left for `p`/`P`,
-centre for `m`. Each animates there over `zoomDuration`.
+centre for `c`. Each animates there over `zoomDuration`.
 
 Case picks the **span left on screen**, and nothing else. `f` slides the current window onto
 now, keeping its width. `F` instead pins the left edge and runs the right one out to now, so

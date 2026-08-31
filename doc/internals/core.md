@@ -271,7 +271,7 @@ only moves the focused one. Set `keyboard: false` to opt out entirely. On the mo
 wheel zooms and **Shift+wheel pans**, both continuous.
 
 Five letters enter follow mode: `f`/`F` anchor now at the right edge, `p`/`P` at the left,
-`m` in the centre. All five land in the identical rolling state, and case picks only the
+`c` in the centre. All five land in the identical rolling state, and case picks only the
 span left on screen — `f` slides the current width onto now, `F` pins the left edge and
 stretches the right one out to it. `withinZoomLimits()` is what stops a window lying wholly
 on the wrong side of now from producing an inverted target that `clampRange()` would flip;
@@ -279,6 +279,18 @@ it falls back to the sliding entry. The letters deliberately do **not** call `dr
 a follow jump lands on a now-relative window, `ensureGridFor()` sees `snapState.lo/hi` no
 longer match it and picks a fresh grid on the next arrow press by itself. Any modifier
 returns early, so `Ctrl+F` and `Ctrl+P` stay with the browser.
+
+Six more jump to a calendar unit: `t` to today, and `d`/`w`/`m`/`y` to the day, ISO week,
+month or year that `midTime()` — the middle of `pendingView()`, not of the drawn frame —
+falls in. They go through `zoomDayAt`/`zoomWeekAt`/`zoomMonthAt`/`zoomYearAt`, of which the
+last two only delegate to the existing `zoomMonth`/`zoomYear`.
+
+`zoomWeekAt()` deliberately does **not** route through `zoomWeek(year, week)`. `getWeek()`
+returns the ISO week number without the ISO week-numbering *year*, and the two part company
+around new year — 31 Dec 2025 is week 1 of 2026 while `getFullYear()` says 2025, so
+`zoomWeek(2025, 1)` lands a year early. Walking back to the Monday never has to name a year.
+Everything here resolves on local midnight via `dayStart()`, never by adding 86400000: a
+23-hour DST day has to end where the axis says it does.
 
 **A viewport is a grid state `{unit, mult, k, lo}`, not a pair of timestamps.** That framing
 is the whole feature and two earlier designs died without it:

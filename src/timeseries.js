@@ -1307,6 +1307,48 @@ export default function TimeSeries(options) {
     zoom(start, end);
   };
 
+  // ── The calendar unit containing a given time ─────────────────────────────
+  // Timestamp counterparts to zoomWeek/zoomMonth/zoomYear, for a caller holding
+  // a moment rather than calendar numbers. That is exactly the keyboard's
+  // position: every calendar key reads the middle of the plotted window.
+  //
+  // Local midnight throughout, never UTC: the whole library plots local time, so
+  // a day has to start where the axis says it does — and across a DST boundary
+  // that day is 23 or 25 hours long, which Date's own arithmetic gets right and
+  // adding 86400000 would not.
+  function dayStart(t) {
+    var d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  this.zoomDayAt = function (t) {
+    doStop();
+    var start = dayStart(t);
+    var end = new Date(start);
+    end.setDate(start.getDate() + 1);
+    zoom(start, end);
+  };
+  // Deliberately not routed through zoomWeek(year, week): getWeek() returns the
+  // ISO week number without the ISO week-numbering year, and the two disagree
+  // around new year — 31 Dec 2025 is week 1 of *2026*, while getFullYear() says
+  // 2025, so zoomWeek(2025, 1) would land a year early. Walking back to the
+  // Monday never has to name the year at all. Same step thisWeek() uses.
+  this.zoomWeekAt = function (t) {
+    doStop();
+    var start = dayStart(t);
+    start.setDate(start.getDate() + 1 - (start.getDay() || 7));
+    var end = new Date(start);
+    end.setDate(start.getDate() + 7);
+    zoom(start, end);
+  };
+  // These two delegate, so they inherit the doStop() of what they call.
+  this.zoomMonthAt = function (t) {
+    var d = new Date(t);
+    self.zoomMonth(d.getFullYear(), d.getMonth());
+  };
+  this.zoomYearAt = function (t) {
+    self.zoomYear(new Date(t).getFullYear());
+  };
+
   // ── Viewport pan / zoom on the snap grid ──────────────────────────────────
   // floorToGrid/addGrid/pickGridLevel live at module scope, labelledLevels() and
   // ensureGrid() further down in this closure — see the comments there for why
@@ -1321,6 +1363,11 @@ export default function TimeSeries(options) {
       ? { tmin: animation.end.tmin, tmax: animation.end.tmax }
       : { tmin: tmin, tmax: tmax };
   }
+
+  // The middle of the plotted window, which every calendar key navigates
+  // relative to. pendingView() for the same reason it is used above: a key
+  // pressed mid-animation must read the window being animated to.
+  function midTime() { var v = pendingView(); return (v.tmin + v.tmax) / 2; }
 
   // Pan by one page (default) or by `opts.cells` cells. `opts.snap === false`,
   // like panSnap: 'off', moves by the exact current width instead.
@@ -1721,8 +1768,9 @@ export default function TimeSeries(options) {
       canvas.setAttribute('role', 'application');
       if (!canvas.getAttribute('aria-label'))
         canvas.setAttribute('aria-label',
-          'Time series chart. Left and right arrow keys page through time, up and down zoom. Hold shift for a single step. ' +
-          'F follows the present at the right edge, P at the left, M in the middle; hold shift to stretch the window onto now instead of sliding it.');
+          'Time series chart. Left and right arrow keys page through time, up and down zoom; hold shift for a single step. ' +
+          'T, D, W, M and Y jump to today, or to the day, week, month or year in the middle of the window. ' +
+          'F, P and C follow the present at the right edge, the left edge or the centre.');
     }
 
     canvas.onkeydown = function (e) {
@@ -1741,7 +1789,7 @@ export default function TimeSeries(options) {
       else if (e.key === 'ArrowUp')    self.zoomStep(1, cell);
       else if (e.key === 'ArrowDown')  self.zoomStep(-1, cell);
       // The five follow keys. All of them end in the same rolling state, anchored
-      // where the letter says: f/F right edge, p/P left, m centre. Shift picks the
+      // where the letter says: f/F right edge, p/P left, c centre. Shift picks the
       // span that is left on screen — slide the current width onto now, or pin the
       // far edge and stretch to it — and nothing about how the window then moves.
       // Case, not e.shiftKey: the binding is on the character the user typed.
@@ -1749,7 +1797,16 @@ export default function TimeSeries(options) {
       else if (e.key === 'F')          self.followNowStretch();
       else if (e.key === 'p')          self.previewNow();
       else if (e.key === 'P')          self.previewNowStretch();
-      else if (e.key === 'm')          self.centerNow();
+      else if (e.key === 'c')          self.centerNow();
+      // The calendar keys jump to the unit the middle of the window falls in —
+      // t is the exception, being today whatever the window shows. Each leaves
+      // follow mode, as every named view does. No shifted variants: unlike the
+      // follow keys there is no second span a capital could sensibly pick.
+      else if (e.key === 't')          self.today();
+      else if (e.key === 'd')          self.zoomDayAt(midTime());
+      else if (e.key === 'w')          self.zoomWeekAt(midTime());
+      else if (e.key === 'm')          self.zoomMonthAt(midTime());
+      else if (e.key === 'y')          self.zoomYearAt(midTime());
       else return;                     // leave every other key to the browser
       e.preventDefault();              // ... but don't let the page scroll
     };
