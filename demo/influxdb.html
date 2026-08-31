@@ -107,6 +107,7 @@
       let mode = '1x';
       let ts = null;
       const buildTs = () => new TimeSeries({
+        versionMark: true,
         canvas: 'chart',
         initialView: null,
         sources: [{

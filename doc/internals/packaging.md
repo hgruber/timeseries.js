@@ -24,26 +24,36 @@ which they now can (npm, and pinned jsDelivr/unpkg URLs), so it was replaced:
 
 **`BUILD` is the other half of the split.** Because `VERSION` no longer moves per commit,
 it cannot say *which* build you are looking at — so `src/version.js` also exports
-`BUILD`, bundled as `TimeSeries.BUILD`, and the canvas pill draws
-`VERSION + (BUILD ? '+' + BUILD : '')`. It is `'dev'` in the repo and overwritten in CI
+`BUILD`, bundled as `TimeSeries.BUILD`, and the version watermark draws
+`VERSION + (BUILD ? '+' + BUILD : '')` where it is switched on. It is `'dev'` in the repo and overwritten in CI
 by `scripts/stamp-build.mjs`: `deploy.yml` stamps the short commit SHA (so a Pages demo
 names its exact build, `0.9.0+g320a993`), `release.yml` stamps `''` (a published bundle
 *is* an exact version, `0.9.0`). Neither commits the change — only the CI working tree
 moves. `stamp-build.mjs` rejects anything outside `[A-Za-z0-9.-]`, because whatever it
-writes gets drawn.
+writes can end up drawn on a canvas.
 
-The canvas draws that string as a small tag in a rounded pill in the bottom margin, just inside the plot's right edge
-(`versionTag()` in `timeseries.js`) — 8px, low-alpha, unobtrusive by design. The pill's
-fill is a translucent white wash (reads as "slightly lighter" over whatever `frameBg`
-the theme paints) with a faint `colors.text` outline, so it re-themes for free.
-`versionTag()` is called from *within* `frame()`, after the `frameBg` it sits on but
-**before** frame()'s vertical time labels, so those overprint the pill rather than being
-hidden by its background — keep it in that spot if you touch `frame()`. It's clickable:
-hovering it swaps the cursor to `pointer` and a click opens the repo
-(`https://github.com/hgruber/timeseries.js`) in a new tab. `versionTag()` measures its
-own text and stores the pill box in `versionTagRect`; `hitVersionTag()` (used by both
-`onmousemove` for the cursor and `onmouseup` for the click) reads that same rect rather
-than re-deriving it, so hit area and drawn box can't drift apart.
+### The version watermark
+
+`versionMark()` in `timeseries.js` draws that string bottom-right **inside** the plot area,
+two-tone: `timeseries` in `colors.text`, `.js` and the version in `colors.versionMark`.
+Both halves come from the palette, so `ts.setColors()` re-themes it for free — which is why
+`versionMark` had to be added to all four themes, not just `DEFAULT_COLORS`; a missing key
+reaches the canvas as an `undefined` `fillStyle`.
+
+Three decisions worth keeping:
+
+- **It is opt-in** (`versionMark: false` by default) and **inert** — no hit test, no cursor
+  change, nothing the pointer handlers need to know about. This replaced a version pill
+  that was always on, sat in the bottom margin in a rounded box, and opened the repo on
+  click. The pill was ambient advertising in every embedding chart; the watermark is
+  something a host switches on. `demo/` switches it on everywhere.
+- **It draws after the data, not before.** The image watermark goes behind everything;
+  this one cannot, because bottom-right is exactly where bars are tallest and areas are
+  solid, and behind them the mark was invisible on precisely the charts meant to carry it.
+  Low `globalAlpha` is what keeps it unobtrusive instead.
+- **It refuses rather than shrinks.** The type scales with `plotWidth`, but past a third of
+  the plot width — or on a plot too short for it — `versionMark()` returns without drawing.
+  Same instinct as the `clampPlot()` bail-outs: a degenerate box is a reason to stop.
 
 ## Releasing
 

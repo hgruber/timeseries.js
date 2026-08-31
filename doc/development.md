@@ -331,7 +331,8 @@ bundles attached.
 automatically any more, and nothing should.
 
 `BUILD` is the other half: since `VERSION` no longer moves per commit, it cannot say *which*
-build you are looking at. `src/version.js` exports `BUILD` too, and the canvas pill draws
+build you are looking at. `src/version.js` exports `BUILD` too, and a chart with
+[`versionMark`](configuration.md#version-watermark) on draws
 `VERSION + (BUILD ? '+' + BUILD : '')`. It is `'dev'` in the repo and overwritten in CI by
 `scripts/stamp-build.mjs` — the Pages deploy stamps the short commit SHA, the release
 workflow stamps `''`. Neither commits the change.

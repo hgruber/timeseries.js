@@ -16,7 +16,7 @@ The entire library is a single closure function `TimeSeries(options)`. All inter
 - `grid[]`/`ygrid[]`: computed axis tick positions
 - `rctx`: render context object, rebuilt on every `plotAll()` call and passed to renderer plugins
 
-The draw loop (`plotAll()`) runs on every interaction: builds `rctx`, calls `prepare_grid()`, then draws background → watermark → y-axis → data → frame → time indicator.
+The draw loop (`plotAll()`) runs on every interaction: builds `rctx`, calls `prepare_grid()`, then draws background → watermark → y-axis → data → version watermark → frame → time indicator. The image watermark goes behind the data, the optional version watermark over it — see [packaging.md](packaging.md#the-version-watermark).
 
 **Time axis levels**: `label_level` (0 = month/day, 1 = year/month) controls which formats `grid_level_label` selects. Easter-based holidays computed from the `holidays` settings object.
 

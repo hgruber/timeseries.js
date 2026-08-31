@@ -860,6 +860,7 @@
     // Two tiers of the same signal (1 h and 1 min): the chart picks whichever
     // gives readable bars at the current zoom and cross-fades at the switch.
     window.ts = new TimeSeries({
+      versionMark: true,
       canvas: 'timeseries',
       sources: [artificialHourly, artificialFine],
       group: 'demo',

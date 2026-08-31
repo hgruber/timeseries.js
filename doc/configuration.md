@@ -25,6 +25,7 @@ const ts = new TimeSeries({
   watermark:      null,          // URL string or HTMLImageElement, drawn behind the chart
   watermarkWidth: 0.63,          // watermark width as a fraction of plot width
   watermarkAlpha: 0.2,           // watermark opacity, 0 … 1
+  versionMark:    false,         // draw the "timeseries.js <version>" text watermark
 });
 ```
 
@@ -51,6 +52,7 @@ const ts = new TimeSeries({
 | `watermark` | string \| Image | `null` | Background image, behind all chart content. |
 | `watermarkWidth` | number | `0.63` | Fraction of the plot width. |
 | `watermarkAlpha` | number | `0.2` | `0`–`1` opacity. |
+| `versionMark` | boolean | `false` | Draw `timeseries.js <version>` bottom-right inside the plot — see [below](#version-watermark). Independent of `watermark`. |
 
 ### How options merge
 
@@ -102,6 +104,7 @@ ts.setColors({ nowLine: 'red' });
 | `gridLine` | Vertical time grid lines |
 | `gridLineY` | Horizontal y-axis lines |
 | `weekNumber` | Calendar-week labels |
+| `versionMark` | The `.js` and the version in the [version watermark](#version-watermark) |
 | `nowLine` | The "now" indicator |
 | `future` | Fog-of-future overlay |
 | `stripMs` / `stripSecond` / `stripMinute` / `stripHour` | `[odd, even]` alternating stripes per time unit |
@@ -138,6 +141,33 @@ Series get colours from an automatic palette, keyed by **series id**. Override p
 so a hand-built legend always matches.
 
 ---
+
+## Version watermark
+
+`versionMark: true` draws the library name and the build it was cut from — `timeseries.js
+0.10.2` — bottom-right **inside** the plot area, in two colours: `timeseries` in
+`colors.text`, `.js` and the version in `colors.versionMark`. It is low-alpha and sits over
+the data, so it stays legible on a chart whose bars fill the bottom of the plot without
+competing with them.
+
+```js
+new TimeSeries({ canvas: 'chart', versionMark: true });
+```
+
+Three things worth knowing:
+
+- **It is off by default.** An embedded chart labels itself only when its host asks it to.
+  Every demo page in `demo/` turns it on, which is why they name their exact build.
+- **The version comes from the build**, never from a string you pass: it is
+  `TimeSeries.VERSION` plus `TimeSeries.BUILD` when that is set — `timeseries.js 0.10.2`
+  from an npm install, `timeseries.js 0.10.2+g1a2b3c4` from a Pages deploy. See
+  [Version and build](development.md#version-and-build).
+- **It skips itself when it would not fit.** The type scales with the plot, and below
+  roughly a third of the plot width — or a plot too short to spare the room — nothing is
+  drawn at all, rather than a label lying across the data.
+
+This is unrelated to `watermark`, which draws an *image* behind the chart. The two are
+separate options with separate code paths and can be on at the same time.
 
 ## Holidays
 

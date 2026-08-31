@@ -14,6 +14,23 @@ for a reader who has not seen the commits.
 
 ## [Unreleased]
 
+### Changed
+
+- The version tag on the canvas is now **opt-in and off by default**. Every chart used to
+  draw `timeseries.js <version>` in a small clickable pill in the bottom margin, whether
+  its host wanted it or not. That pill is gone — along with its hover cursor and the click
+  that opened the repository — and an embedded chart now draws nothing about itself unless
+  asked.
+
+### Added
+
+- `versionMark: true` draws the library name and the build it was cut from bottom-right
+  inside the plot area, in two colours: `timeseries` in `colors.text`, `.js` and the
+  version in the new `colors.versionMark` palette key (defined in all four themes). It is
+  low-alpha, scales with the plot, and skips itself entirely on a chart too small to carry
+  it. Unrelated to the image `watermark` option — both can be on at once. All demo pages
+  turn it on. See [Version watermark](doc/configuration.md#version-watermark).
+
 ## [0.10.2] - 2026-08-30
 
 ### Added

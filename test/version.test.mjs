@@ -34,7 +34,7 @@ test('src/version.js mirrors package.json exactly', () => {
 
 test('BUILD is a string safe to append to the version', () => {
   // Empty in a published bundle, the short SHA on a Pages deploy, 'dev' in the
-  // repo. versionTag() concatenates it, so anything else would end up drawn.
+  // repo. versionMark() concatenates it, so anything else would end up drawn.
   assert.equal(typeof TimeSeries.BUILD, 'string');
   assert.match(TimeSeries.BUILD, /^[A-Za-z0-9.-]*$/);
 });

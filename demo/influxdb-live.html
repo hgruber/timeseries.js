@@ -102,7 +102,7 @@
         src.query = document.getElementById('query').value.trim();
         src.name = 'InfluxDB live';
         try {
-          ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src] });
+          ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src], versionMark: true });
         } catch (e) {
           showError('init failed: ' + e.message);
         }

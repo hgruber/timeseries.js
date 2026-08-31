@@ -128,7 +128,7 @@
           'source-type': 'home-assistant', url, token, 'entity-ids': picked,
           name: 'Home Assistant live',
         };
-        ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src] });
+        ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src], versionMark: true });
         attachTooltip(ts);
         window.demoTheme.onChange(name => ts.setColors(TimeSeries.themes[name]));
       };

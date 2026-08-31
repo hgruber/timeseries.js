@@ -78,7 +78,7 @@
           name: 'Prometheus live',
         };
         try {
-          ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src] });
+          ts = new TimeSeries({ canvas: 'chart', initialView: null, sources: [src], versionMark: true });
         } catch (e) {
           showError('init failed: ' + e.message);
           return;

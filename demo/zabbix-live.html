@@ -1067,12 +1067,14 @@
         // (now - 24 h) on its first frame and yank the user out of whatever
         // range they were looking at.
         tsProblems = new TimeSeries({
+          versionMark: true,
           canvas: 'problems-chart',
           sources: [problemsSource],
           group: 'zbx-sync',
         });
 
         tsItems = new TimeSeries({
+          versionMark: true,
           canvas: 'items-chart',
           sources: [itemsSource],
           group: 'zbx-sync',

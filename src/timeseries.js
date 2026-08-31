@@ -110,6 +110,7 @@ var DEFAULT_COLORS = {
   gridLine:    'rgba(100,100,100,0.35)',      // vertical time grid lines
   gridLineY:   'rgba(150,150,150,0.55)',      // horizontal y-axis lines
   weekNumber:  '#999999',                    // week-number label
+  versionMark: '#5a94c8',                    // accent half of the versionMark watermark
   nowLine:     'rgba(210,0,0,0.65)',          // the now indicator line
   future:      'rgba(150,150,150,0.28)',      // fog-of-future overlay
   stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
@@ -333,6 +334,11 @@ export default function TimeSeries(options) {
     watermark: null,          // URL string or HTMLImageElement drawn behind all chart content
     watermarkWidth: 0.63,    // fraction of plot width
     watermarkAlpha: 0.2,     // opacity (0 = invisible, 1 = opaque)
+    // Text watermark naming the library and the build it was cut from, drawn
+    // bottom-right inside the plot. Off by default: an embedded chart labels
+    // itself only when its host asks it to. Independent of `watermark` above —
+    // both may be on at once, and they never share a code path.
+    versionMark: false,
   };
   if (options) {
     for (const [key, value] of Object.entries(options)) {
@@ -1465,6 +1471,54 @@ export default function TimeSeries(options) {
     c.restore();
   }
 
+  // Text watermark, bottom-right inside the plot area: the library name and the
+  // build it was cut from, two-tone — "timeseries" in the theme's text colour,
+  // ".js" and the version in colors.versionMark, both from the palette, so it
+  // re-themes for free with ts.setColors().
+  //
+  // Drawn from plotAll() *after* the data, unlike the image watermark, which
+  // goes behind it. Bottom-right is where bars are tallest and areas are solid;
+  // behind them the mark was invisible on exactly the charts it is meant to
+  // label. Low alpha is what keeps it out of the way instead.
+  //
+  // It replaced a version pill that used to sit in the bottom margin, was always
+  // on, and opened the repo on click. This one is opt-in and inert: no hit test,
+  // no cursor change, nothing for the pointer handlers to know about.
+  function versionMark() {
+    if (!settings.versionMark) return;
+    // Same build identity the old pill drew: BUILD is '' in a released bundle,
+    // the short commit SHA on a Pages deploy, and 'dev' in the repo — so this
+    // reads "timeseries.js 0.10.2" from npm, "…0.10.2+g1a2b3c4" from Pages.
+    var name = 'timeseries', suffix = '.js', ver = ' ' + VERSION + (BUILD ? '+' + BUILD : '');
+    // Scales with the plot so a full-width chart and a thumbnail both get a
+    // sensible size, but never grows past a size that competes with the data.
+    var fs = Math.max(9, Math.min(18, Math.round(plotWidth / 40)));
+    c.save();
+    c.font = fs + 'px sans-serif';
+    var wName = c.measureText(name).width;
+    var wSuffix = c.measureText(suffix).width;
+    var wVer = c.measureText(ver).width;
+    var total = wName + wSuffix + wVer;
+    // Too cramped to carry a label without covering the chart it annotates —
+    // draw nothing rather than something illegible. Same instinct as the
+    // clampPlot() bail-outs: a degenerate box is a reason to stop, not to scale.
+    // A third of the width is the empirical line: at half, a 260px-wide chart
+    // still ended up with the mark lying across its bars.
+    if (total * 3 > plotWidth || plotHeight < fs * 3) { c.restore(); return; }
+    var pad = Math.round(fs * 0.6);
+    var x = margin.left + plotWidth - pad - total;
+    var y = margin.top + plotHeight - pad;
+    c.globalAlpha = 0.3;
+    c.textAlign = 'left';
+    c.textBaseline = 'bottom';
+    c.fillStyle = settings.colors.text;
+    c.fillText(name, x, y);
+    c.fillStyle = settings.colors.versionMark;
+    c.fillText(suffix, x + wName, y);
+    c.fillText(ver, x + wName + wSuffix, y);
+    c.restore();
+  }
+
   function plotAll() {
     // Nothing to draw into: the canvas sits in a display:none container (a
     // hidden tab panel). Note clientWidth, not canvas.width — the
@@ -1496,6 +1550,7 @@ export default function TimeSeries(options) {
     watermark();
     yAxis();
     _plotData(activePlot, data, rctx);
+    versionMark();
     weekNumbers();
     frame();
     redLine();
@@ -1561,11 +1616,6 @@ export default function TimeSeries(options) {
       scheduleViewportChange();
       return;
     }
-    if (hitVersionTag(e)) {
-      canvas.style.cursor = 'pointer';
-      notifyHoverData(null, null, null, null);
-      return;
-    }
     var item = mouse_position(e);
     canvas.style.cursor =
       item && item !== 'frame' && (item.level || item.key) ? 'pointer' :
@@ -1586,8 +1636,6 @@ export default function TimeSeries(options) {
     var wasClick = Math.abs(e.clientX - startDragX) < 4;
     if (pendingClickItem && wasClick) {
       onClickData(data[pendingClickItem.plot], pendingClickItem.n, pendingClickItem.key, pendingClickItem.value);
-    } else if (wasClick && hitVersionTag(e)) {
-      window.open(VERSION_TAG_URL, '_blank', 'noopener,noreferrer');
     }
     pendingClickItem = null;
     startDragX = 0;
@@ -2962,7 +3010,6 @@ export default function TimeSeries(options) {
     c.lineTo(canvas.width - margin.right, margin.top - 2 * font_height);
     c.strokeStyle = settings.colors.text;
     c.stroke();
-    versionTag();  // under the vertical time labels below, so they overprint it
     c.fillStyle = settings.colors.text;
     c.font = xFont();
     c.textAlign = "right";
@@ -3041,71 +3088,8 @@ export default function TimeSeries(options) {
     c.globalAlpha = 1;
   }
 
-  var VERSION_TAG_URL = 'https://github.com/hgruber/timeseries.js';
-  // Clickable area of the version tag, in canvas-local pixels — set by
-  // versionTag() on every draw, read by hitVersionTag() for cursor/click
-  // handling. The two stay in step because the rect is measured off the
-  // same font/text versionTag() draws with, not duplicated by hand.
-  var versionTagRect = null;
   // Drawn ISO-week-number boxes, filled by weekNumbers(), read by the hit test.
   var weekLabelRects = [];
-
-  // Trace a rounded-rectangle sub-path; prefers the native roundRect where the
-  // browser has it (all current ones), falls back to arcTo corners otherwise.
-  function roundRectPath(x, y, w, h, r) {
-    c.beginPath();
-    if (typeof c.roundRect === 'function') { c.roundRect(x, y, w, h, r); return; }
-    c.moveTo(x + r, y);
-    c.arcTo(x + w, y, x + w, y + h, r);
-    c.arcTo(x + w, y + h, x, y + h, r);
-    c.arcTo(x, y + h, x, y, r);
-    c.arcTo(x, y, x + w, y, r);
-    c.closePath();
-  }
-
-  // Small, unobtrusive build tag, in a rounded pill just inside the plot's right
-  // edge of the bottom margin. Drawn from within frame() — after the frameBg it
-  // sits on, but *before* frame()'s vertical time labels, so those overprint the
-  // pill (its background never hides a "now"-adjacent time reading).
-  function versionTag() {
-    // BUILD is empty in a released bundle and names the build otherwise, so the
-    // pill reads "0.9.0" from npm but "0.9.0+g1a2b3c4" on a Pages deploy. The box
-    // is measured from this string below, so the longer form cannot overflow it.
-    var tag = 'timeseries.js ' + VERSION + (BUILD ? '+' + BUILD : '');
-    c.save();
-    c.font = '8px sans-serif';
-    var padX = 6, padY = 3, r = 4;
-    var boxW = Math.ceil(c.measureText(tag).width) + 2 * padX;
-    var boxH = 8 + 2 * padY;
-    var boxX = canvas.width - margin.right - boxW - 4;  // just inside the right edge
-    var boxY = canvas.height - 3 - boxH;
-    versionTagRect = { x0: boxX, y0: boxY, x1: boxX + boxW, y1: boxY + boxH };
-    // A translucent white wash reads as "slightly lighter" composited over
-    // whatever frameBg the active theme paints (light, dark, sepia, high
-    // contrast), and the faint outline/text follow the theme text colour — so
-    // the pill re-themes for free with ts.setColors().
-    roundRectPath(boxX, boxY, boxW, boxH, r);
-    c.fillStyle = 'rgba(255,255,255,0.22)';
-    c.fill();
-    c.globalAlpha = 0.30;
-    c.strokeStyle = settings.colors.text;
-    c.stroke();
-    c.globalAlpha = 0.55;
-    c.fillStyle = settings.colors.text;
-    c.textAlign = 'left';
-    c.textBaseline = 'middle';
-    c.fillText(tag, boxX + padX, boxY + boxH / 2 + 0.5);
-    c.restore();
-  }
-
-  // A little forgiveness around the measured text box, same rationale as
-  // POINT_RADIUS's mouse "grab" padding elsewhere in this file.
-  function hitVersionTag(e) {
-    if (!versionTagRect) return false;
-    var x = e.clientX - offset.x, y = e.clientY - offset.y;
-    return x >= versionTagRect.x0 - 2 && x <= versionTagRect.x1 + 2 &&
-           y >= versionTagRect.y0 - 2 && y <= versionTagRect.y1 + 2;
-  }
 
   function redLine() {
     var x = X(now);
@@ -3500,6 +3484,7 @@ TimeSeries.themes = {
     gridLine:    'rgba(150,165,190,0.22)',
     gridLineY:   'rgba(150,165,190,0.32)',
     weekNumber:  '#4a5a6a',
+    versionMark: '#6aabdf',
     nowLine:     'rgba(255,90,90,0.75)',
     future:      'rgba(0,0,0,0.38)',
     stripMs:     ['rgba(35,42,60,0.60)', 'rgba(50,62,88,0.60)'],
@@ -3536,6 +3521,7 @@ TimeSeries.themes = {
     gridLine:    'rgba(0,0,0,0.50)',
     gridLineY:   'rgba(0,0,0,0.62)',
     weekNumber:  '#333333',
+    versionMark: '#0050c8',
     nowLine:     'rgba(200,0,0,0.92)',
     future:      'rgba(80,80,80,0.28)',
     stripMs:     ['rgba(215,215,215,0.75)', 'rgba(160,160,160,0.75)'],
@@ -3572,6 +3558,7 @@ TimeSeries.themes = {
     gridLine:    'rgba(140,90,30,0.28)',
     gridLineY:   'rgba(140,90,30,0.42)',
     weekNumber:  '#b08040',
+    versionMark: '#a05a10',
     nowLine:     'rgba(200,50,0,0.72)',
     future:      'rgba(180,140,90,0.25)',
     stripMs:     ['rgba(255,242,215,0.58)', 'rgba(242,215,168,0.58)'],

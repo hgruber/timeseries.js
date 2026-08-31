@@ -1,4 +1,4 @@
-// Sets BUILD in src/version.js, which the canvas version tag appends to
+// Sets BUILD in src/version.js, which the canvas version watermark appends to
 // VERSION. Called only from CI (see .github/workflows/) — the Pages deploy
 // stamps the short commit SHA so a deployed demo names its exact build, the
 // release workflow stamps '' so the published bundle reads as a plain version.

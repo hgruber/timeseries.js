@@ -47,6 +47,7 @@ import '@hgruber/timeseries.js/src/adapters/websocket.js';
 import { attachTooltip } from '@hgruber/timeseries.js/src/tooltip.js';
 
 const ts = new TimeSeries({
+  versionMark: true,
   canvas: 'chart',
   sources: [{
     'source-type': 'websocket',

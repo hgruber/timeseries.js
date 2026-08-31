@@ -148,6 +148,7 @@
       const source = CALDAV.url ? liveSource : fixtureSource;
 
       const ts = new TimeSeries({
+        versionMark: true,
         canvas: 'timeseries',
         sources: [source],
         initialView: 'thisWeek',
