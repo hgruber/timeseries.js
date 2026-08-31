@@ -30,6 +30,25 @@ for a reader who has not seen the commits.
   low-alpha, scales with the plot, and skips itself entirely on a chart too small to carry
   it. Unrelated to the image `watermark` option — both can be on at once. All demo pages
   turn it on. See [Version watermark](doc/configuration.md#version-watermark).
+- **Follow mode is reachable from the keyboard**, which until now could pan and zoom but
+  never get back to the rolling state. Five letters enter it, anchored where the letter
+  says: `f` puts "now" at the right edge, `p` at the left, `m` in the middle. All three
+  keep the current window width and slide it onto now, animating over `zoomDuration`.
+  `F` and `P` are the same two anchors with the other span: rather than sliding, they pin
+  the far edge and stretch the window out to now — `F` holds the left edge, `P` the right —
+  so the window comes to cover "from where I was looking, up to the present". Once there
+  they roll identically to `f` and `p`; case picks the span left on screen, never how the
+  window then moves. A window lying entirely on the wrong side of now falls back to the
+  lowercase behaviour. The three new anchors are on the API too, as `centerNow()`,
+  `followNowStretch()` and `previewNowStretch()`, next to the existing `followNow()` and
+  `previewNow()`. See [Configuration → Keyboard](doc/configuration.md#keyboard).
+
+### Changed
+
+- **The keyboard handler now ignores keys carrying Ctrl, Alt or Meta** and hands them back
+  to the browser, so a focused chart no longer risks swallowing `Ctrl+F` (Find) or `Ctrl+P`
+  (Print). The arrow keys never carried a modifier meaning, so nothing that worked before
+  changes.
 
 ## [0.10.2] - 2026-08-30
 

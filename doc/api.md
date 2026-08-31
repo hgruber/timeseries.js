@@ -59,15 +59,30 @@ The chart tracks "now" like a seismograph, scrolling the window as time passes.
 ts.follow(fraction);   // start; fraction 0–100 = where "now" sits, 0 = left edge … 100 = right
 ts.followNow();        // animate to "now" at the right edge, then roll — the window looks back
 ts.previewNow();       // animate to "now" at the left edge, then roll — the window looks ahead
+ts.centerNow();        // animate to "now" in the middle, then roll — half back, half ahead
+ts.followNowStretch(); // as followNow(), but the left edge stays put and the window stretches
+ts.previewNowStretch();// as previewNow(), but the right edge stays put
 ts.stop();             // leave follow mode, keeping the window where it is
 ts.onFollow(fn);       // called when follow mode (re)starts, with the percentage
 ts.onStop(fn);         // called when follow mode stops
 ```
 
-All three entry points keep the current window **width** and only move it. `follow()` snaps
-there in one frame; `followNow()` and `previewNow()` animate, and are the same call at the
-two ends of the fraction — both end up rolling, so use `stop()` if you want the viewport
-moved without entering follow mode.
+Every one of them ends in the same rolling state — the width is held and the window slides
+to keep "now" at the fraction — so they differ only in how they get there. `follow()` snaps
+in one frame; the rest animate over `zoomDuration`. `followNow()`, `previewNow()` and
+`centerNow()` are the same call at three points of the fraction and keep the current window
+**width**, moving it onto now.
+
+The two `…Stretch()` variants are the exception: instead of sliding the window they pin the
+far edge — the left for `followNowStretch()`, the right for `previewNowStretch()` — and run
+the other one out to now, so the width becomes "from where I was looking, up to the present"
+(or from the present up to where I was looking). Once there they roll like their plain
+counterparts, held edge travelling along; the pinning is the target of the animation, not a
+lasting constraint. A window lying entirely on the wrong side of now has no span to stretch
+to, and the call falls back to the plain one.
+
+All of them end up rolling, so use `stop()` if you want the viewport moved without entering
+follow mode.
 
 The constructor option `follow` is the explicit start-state equivalent: `true` rolls,
 keeping "now" where it sits in the start window (so an explicit `initialView: [tmin, tmax]`

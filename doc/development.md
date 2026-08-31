@@ -196,7 +196,8 @@ drag-and-pin, and `destroy()` unsubscribe), `test/options.test.mjs`
 `test/lttb.test.mjs` (both previously untested pure modules), `test/memory.test.mjs`
 (bounded growth of `data[]` under a polling source), `test/series.test.mjs`
 (series enumeration, visibility, y-axis rescaling, point hit test),
-`test/keyboard.test.mjs` (focusability, all four arrows and their shift variants),
+`test/keyboard.test.mjs` (focusability, all four arrows and their shift variants, the
+five follow keys and the modifier escape hatch),
 `test/offset.test.mjs`
 (hit testing survives the canvas moving in the viewport — see below),
 `test/zabbix.test.mjs` (the zoom-adaptive Zabbix source: the pure ring helpers

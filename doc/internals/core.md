@@ -270,6 +270,16 @@ an `aria-label` unless the page set one) and binds all four arrows: ←/→ page
 only moves the focused one. Set `keyboard: false` to opt out entirely. On the mouse side the
 wheel zooms and **Shift+wheel pans**, both continuous.
 
+Five letters enter follow mode: `f`/`F` anchor now at the right edge, `p`/`P` at the left,
+`m` in the centre. All five land in the identical rolling state, and case picks only the
+span left on screen — `f` slides the current width onto now, `F` pins the left edge and
+stretches the right one out to it. `withinZoomLimits()` is what stops a window lying wholly
+on the wrong side of now from producing an inverted target that `clampRange()` would flip;
+it falls back to the sliding entry. The letters deliberately do **not** call `dropGrid()`:
+a follow jump lands on a now-relative window, `ensureGridFor()` sees `snapState.lo/hi` no
+longer match it and picks a fresh grid on the next arrow press by itself. Any modifier
+returns early, so `Ctrl+F` and `Ctrl+P` stay with the browser.
+
 **A viewport is a grid state `{unit, mult, k, lo}`, not a pair of timestamps.** That framing
 is the whole feature and two earlier designs died without it:
 

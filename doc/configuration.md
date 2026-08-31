@@ -213,7 +213,8 @@ The default is the German set (`Neujahr`, `Karfreitag`, `Tag der Einheit`, …).
 ## Keyboard
 
 With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`,
-`role="application"`, and an `aria-label` unless the page set one) and binds four keys:
+`role="application"`, and an `aria-label` unless the page set one) and binds the arrows for
+navigation and five letters for follow mode:
 
 | Key | Movement | API equivalent |
 |---|---|---|
@@ -221,6 +222,31 @@ With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`
 | Shift+←/→ | one grid cell back/forward | `ts.pan(∓1, { cells: 1 })` |
 | ↑/↓ | zoom in/out, halving or doubling the window | `ts.zoomStep(±1)` |
 | Shift+↑/↓ | one cell narrower/wider | `ts.zoomStep(±1, { cells: 1 })` |
+| f | follow, now at the right edge | `ts.followNow()` |
+| p | follow, now at the left edge | `ts.previewNow()` |
+| m | follow, now in the middle | `ts.centerNow()` |
+| F | follow at the right edge, stretching there | `ts.followNowStretch()` |
+| P | follow at the left edge, stretching there | `ts.previewNowStretch()` |
+
+### The follow keys
+
+All five end in the **same** rolling state: the window keeps its width and slides so that
+"now" stays at the anchor the letter names — right edge for `f`/`F`, left for `p`/`P`,
+centre for `m`. Each animates there over `zoomDuration`.
+
+Case picks the **span left on screen**, and nothing else. `f` slides the current window onto
+now, keeping its width. `F` instead pins the left edge and runs the right one out to now, so
+the window stretches (or shrinks) to cover "from where I was looking, up to the present" —
+and *then* rolls exactly as `f` does, left edge travelling along. `P` is the mirror image:
+the right edge stays, the left runs forward onto now. The held edge is the target of that one
+animation, not a lasting constraint.
+
+If the window sits entirely on the wrong side of now — `F` while looking at the future,
+`P` while looking at the past — there is no span to stretch to, and the key falls back to
+its lowercase behaviour: same anchor, width unchanged.
+
+A modifier hands the key straight back to the browser, so `Ctrl+F` still opens Find and
+`Ctrl+P` still prints while the chart has focus.
 
 ### The snap grid
 

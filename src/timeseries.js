@@ -1721,10 +1721,15 @@ export default function TimeSeries(options) {
       canvas.setAttribute('role', 'application');
       if (!canvas.getAttribute('aria-label'))
         canvas.setAttribute('aria-label',
-          'Time series chart. Left and right arrow keys page through time, up and down zoom. Hold shift for a single step.');
+          'Time series chart. Left and right arrow keys page through time, up and down zoom. Hold shift for a single step. ' +
+          'F follows the present at the right edge, P at the left, M in the middle; hold shift to stretch the window onto now instead of sliding it.');
     }
 
     canvas.onkeydown = function (e) {
+      // Ctrl+F, Ctrl+P and their Meta twins belong to the browser. Without this
+      // the letter bindings below would swallow Find and Print from a focused
+      // chart; the arrows never carried a modifier meaning either.
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
       // Every arrow moves the viewport in whole cells of the labelled x-axis
       // level, so a keyboard user is never left on a ragged edge. Shift is the
       // fine-grained variant of the same movement, not an escape from it:
@@ -1735,6 +1740,16 @@ export default function TimeSeries(options) {
       else if (e.key === 'ArrowRight') self.pan(1, cell);
       else if (e.key === 'ArrowUp')    self.zoomStep(1, cell);
       else if (e.key === 'ArrowDown')  self.zoomStep(-1, cell);
+      // The five follow keys. All of them end in the same rolling state, anchored
+      // where the letter says: f/F right edge, p/P left, m centre. Shift picks the
+      // span that is left on screen — slide the current width onto now, or pin the
+      // far edge and stretch to it — and nothing about how the window then moves.
+      // Case, not e.shiftKey: the binding is on the character the user typed.
+      else if (e.key === 'f')          self.followNow();
+      else if (e.key === 'F')          self.followNowStretch();
+      else if (e.key === 'p')          self.previewNow();
+      else if (e.key === 'P')          self.previewNowStretch();
+      else if (e.key === 'm')          self.centerNow();
       else return;                     // leave every other key to the browser
       e.preventDefault();              // ... but don't let the page scroll
     };
@@ -3123,19 +3138,32 @@ export default function TimeSeries(options) {
     if (!_syncing && _currentGroup) _groupStopFollow(_currentGroup, _handle);
   }
 
+  // The anchor as a 0-1 fraction: 0 puts now at the left edge, 1 at the right.
+  function followFraction(p) { return Math.max(0, Math.min(100, p)) / 100; }
+
   function doFollow(p) {
     if (nowline_timer !== null) { clearTimeout(nowline_timer); nowline_timer = null; }
     follow_stopped = false;
-    follow_fraction = Math.max(0, Math.min(100, p)) / 100;
+    follow_fraction = followFraction(p);
     if (follow_start_cb) follow_start_cb(Math.round(follow_fraction * 100));
   }
 
-  // Animated entry: zoom to position then start/continue rolling.
-  function follow_animated(p) {
+  // Animated entry: zoom to the given window, then start/continue rolling. Every
+  // entry point ends in the same rolling state — follower_tick holds the width and
+  // shifts the window — so the only thing they differ in is the window they animate
+  // to, which is why the caller passes it.
+  function follow_animated_to(p, target_tmin, target_tmax) {
     doFollow(p);
-    var range = tmax - tmin;
-    zoom(Date.now() - follow_fraction * range, Date.now() + (1 - follow_fraction) * range);
+    zoom(target_tmin, target_tmax);
     setTimeout(start_follower, zoom_onclick_time);
+  }
+
+  // Slide the whole window so now sits at fraction p, keeping the current width.
+  function follow_animated(p) {
+    var frac = followFraction(p);
+    var range = tmax - tmin;
+    var t0 = Date.now();
+    follow_animated_to(p, t0 - frac * range, t0 + (1 - frac) * range);
   }
 
   // Immediate snap: update fraction, reposition view at once, start/continue rolling.
@@ -3171,6 +3199,32 @@ export default function TimeSeries(options) {
   }
   this.followNow  = function () { follow_animated(100); };
   this.previewNow = function () { follow_animated(0); };
+  this.centerNow  = function () { follow_animated(50); };
+
+  // The stretching pair. Where followNow/previewNow slide the window onto now
+  // keeping its width, these pin the far edge and let the width change to reach
+  // now — after which they roll exactly like the sliding pair, same anchor, same
+  // constant width. The difference is the span left on screen, not the motion.
+  //
+  // pendingView(), not tmin/tmax: a second press during the animation must build
+  // on the window being animated to, the same rule pan() and zoomStep() follow.
+  //
+  // A window sitting entirely on the wrong side of now would give a zero or
+  // negative span, which clampRange() would silently flip into a window anchored
+  // the wrong way round; withinZoomLimits() rejects that along with any span the
+  // wheel could never zoom back out of, and we fall back to sliding.
+  this.followNowStretch = function () {
+    var v = pendingView();
+    var t0 = Date.now();
+    if (!withinZoomLimits(t0 - v.tmin)) { follow_animated(100); return; }
+    follow_animated_to(100, v.tmin, t0);
+  };
+  this.previewNowStretch = function () {
+    var v = pendingView();
+    var t0 = Date.now();
+    if (!withinZoomLimits(v.tmax - t0)) { follow_animated(0); return; }
+    follow_animated_to(0, t0, v.tmax);
+  };
   this.stop     = function () { doStop(); };
   this.clearAll = function () { data = []; freeSlots = []; plotAll(); };
   // Force a repaint. The same thing sources get as requestRedraw(), exposed

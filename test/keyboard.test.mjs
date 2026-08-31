@@ -6,6 +6,11 @@
 // left/right page, up/down zoom, and shift makes each the single-cell variant.
 // A keyboard user therefore lands on the same boundaries as someone clicking
 // the nav buttons, at any zoom level.
+//
+// Five letters enter follow mode, anchored where the letter says: f/F right
+// edge, p/P left, m centre. All five end in the same rolling state; shift only
+// picks the span left on screen — slide the current width onto now, or pin the
+// far edge and stretch to it.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,8 +30,8 @@ function build(opts) {
 }
 
 // A synthetic KeyboardEvent, recording whether the default was prevented.
-function keyEvent(key, shiftKey = false) {
-  return { key, shiftKey, prevented: false, preventDefault() { this.prevented = true; } };
+function keyEvent(key, shiftKey = false, ctrlKey = false) {
+  return { key, shiftKey, ctrlKey, prevented: false, preventDefault() { this.prevented = true; } };
 }
 
 // Local midnight, not UTC: panFloor/panAdd work in local time, so a window
@@ -205,4 +210,117 @@ test('panSnap: off pans by the exact width instead of snapping', async () => {
   const vp = ts.getViewport();
   assert.equal(vp.tmin, t1, 'continuous pan starts where the window ended');
   assert.equal(vp.tmax - vp.tmin, t1 - t0, 'width preserved exactly');
+});
+// ── The follow keys ───────────────────────────────────────────────────────────
+// Follow mode keeps rolling once entered, so every test below stops it again:
+// follower_tick re-arms itself and would otherwise outlive the test.
+
+const HOUR = 3600000;
+
+test('f, p and m roll with now at the right edge, the left and the centre', async () => {
+  for (const [key, pct] of [['f', 100], ['p', 0], ['m', 50]]) {
+    const { ts, canvas } = build();
+    const t0 = Date.now() - 6 * HOUR;
+    await setView(ts, t0, t0 + HOUR);
+
+    let anchor = null;
+    ts.onFollow(p => { anchor = p; });
+
+    const e = keyEvent(key);
+    canvas.onkeydown(e);
+    assert.equal(e.prevented, true, `${key} should preventDefault`);
+    await sleep(700);
+
+    assert.equal(anchor, pct, `${key} anchors at ${pct}%`);
+    const vp = ts.getViewport();
+    const span = vp.tmax - vp.tmin;
+    assert.ok(Math.abs(span - HOUR) < 1000, `${key} keeps the window width`);
+    const at = 100 * (Date.now() - vp.tmin) / span;
+    assert.ok(Math.abs(at - pct) < 2, `${key}: now sits at ${pct}%, got ${at.toFixed(1)}%`);
+    ts.stop();
+  }
+});
+
+test('F stretches the right edge onto now and holds the left', async () => {
+  const { ts, canvas } = build();
+  const t0 = Date.now() - 6 * HOUR;          // a one-hour window, six hours back
+  await setView(ts, t0, t0 + HOUR);
+
+  let anchor = null;
+  ts.onFollow(p => { anchor = p; });
+  canvas.onkeydown(keyEvent('F'));
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.equal(anchor, 100, 'anchors at the right edge, exactly like f');
+  assert.ok(Math.abs(vp.tmin - t0) < 2000, 'the left edge stayed where it was');
+  assert.ok(Math.abs(vp.tmax - Date.now()) < 2000, 'the right edge reached now');
+  assert.ok(vp.tmax - vp.tmin > 5 * HOUR, 'so the window grew rather than slid');
+  ts.stop();
+});
+
+test('P stretches the left edge onto now and holds the right', async () => {
+  const { ts, canvas } = build();
+  const t1 = Date.now() + 6 * HOUR;          // a one-hour window, six hours ahead
+  await setView(ts, t1 - HOUR, t1);
+
+  let anchor = null;
+  ts.onFollow(p => { anchor = p; });
+  canvas.onkeydown(keyEvent('P'));
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.equal(anchor, 0, 'anchors at the left edge, exactly like p');
+  assert.ok(Math.abs(vp.tmax - t1) < 2000, 'the right edge stayed where it was');
+  assert.ok(Math.abs(vp.tmin - Date.now()) < 2000, 'the left edge reached now');
+  assert.ok(vp.tmax - vp.tmin > 5 * HOUR, 'so the window grew rather than slid');
+  ts.stop();
+});
+
+test('F on a window entirely in the future falls back to f', async () => {
+  // now - tmin is negative here: stretching would give an inverted window, which
+  // clampRange would silently flip. The slide is what is left.
+  const { ts, canvas } = build();
+  const t0 = Date.now() + 6 * HOUR;
+  await setView(ts, t0, t0 + HOUR);
+
+  canvas.onkeydown(keyEvent('F'));
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.ok(Math.abs((vp.tmax - vp.tmin) - HOUR) < 1000, 'width kept, as f does');
+  assert.ok(Math.abs(vp.tmax - Date.now()) < 2000, 'now at the right edge');
+  ts.stop();
+});
+
+test('P on a window entirely in the past falls back to p', async () => {
+  const { ts, canvas } = build();
+  const t1 = Date.now() - 6 * HOUR;
+  await setView(ts, t1 - HOUR, t1);
+
+  canvas.onkeydown(keyEvent('P'));
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.ok(Math.abs((vp.tmax - vp.tmin) - HOUR) < 1000, 'width kept, as p does');
+  assert.ok(Math.abs(vp.tmin - Date.now()) < 2000, 'now at the left edge');
+  ts.stop();
+});
+
+test('a modifier hands the key back to the browser', async () => {
+  // Ctrl+F is Find and Ctrl+P is Print; a focused chart must not swallow either.
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11).getTime();
+  await setView(ts, t0, t0 + 7 * 24 * HOUR);
+
+  for (const key of ['f', 'p', 'm', 'ArrowRight']) {
+    const e = keyEvent(key, false, true);
+    canvas.onkeydown(e);
+    assert.equal(e.prevented, false, `Ctrl+${key} must be left to the browser`);
+  }
+  await sleep(700);
+
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t0, 'and must not move the viewport');
+  assert.equal(vp.tmax, t0 + 7 * 24 * HOUR);
 });
