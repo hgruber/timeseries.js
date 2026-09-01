@@ -69,8 +69,15 @@ function recorder() {
   const calls = [];
   const c = {
     globalAlpha: 1, fillStyle: '', strokeStyle: '', lineWidth: 1,
-    fillRect: (...args) => calls.push({ op: 'fillRect', alpha: c.globalAlpha, args }),
-    strokeRect: (...args) => calls.push({ op: 'strokeRect', alpha: c.globalAlpha, args }),
+    // save/restore act like the real 2D context: snapshot and rewind the state
+    // the outline branch mutates, so a leaked lineWidth shows up in the test.
+    save: () => { c._saved = { lineWidth: c.lineWidth, strokeStyle: c.strokeStyle }; },
+    restore: () => {
+      c.lineWidth = c._saved.lineWidth;
+      c.strokeStyle = c._saved.strokeStyle;
+    },
+    fillRect: (...args) => calls.push({ op: 'fillRect', alpha: c.globalAlpha, lineWidth: c.lineWidth, strokeStyle: c.strokeStyle, args }),
+    strokeRect: (...args) => calls.push({ op: 'strokeRect', alpha: c.globalAlpha, lineWidth: c.lineWidth, strokeStyle: c.strokeStyle, args }),
   };
   return { c, calls };
 }
@@ -108,7 +115,20 @@ test('outline does not fill, and carries the palette key selection', () => {
   assert.deepEqual(fills, []);
   const s = calls.find(x => x.op === 'strokeRect');
   assert.ok(s, 'no strokeRect recorded');
-  assert.equal(c.strokeStyle, '#112233');
+  // Assert the colour at stroke time, not the context state after the call —
+  // the outline branch now saves/restores its state, so the context ends where
+  // it started.
+  assert.equal(s.strokeStyle, '#112233');
+});
+
+test('outline strokes at 2px and restores the ambient lineWidth afterwards', () => {
+  const { c, calls } = recorder();
+  const p = bars({ 0: { s1: 10 } }, {});
+  drawSelection([0], [p], rctxFor(c), { slotSec: START, key: 's1' });
+  const s = calls.find(x => x.op === 'strokeRect');
+  assert.ok(s, 'no strokeRect recorded');
+  assert.equal(s.lineWidth, 2, 'outline stroke not at 2px');
+  assert.equal(c.lineWidth, 1, 'lineWidth leaked past drawSelection');
 });
 
 // ── 3. the instance API ──

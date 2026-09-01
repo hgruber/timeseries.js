@@ -95,7 +95,11 @@ renderer-specific**:
   per-renderer `* fade` on colour alphas; it would double up with `globalAlpha`. Blocks are
   drawn faintest-first, so the nearly-invisible tier can never wash out the dominant one.
   `highlight()` is wrapped the same way. A renderer that sets `globalAlpha` itself must restore
-  it to the value it found, not to `1`.
+  it to the value it found, not to `1`. The same holds for `lineWidth`: the chart chrome
+  (`frame()`, the grid, the year/month/day separators) strokes at the ambient value and sets
+  none of its own, so `highlight_multibar`'s outline branch — which draws at 2 — must wrap its
+  stroke in `save()`/`restore()`. Leaving it set thickens all of that chrome from the next
+  frame on.
 - **`prepare_grid` interpolates the y-extent across the band.** The two tiers may sit on very
   different value scales (a `sum` rollup: hourly bars are 60× the minute bars). The
   ratio-weighted `ymax_array` blend would otherwise pick the taller tier outright the moment

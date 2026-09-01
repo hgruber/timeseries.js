@@ -473,12 +473,17 @@ function highlight_multibar(plot, n, item, rctx, mode) {
         if (x + barWidth < margin.left || x > margin.left + plotWidth) return;
         // 1px outside the bar's own rect: a stroke centred on the edge would
         // eat half of the ink it frames, 1px inside would sit on the fill.
+        // save/restore, because the chart chrome (frame, grid, the year/month/
+        // day separators) strokes at the ambient lineWidth — leaving 2 here
+        // thickens all of it from the next frame on.
+        c.save();
         c.lineWidth = 2;
         c.strokeStyle = (rctx.colors && rctx.colors.selection) || '#2f6fd0';
         var top, h;
         if (down) { top = Y(-heightDown);  h = ppv * v; }
         else      { top = Y(heightUp + v); h = ppv * v; }
         c.strokeRect(x - 1, top - 1, barWidth + 2, h + 2);
+        c.restore();
       } else {
         c.fillStyle = resolveColor(plot, i, 0.8);
         if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
