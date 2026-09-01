@@ -12,6 +12,17 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
+## [0.10.5] - 2026-09-01
+
+### Fixed
+
+- **The selection outline no longer thickens the chart around it.** Drawing the 2px
+  selection frame left the canvas line width at 2, and everything stroked afterwards
+  inherited it: the plot frame and the now-line in the same frame, the grid lines and the
+  year/month/day separators from the next frame on — most visible on a calendar-style
+  gantt chart next to a bar block. The outline now draws inside its own saved state, and a
+  regression test pins the line width back to the ambient 1.
+
 ## [0.10.4] - 2026-09-01
 
 ### Added
@@ -353,7 +364,8 @@ For anyone arriving at the project with this release, the library covers:
 - Opt-in tooltip and series-visibility legend overlays that follow the palette.
 - Four built-in themes and a fully overridable colour palette.
 
-[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.4...HEAD
+[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.5...HEAD
+[0.10.5]: https://github.com/hgruber/timeseries.js/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/hgruber/timeseries.js/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/hgruber/timeseries.js/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/hgruber/timeseries.js/compare/v0.10.1...v0.10.2
