@@ -1,6 +1,6 @@
 // The released semver version. Do not hand-edit — `npm run release -- X.Y.Z`
 // sets it here and in package.json together. See CLAUDE.md "Versioning".
-export const VERSION = '0.10.3';
+export const VERSION = '0.10.4';
 
 // Build identity, separate from the version on purpose: VERSION only moves at a
 // release, so between releases it cannot say *which* build you are looking at.
