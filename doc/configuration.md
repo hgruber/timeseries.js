@@ -107,6 +107,7 @@ ts.setColors({ nowLine: 'red' });
 | `versionMark` | The `.js` and the version in the [version watermark](#version-watermark) |
 | `nowLine` | The "now" indicator |
 | `future` | Fog-of-future overlay |
+| `selection` | The persistent [selection](api.md#selection) outline |
 | `stripMs` / `stripSecond` / `stripMinute` / `stripHour` | `[odd, even]` alternating stripes per time unit |
 | `dayDefault` / `dayWeekend` / `dayOdd` | Weekday / weekend + holiday / alternate-day stripes |
 | `monthOdd` / `monthEven` | Alternating month stripes |

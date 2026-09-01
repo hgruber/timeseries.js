@@ -4,7 +4,7 @@ Everything on a `TimeSeries` instance and on the constructor itself, grouped by 
 are trying to do.
 
 - [Navigation](#navigation) · [Follow mode](#follow-rolling-mode) · [Viewport sync](#viewport-sync-groups)
-- [Data](#data) · [Introspection](#introspection) · [Series visibility](#series-visibility)
+- [Data](#data) · [Introspection](#introspection) · [Series visibility](#series-visibility) · [Selection](#selection)
 - [Appearance](#appearance) · [Events](#events) · [Resolution tiers](#resolution-tiers)
 - [Statics](#statics-on-the-constructor) · [Module exports](#module-exports)
 
@@ -188,7 +188,30 @@ tallest one rescales the axis to what is left.
 
 > `onSeriesChange` fires when the *hidden set* changes, **not** when incoming data
 > introduces a new series. Call `getSeries()` again after data arrives if that matters —
-> the legend controller's `refresh()` does exactly this.
+> the legend controller's `refresh()` does the exact same thing.
+
+## Selection
+
+One persistent selection per instance — the bar a drill-down panel refers to, a
+"which bar am I reading about" marker that survives refetches, polls and zoom.
+
+```js
+ts.setSelection({ slotSec, key });   // key exactly as onClickDataCallback delivered it
+ts.getSelection();                   // { slotSec, key, interval?, resolved } — a copy
+ts.clearSelection();                 // clear + redraw; setSelection(null) does the same
+```
+
+The identity is **(slotSec, key)** — bin start in epoch seconds plus the series id —
+because both survive refetches and polls, unlike the plot/slot indices a click also
+carries. The state is deliberately **not** validated away when it cannot be resolved:
+a bar that scrolled out of the viewport, was hidden via the legend, sits in the
+underlaid block of a resolution cross-fade, or vanished after a filter change simply
+paints no outline; when the data comes back the outline returns with it.
+`getSelection().resolved` tells the host whether the last frame drew it.
+
+Only renderers with a highlight hook honour a selection (today: `multibar`); the
+outline is a 2px frame in the palette's `selection` colour (defined in all four
+themes; a host on an older palette object falls back to the light default).
 
 ## Appearance
 

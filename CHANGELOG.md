@@ -12,6 +12,19 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
+## [0.10.4] - 2026-09-01
+
+### Added
+
+- **Persistent selection.** `ts.setSelection({ slotSec, key })` marks one bar with a 2px
+  outline in the new `selection` palette colour (defined in all four themes). The marker
+  survives refetches, polls, zoom and viewport moves, and repaints only while the
+  referenced bar is actually drawn — a visible series, the dominant block of a resolution
+  cross-fade, a non-skipped partial bin, inside the viewport. A bar that scrolled out
+  paints nothing and returns when the data does, so a host never has to re-validate the
+  selection; `ts.getSelection()` reports the current selection with a `resolved` flag,
+  and `ts.clearSelection()` drops it. Today honoured by the `multibar` renderer.
+
 ## [0.10.3] - 2026-08-31
 
 ### Changed
@@ -340,7 +353,8 @@ For anyone arriving at the project with this release, the library covers:
 - Opt-in tooltip and series-visibility legend overlays that follow the palette.
 - Four built-in themes and a fully overridable colour palette.
 
-[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.3...HEAD
+[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.4...HEAD
+[0.10.4]: https://github.com/hgruber/timeseries.js/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/hgruber/timeseries.js/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/hgruber/timeseries.js/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/hgruber/timeseries.js/compare/v0.10.0...v0.10.1

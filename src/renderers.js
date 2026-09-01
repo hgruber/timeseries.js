@@ -285,14 +285,65 @@ export function plotData(activePlot, data, rctx) {
  * Faded the same way plotData fades the block itself, so a highlight mid-dissolve
  * does not sit at full opacity on top of a half-faded bar.
  */
-export function highlight(plot, n, item, rctx) {
+export function highlight(plot, n, item, rctx, mode) {
   const plugin = registry.get(plot.type);
   if (!plugin || !plugin.highlight) return;
   var fade = fadeOf(plot);
   if (fade <= 0) return;
   if (fade < 1) rctx.c.globalAlpha = fade;
-  plugin.highlight(plot, n, item, scaledCtx(rctx, vscaleOf(plot)));
+  plugin.highlight(plot, n, item, scaledCtx(rctx, vscaleOf(plot)), mode);
   if (fade < 1) rctx.c.globalAlpha = 1;
+}
+
+/**
+ * Resolve the persistent selection { slotSec, key } against one block, with the
+ * same exclusion rules as the multibar branch of the hit test in timeseries.js:
+ * only stacked-bar blocks whose renderer has a highlight hook qualify, only the
+ * dominant block of a resolution cross-fade, only a strictly aligned slot, only
+ * a visible series, and only a drawn (non-skipped) partial bin. Returns the
+ * matching slot index, or null when this block does not carry the selection.
+ *
+ * Exported so getSelection().resolved can answer without a frame having been
+ * drawn — same file, same rules, so resolution and painting cannot drift apart.
+ */
+export function resolveSelection(plot, sel, hidden) {
+  if (!plot || !plot.data) return null;
+  const plugin = registry.get(plot.type);
+  if (!plugin || !plugin.highlight) return null;
+  if (plot.category === 'point' || plot.category === 'span') return null;
+  if (isBandedType(plot.type) || isCumulativeType(plot.type)
+      || isLanedType(plot.type)) return null;
+  if (fadeOf(plot) < 0.5) return null;
+  if (!plot.interval) return null;
+  var n = Math.round((sel.slotSec - plot.interval_start) / plot.interval);
+  if (plot.interval_start + n * plot.interval !== sel.slotSec) return null;
+  var slot = plot.data[n];
+  if (!slot || !(sel.key in slot)) return null;
+  if (hidden && hidden.has(sel.key)) return null;
+  var part = partialAt(plot, n);
+  if (part && part.skip) return null;
+  return n;
+}
+
+/**
+ * Paint the persistent selection. Runs in plotAll() right after plotData —
+ * over the bars, under frame and now-line. Walks the active blocks with the
+ * same exclusion rules resolveSelection() uses, and strokes the outline with
+ * the block's tier-fade alpha, so mid-dissolve the outline follows the same
+ * opacity as the ink it marks.
+ */
+export function drawSelection(activePlot, data, rctx, sel) {
+  for (const i of activePlot) {
+    var p = data[i];
+    if (!p) continue;
+    var n = resolveSelection(p, sel, rctx.hidden);
+    if (n == null) continue;
+    var plugin = registry.get(p.type);
+    var fade = fadeOf(p);
+    if (fade < 1) rctx.c.globalAlpha = fade;
+    plugin.highlight(p, n, sel.key, scaledCtx(rctx, vscaleOf(p)), 'outline');
+    if (fade < 1) rctx.c.globalAlpha = 1;
+  }
 }
 
 export function seriesColor(i, t) {
@@ -396,8 +447,8 @@ function withAlpha(color, t) {
   return color;
 }
 
-function highlight_multibar(plot, n, item, rctx) {
-  var { c, X, Y, ppms, ppv } = rctx;
+function highlight_multibar(plot, n, item, rctx, mode) {
+  var { c, X, Y, ppms, ppv, margin, plotWidth } = rctx;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   // The same geometry the draw pass used for this slot. A highlight at full
@@ -415,9 +466,24 @@ function highlight_multibar(plot, n, item, rctx) {
     var down = dirs && dirs[i] === 'down';
     var v = bar * k;
     if (i === item) {
-      c.fillStyle = resolveColor(plot, i, 0.8);
-      if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
-      else      c.fillRect(x, Y(heightUp),    barWidth, -ppv * v);
+      if (mode === 'outline') {
+        // The same clip the draw pass applies: a selection whose slot is
+        // scrolled out of the viewport paints no outline at all, rather than
+        // one that reaches into the margins.
+        if (x + barWidth < margin.left || x > margin.left + plotWidth) return;
+        // 1px outside the bar's own rect: a stroke centred on the edge would
+        // eat half of the ink it frames, 1px inside would sit on the fill.
+        c.lineWidth = 2;
+        c.strokeStyle = (rctx.colors && rctx.colors.selection) || '#2f6fd0';
+        var top, h;
+        if (down) { top = Y(-heightDown);  h = ppv * v; }
+        else      { top = Y(heightUp + v); h = ppv * v; }
+        c.strokeRect(x - 1, top - 1, barWidth + 2, h + 2);
+      } else {
+        c.fillStyle = resolveColor(plot, i, 0.8);
+        if (down) c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
+        else      c.fillRect(x, Y(heightUp),    barWidth, -ppv * v);
+      }
       return;
     }
     if (down) heightDown += v;

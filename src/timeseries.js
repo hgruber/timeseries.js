@@ -11,7 +11,7 @@ import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
          plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType, isStackedType,
          isCumulativeType, waterfallLevels, isLanedType, layoutPlot,
-         ladderPairs } from './renderers.js';
+         ladderPairs, drawSelection as _drawSelection, resolveSelection } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 // Loading the module also registers the `gantt` renderer, which is why this
 // import may never be dropped. layoutSpans is no longer called for gantt itself
@@ -113,6 +113,7 @@ var DEFAULT_COLORS = {
   versionMark: '#5a94c8',                    // accent half of the versionMark watermark
   nowLine:     'rgba(210,0,0,0.65)',          // the now indicator line
   future:      'rgba(150,150,150,0.28)',      // fog-of-future overlay
+  selection:   '#2f6fd0',                     // persistent selection outline (drawSelection)
   stripMs:     ['rgba(235,235,235,0.55)', 'rgba(190,190,190,0.55)'],
   stripSecond: ['rgba(255,255,215,0.55)', 'rgba(255,255,165,0.55)'],
   stripMinute: ['rgba(215,255,215,0.55)', 'rgba(165,240,165,0.55)'],
@@ -480,6 +481,14 @@ export default function TimeSeries(options) {
   // as blocks scroll in and out. Handed to renderers through rctx.hidden and
   // honoured by the y-axis extent, so hiding a tall series rescales the axis.
   var hiddenSeries = new Set();
+  // The one persistent selection, if any: { slotSec, key } — seconds-epoch of the
+  // bin start plus the series id exactly as a click handed it back (underscore
+  // prefix included). Both are stable identities across refetches and polls,
+  // unlike the plot index and slot index a click also carries. Stale on purpose:
+  // drawSelection() decides per frame whether the referenced bar still exists
+  // and is visible, so a selection whose data scrolled out simply paints
+  // nothing and comes back when the data does.
+  var _selection = null;
   var seriesChangeHandlers = [];
   function notifySeriesChange() {
     for (const f of seriesChangeHandlers) f();
@@ -1602,11 +1611,12 @@ export default function TimeSeries(options) {
     now = Date.now();
     c.clearRect(0, 0, canvas.width, canvas.height);
     prepare_grid(); // must run before rctx is built: recalculates ppms, ppv, ppv, mspp
-    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight, hidden: hiddenSeries };
+    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight, hidden: hiddenSeries, colors: settings.colors };
     background();
     watermark();
     yAxis();
     _plotData(activePlot, data, rctx);
+    if (_selection) _drawSelection(activePlot, data, rctx, _selection);
     versionMark();
     weekNumbers();
     frame();
@@ -3428,6 +3438,51 @@ export default function TimeSeries(options) {
     notifySeriesChange();
   };
 
+  // ── Selection ────────────────────────────────────────────────────────────────
+  // One persistent selection, drawn by drawSelection() on every frame. The
+  // identity is (slotSec, key) — bin start in epoch seconds plus the series id
+  // exactly as onClickDataCallback hands it back — because both survive
+  // refetches, polls and zoom, unlike the plot/slot indices a click also
+  // carries. The state is deliberately NOT validated away when it cannot be
+  // resolved: a bar that scrolled out of the viewport, was hidden via the
+  // legend, sits in the underlaid block of a resolution cross-fade, or
+  // disappeared after a filter change simply paints no outline; when the data
+  // comes back the outline returns with it. getSelection().resolved tells the
+  // host whether the last frame actually drew it.
+  //
+  // Only renderers with a highlight hook honour a selection (today: multibar).
+  // Hosts wanting an outline on another type register their own renderer or
+  // draw their own marker.
+  this.setSelection = function (sel) {
+    if (sel == null) return this.clearSelection();
+    _selection = {
+      slotSec: +sel.slotSec,
+      key: String(sel.key),
+    };
+    plotAll();
+  };
+  this.getSelection = function () {
+    if (!_selection) return null;
+    var out = { slotSec: _selection.slotSec, key: _selection.key, resolved: false };
+    // interval of the block that last resolved, for host-side display only —
+    // not a match criterion (a slot from another tier is almost never exactly
+    // aligned, which is exactly how a tier switch hides the selection).
+    for (var i = 0; i < activePlot.length; i++) {
+      var p = data[activePlot[i]];
+      if (p && resolveSelection(p, _selection, hiddenSeries) != null) {
+        out.interval = p.interval;
+        out.resolved = true;
+        break;
+      }
+    }
+    return out;
+  };
+  this.clearSelection = function () {
+    if (!_selection) return;
+    _selection = null;
+    plotAll();
+  };
+
   // Fires after the hidden set changes. Note it does NOT fire when new data
   // arrives with previously unseen series — poll getSeries() after pushing, or
   // call it from your own source's callback. Returns an unsubscribe closure
@@ -3652,6 +3707,7 @@ TimeSeries.themes = {
     legendTitle:   '#ccc',
     legendMuted:   '#888',
     legendHover:   'rgba(255,255,255,0.10)',
+    selection:   '#7cb8ff',
   },
 
   // ── High contrast (WCAG-friendly) ────────────────────────────────────────
@@ -3689,6 +3745,7 @@ TimeSeries.themes = {
     legendTitle:   '#000000',
     legendMuted:   '#333333',
     legendHover:   '#eeeeee',
+    selection:   '#0050c8',
   },
 
   // ── Warm (amber / sepia) ─────────────────────────────────────────────────
@@ -3726,5 +3783,6 @@ TimeSeries.themes = {
     legendTitle:   '#7a4b12',
     legendMuted:   '#b08040',
     legendHover:   'rgba(160,110,60,0.12)',
+    selection:   '#a05a10',
   },
 };

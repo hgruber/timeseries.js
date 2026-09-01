@@ -102,6 +102,8 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
   `websocket` and `duckdb-wasm` adapters
 - **Opt-in tooltip & legend** — one call each, themed from the palette, overridable at every
   level
+- **Persistent selection** — mark the bar a detail panel refers to with one call; the
+  outline survives refetches, polls and zoom, and repaints only while the bar is visible
 - **Plugin architecture** — register your own renderers and sources without touching the
   library
 - **Four themes** — light, dark, high-contrast and warm, swappable at runtime
