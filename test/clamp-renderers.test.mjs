@@ -3,17 +3,16 @@
 // The ink policy is split by family:
 //   • bars (multibar): the crossing segment clamps at the limit, the SHAFT
 //     tops out CLAMP_HEAD (9) px below the plot edge (pixel-clamped, not
-//     value-clamped), the hatch section runs from the shaft line to Y(bulk),
-//     and the crossing series' arrowhead touches the edge (apex at the edge,
-//     base CLAMP_HEAD px inward, at x + barWidth/2).
+//     value-clamped), and the crossing series' arrowhead touches the edge
+//     (apex at the edge, base CLAMP_HEAD px inward, at x + barWidth/2).
 //   • the point family (scatter, multipoint) draws a clamped marker as the
 //     arrow's shaft: CLAMP_HEAD + r px below the edge, apex at the edge.
 //   • glyphs (error-bars, candlestick, ohlc) clamp at the limit via clampY: a
 //     cut value sits at the shaft line; an arrow with apex at the edge marks it.
 //   • the line/area family (multiline, stackarea, quantile-bands, quantile-
 //     steps) draws through the TRUE values — a clamped vertex/band/ribbon
-//     leaves the plot box upward; only the axis clamps, so no ink code, no
-//     marks, no hatch at all.
+//     leaves the plot box upward; only the axis clamps, so no ink code and
+//     no marks at all.
 // Draws are deterministic (same input -> same recorded calls) and no draw here
 // uses ctx.clip() — the recorder records it, so that is asserted rather than
 // implied by "the draw did not throw".
@@ -32,7 +31,7 @@ import { installDOM } from './helpers/dom.mjs';
 
 installDOM();
 
-const { plotData, highlight, layoutPlot, clampHatch, CLAMP_HEAD_PX } =
+const { plotData, highlight, layoutPlot, CLAMP_HEAD_PX } =
   await import('../src/renderers.js');
 
 // ── A recording 2D context ──────────────────────────────────────────────────
@@ -125,33 +124,18 @@ test('multibar: the shaft tops out at the head line and the arrowhead touches th
   const calls = draw(barPlot({ _clamped: clOf() }));
   // Slot 0 draws both segments whole (the shaft rule only moves a segment that
   // would reach the edge); slot 1: a is truncated — the shaft tops out at the
-  // shaft line (y = 9) — and b, past the limit, is skipped entirely.
+  // shaft line (y = 9) — and b, past the limit, is skipped entirely. No hatch:
+  // the arrowhead alone marks the truncation.
   assert.deepEqual(fillRects(calls), [
     [0, 60, 100, 40],
     [0, 20, 100, 40],
     [100, 9, 100, 91],
-    // The hatch section: from the shaft line down to the bulk line Y(40) = 20.
-    [100, 9, 100, 11],
   ]);
   // The shaft never reaches into the head: no bar fillRect above the shaft
   // line on the up side.
   for (const r of fillRects(calls)) {
     assert.ok(r[1] >= CLAMP_HEAD_PX, 'bar rect above the shaft line: ' + r);
   }
-  // The hatch segments live between the shaft line and the bulk line; the
-  // slice stops before the arrowhead, whose apex sits at the edge.
-  const iHatch = lastOp(calls, 'fillRect');
-  const iMark = lastOp(calls, 'fill');
-  const segs = path(calls.slice(iHatch, iMark - 3));
-  assert.ok(segs.length > 0, 'the hatch drew its two diagonal families');
-  for (const s of segs) {
-    const [x, y] = s.replace(/^(moveTo|lineTo) /, '').split(',').map(Number);
-    assert.ok(x >= 100 && x <= 200, 'hatch x ' + x);
-    assert.ok(y >= 9 && y <= 20, 'hatch y ' + y);
-  }
-  assert.ok(calls.slice(iHatch, iMark).some(k => k.op === 'stroke'),
-            'the hatch strokes its diagonals');
-  assert.match(calls[iHatch].fill, /0\.25\)/, 'translucent wash in the series colour');
 });
 
 test('multibar: the arrowhead is drawn with its apex at the plot edge', () => {
@@ -538,12 +522,6 @@ test('every draw here is deterministic: same input, same recorded calls', () => 
     candlePlot({ _clamped: clOf() }),
   ];
   for (const plot of plots) assert.deepEqual(draw(plot), draw(plot));
-  // The hatch helper itself: same input → same recorded calls.
-  const h1 = recorder();
-  const h2 = recorder();
-  clampHatch(h1.c, 100, 9, 20, 100, '#abc', '#def');
-  clampHatch(h2.c, 100, 9, 20, 100, '#abc', '#def');
-  assert.deepEqual(h1.calls, h2.calls);
 });
 
 test('no draw here uses ctx.clip()', () => {

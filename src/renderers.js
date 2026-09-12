@@ -248,10 +248,9 @@ function partialAt(plot, n) {
 // every drawn value past `limit` IS an outlier and everything at or under
 // `bulk` is not — the interval between the two is empty by construction.
 
-// Hatch spacing, marker size and the arrowhead height, in px. Drawing style,
-// not axis math, so they stay module constants; promote them to settings only
-// if the tuning page shows they must scale with plot height.
-const CLAMP_HATCH = 5;
+// Arrowhead geometry, in px. Drawing style, not axis math, so these stay
+// module constants; promote them to settings only if the tuning page shows
+// they must scale with plot height.
 const CLAMP_HEAD = 9;   // the arrowhead's height; the shaft tops out here
 const CLAMP_MARK = 6;   // the arrowhead's half-width at its base
 export const CLAMP_HEAD_PX = CLAMP_HEAD;
@@ -424,44 +423,6 @@ export function collectClampSamples(plot, xLo, xHi, rctx) {
     }
   }
   return { ups: ups, downs: downs };
-}
-
-/**
- * Cross-hatch overlay on the clamped section of a bar: a translucent wash in
- * the crossing series' colour plus the two diagonal line families that make the
- * truncation legible. The ink below is untouched; the overlay is what reads as
- * "clamped". Alpha lives on the colour, never on globalAlpha — that belongs to
- * the tier cross-fade.
- *
- * Deterministic: both 45° families are anchored at the section's own top-left
- * corner, so the pattern is a property of the section and reproduces exactly.
- * The segments are computed analytically (line–rect intersection), so no
- * ctx.clip() is needed — none of the chart content uses one, and this helper
- * is not going to be the first.
- */
-export function clampHatch(c, x, y0, y1, w, fillStyle, strokeStyle) {
-  var h = y1 - y0;
-  if (!(h > 0) || !(w > 0)) return;
-  c.fillStyle = fillStyle;
-  c.fillRect(x, y0, w, h);
-  c.strokeStyle = strokeStyle;
-  c.beginPath();
-  // ↘ family: x - y = C, anchored at the section's own top-left corner.
-  for (var d = 0; d < w + h; d += CLAMP_HATCH) {
-    var C = x + d - y0;
-    var ex = Math.max(x, C + y0), ey = ex - C;
-    var sx = Math.min(x + w, C + y1), sy = sx - C;
-    if (sx > ex) { c.moveTo(ex, ey); c.lineTo(sx, sy); }
-  }
-  // ↗ family: x + y = C.
-  for (var d2 = 0; d2 < w + h; d2 += CLAMP_HATCH) {
-    var C2 = x + y0 + d2;
-    var ex2, ey2, sx2, sy2;
-    if (C2 - x <= y1) { ex2 = x; ey2 = C2 - x; } else { ex2 = C2 - y1; ey2 = y1; }
-    if (C2 - y0 <= x + w) { sx2 = C2 - y0; sy2 = y0; } else { sx2 = x + w; sy2 = C2 - x - w; }
-    if (sx2 > ex2) { c.moveTo(ex2, ey2); c.lineTo(sx2, sy2); }
-  }
-  c.stroke();
 }
 
 /**
@@ -868,20 +829,10 @@ function multibar(plot, rctx) {
           heightUp += v;
         }
       }
-      if (crossingUp) {
-        clampHatch(c, x, margin.top + CLAMP_HEAD, Y(cl.up.bulk), barWidth,
-                   resolveColor(plot, crossingUp, 0.25),
-                   resolveColor(plot, crossingUp, 0.55));
-        clampMark(c, x + barWidth / 2, margin.top, 'up',
-                  resolveColor(plot, crossingUp, 0.9));
-      }
-      if (crossingDown) {
-        clampHatch(c, x, Y(-cl.down.bulk), margin.top + plotHeight - CLAMP_HEAD, barWidth,
-                   resolveColor(plot, crossingDown, 0.25),
-                   resolveColor(plot, crossingDown, 0.55));
-        clampMark(c, x + barWidth / 2, margin.top + plotHeight, 'down',
-                  resolveColor(plot, crossingDown, 0.9));
-      }
+      if (crossingUp) clampMark(c, x + barWidth / 2, margin.top, 'up',
+                                resolveColor(plot, crossingUp, 0.9));
+      if (crossingDown) clampMark(c, x + barWidth / 2, margin.top + plotHeight, 'down',
+                                  resolveColor(plot, crossingDown, 0.9));
     }
   }
 }

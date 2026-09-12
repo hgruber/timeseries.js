@@ -25,7 +25,7 @@ for a reader who has not seen the commits.
   `clampOutliersFactor` (default 3: an outlier is at least three times the max of the rest)
   and `clampOutliersShare` (default 0.05: at most 5 % of the visible samples may belong to
   the group). The ink follows per family: bars truncate at the edge — shaft topped out a few
-  pixels below it, arrowhead completing it, a translucent cross-hatch over the clamped
+  pixels below it, arrowhead completing it, the clamped
   section — point markers and the glyph renderers (error bars, candles, OHLC) draw just
   below the same arrowhead, and the line and area family deliberately draws through the
   TRUE values, so a clamped line visibly leaves the plot box toward the real point instead

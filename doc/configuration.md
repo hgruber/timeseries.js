@@ -98,7 +98,7 @@ Worth knowing:
   directions — see [Data formats](data-formats.md#binned-series).
 - **The ink policy is per family.** Bars truncate at the plot edge: the shaft tops out a few
   pixels below it and an arrowhead — apex touching the edge — completes the arrow, with a
-  cross-hatch over the clamped section. Point and glyph renderers draw their marker or
+  Point and glyph renderers draw their marker or
   whisker just below the same arrowhead. The line and area family deliberately does neither:
   it draws through the **true** values, so the line visibly leaves the plot box toward the
   real point — connecting to a flattened vertex would falsify the slope and lie about where

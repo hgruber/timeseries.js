@@ -232,7 +232,7 @@
         },
         {
           id: 'extreme', family: 'multibar', title: 'Extreme — 10× outlier',
-          note: '10× the bulk. Clamps at the defaults: the bulk sits at 80 % of the plot height (limit = bulk / 0.8), the shaft tops out 9 px below the edge and the arrowhead completes it — apex at the edge. The hatch spans from the bulk line to the shaft. The tooltip is attached here.',
+          note: '10× the bulk. Clamps at the defaults: the bulk sits at 80 % of the plot height (limit = bulk / 0.8), the shaft tops out 9 px below the edge and the arrowhead completes it — apex at the edge. The tooltip is attached here.',
           sources: function () {
             return [binned('multibar', withStackOutliers(['a', 'b', 'c'], 'a',
               [{ slot: S_LO, total: 10 * BULK }]))];
@@ -240,7 +240,7 @@
         },
         {
           id: 'multiline', family: 'multiline', title: 'Multiline — extreme outlier',
-          note: 'One vertex of series a at 10× its own bulk: the line family draws through the TRUE value — the line leaves the plot box upward toward the real point, no hatch, no arrow.',
+          note: 'One vertex of series a at 10× its own bulk: the line family draws through the TRUE value — the line leaves the plot box upward toward the real point, no arrow.',
           sources: function () {
             return [binned('multiline', withOutliers(['a', 'b'],
               [{ slot: S_LO, key: 'a', value: 10 * MAXA }]))];
@@ -272,7 +272,7 @@
         },
         {
           id: 'negative', family: 'multibar', title: 'Negative — mirrored outliers',
-          note: 'series_directions { c: "down" }, with c at 10× and 6× of the down-direction bulk (a down series carries a positive magnitude — the direction decides where it draws): the clamp mirrors below zero — shaft 9 px above the bottom edge, arrowhead apex at the edge, hatch included.',
+          note: 'series_directions { c: "down" }, with c at 10× and 6× of the down-direction bulk (a down series carries a positive magnitude — the direction decides where it draws): the clamp mirrors below zero — shaft 9 px above the bottom edge, arrowhead apex at the edge.',
           sources: function () {
             return [binned('multibar', withOutliers(['a', 'b', 'c'],
               [{ slot: S_LO, key: 'c', value: 10 * DOWNS }, { slot: 8, key: 'c', value: 6 * DOWNS }]),
@@ -289,7 +289,7 @@
         },
         {
           id: 'stackarea', family: 'stackarea', title: 'Stackarea — outlier',
-          note: 'One band pushes the stack total 10× past the bulk: stackarea is now LINE family — the band edge draws through the TRUE value and leaves the plot box upward. No hatch, no arrow, only the axis clamps.',
+          note: 'One band pushes the stack total 10× past the bulk: stackarea is now LINE family — the band edge draws through the TRUE value and leaves the plot box upward. No arrow, only the axis clamps.',
           sources: function () {
             return [binned('stackarea', withStackOutliers(['a', 'b'], 'b',
               [{ slot: S_LO, total: 10 * BULK2 }]))];
@@ -310,7 +310,7 @@
         },
         {
           id: 'qbands', family: 'quantile-bands', title: 'Quantile bands — outlier',
-          note: 'One bin 10× the bulk: the band family draws through the TRUE rungs — the band leaves the plot box upward toward the real point, no hatch, no arrow. Same ladder caveat as error-bars: 5 rungs per bin, so detection needs share ≥ ~2 %.',
+          note: 'One bin 10× the bulk: the band family draws through the TRUE rungs — the band leaves the plot box upward toward the real point, no arrow. Same ladder caveat as error-bars: 5 rungs per bin, so detection needs share ≥ ~2 %.',
           sources: function () {
             var d = ladderData();
             for (var q = 0; q < 5; q++) d[S_LO].load[q] = 10 * LAD_TOP * (0.96 + 0.01 * q);

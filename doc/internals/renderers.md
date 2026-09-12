@@ -280,7 +280,7 @@ per family, and the split is deliberate:
 
 | Family | Treatment |
 |---|---|
-| `multibar` | Segments clamp at `limit`; the **shaft rule** — the drawn bar tops out `CLAMP_HEAD` (9 px) below the plot edge, the `clampMark` arrowhead completes it with its apex touching the edge and its base exactly on the shaft line, so the shaft never reaches into the head. The series straddling the limit carries the `clampHatch` overlay, from the bulk line to the shaft line. `highlight_multibar` frames the shaft as drawn, not as stored |
+| `multibar` | Segments clamp at `limit`; the **shaft rule** — the drawn bar tops out `CLAMP_HEAD` (9 px) below the plot edge, the `clampMark` arrowhead completes it with its apex touching the edge and its base exactly on the shaft line, so the shaft never reaches into the head. `highlight_multibar` frames the shaft as drawn, not as stored |
 | `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | **The ink is untouched — on purpose.** Lines, bands and ribbons draw through the TRUE values; a clamped vertex/band leaves the plot box upward toward the real point, a riser rises straight past the edge. No hatch, no arrow, no `clampY` |
 | `multipoint`, `scatter` | The marker is the arrow's shaft: it sits `CLAMP_HEAD + r` below the edge, the `clampMark` arrowhead's apex touches the edge with its base exactly at the marker's top |
 | `error-bars`, `candlestick`, `ohlc` | Whisker/wick/body/median tick clamped via `clampY` — a cut value sits at the shaft line, just below the arrowhead whose apex touches the edge. Hatch would make no sense on a hairline whisker, so the glyph families carry the arrow alone |
@@ -317,18 +317,10 @@ per family, and the split is deliberate:
   pass. Note a ladder block's **rungs count as individual samples**: five rungs per bin
   means five contiguous top samples, so the share has to let a group that wide through —
   5 divided by the visible samples, ~2 % for a 48-bin window.
-- **`clampHatch(c, x, y0, y1, w, fill, stroke)` is the bars' second mark**: a translucent
-  wash in the crossing series' colour plus two ±45° line families, spanning the clamped
-  section from the bulk line to the shaft line. It is deterministic — both families are
-  anchored at the section's own top-left corner — so the same record paints the same
-  pattern every frame and every test run. Bars are the only family that gets it: an area or
-  a band has no flat section to hatch once the ink is left unclamped, and a hairline
-  whisker has nothing to hatch *on*.
 - **Alpha lives on the colour, never on `globalAlpha`** — that belongs to the tier
   cross-fade, and writing it inside a renderer cancels the dissolve (the `horizon` rule,
-  now twice over). And **no `ctx.clip()`**: the hatch segments are computed analytically
-  (line–rect intersection), so the overlay needs no clip state — none of the chart content
-  uses one, and this helper is not going to be the first.
+  now twice over). And **no `ctx.clip()`**: no chart content uses one, and none of this
+  is going to be the first.
 - **Why `waterfall` and the laned family are excluded, not merely unsupported.** Clamping a
   cumulative block would detach a bar from the running total and shift the base of every
   later bar — the drawn chart would stop being a waterfall. A laned block's axis is

@@ -247,10 +247,10 @@ markers hit-tested at their drawn position — the off invariant pinned per shap
 settings validation, and the tooltip's `▲ clamped to axis` hint row),
 `test/clamp-renderers.test.mjs` (outlier clamping, renderer side, as paint assertions on a
 recording context: per family — the bars' shaft stopping `CLAMP_HEAD` px short of the plot
-edge with the arrowhead completing it and the hatch spanning bulk line to shaft, the glyph
+edge with the arrowhead completing it, the glyph
 markers sitting at the shaft line under the arrow, the line/area family drawing through the
 TRUE values with no marks at all, `highlight_multibar` framing the bar as it was *drawn*,
-the excluded families ignoring a clamp record entirely, the deterministic hatch, and the
+the excluded families ignoring a clamp record entirely, and the
 no-`ctx.clip()` invariant),
 and `test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/

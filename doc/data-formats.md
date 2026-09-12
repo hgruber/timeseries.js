@@ -396,10 +396,10 @@ and how each marks the truncation:
 
 | Renderer | Clamps? | What the ink does |
 |---|:--:|---|
-| `multibar` | ✓ | Segments clamp at the plot edge: the shaft tops out a few pixels below it, an **arrowhead** whose apex touches the edge completes the arrow, and a semi-transparent **cross-hatch** spans the clamped section — from the bulk line down to the shaft — in the colour of the straddling series |
+| `multibar` | ✓ | Segments clamp at the plot edge: the shaft tops out a few pixels below it and an **arrowhead** whose apex touches the edge completes the arrow, in the colour of the straddling series |
 | `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | ✓ (axis only) | The ink is **not** clamped: the line, bands and ribbons draw through the **true** values, so a clamped vertex or band leaves the plot box toward the real point — connecting to a flattened one would falsify the slope. A riser rises straight past the box edge |
 | `multipoint`, `scatter` | ✓ | The marker is the arrow's shaft: it sits just below an **arrowhead** whose apex touches the plot edge and never reaches into it |
-| `error-bars`, `candlestick`, `ohlc` | ✓ | Whisker / wick / body flatten just below the **arrowhead** (apex at the edge). Hatch would make no sense on a hairline whisker, so the glyph families carry the arrow alone |
+| `error-bars`, `candlestick`, `ohlc` | ✓ | Whisker / wick / body flatten just below the **arrowhead** (apex at the edge); the glyph families carry the arrow alone |
 | `waterfall` | — | Clamping a delta detaches the bar from the running total and shifts later bars' bases |
 | `heatmap`, `horizon`, `gantt` | — | Categorical lane axis — no magnitude to squash; heatmap/horizon's colour scale stays pinned by `vmin`/`vmax` |
 
