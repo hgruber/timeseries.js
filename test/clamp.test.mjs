@@ -524,6 +524,71 @@ test('the rate axis scales the clamped axis entry like any other', async () => {
   assert.ok(Math.abs(ymax - 37.5 * (60 / 3600)) < 1e-9, 'ymax ' + ymax);
 });
 
+// ── 6b. The axis has the last word ───────────────────────────────────────────
+//
+// `limit = bulk / bulkFrac` is what detection *proposes* for the axis, and on
+// a chart with one block that is what the axis becomes. As soon as a second
+// block shares it, the number that comes out is a blend — of the two tiers in
+// a cross-fade, and of the two tallest entries by coverage — and every
+// consumer of the record means the value AT the plot edge, not the proposal.
+// So prepare_grid re-stamps `limit` with the edge once the axis is settled.
+// Both directions of the disagreement were visible before it did.
+
+// A flat block with no outlier group of its own, so it contributes its plain
+// max to the axis and never gets a record. A *different* type from barSource
+// on purpose: two overlapping blocks of one type are concatenated into one
+// (addData), and the point here is two blocks sharing one axis.
+function flatSource(value, count) {
+  const data = {};
+  for (let i = 0; i < count; i++) data[i] = { a: value };
+  return {
+    'source-type': 'artificial', type: 'multiline', name: 'flat',
+    interval_start: START, interval: 3600, count: count,
+    interval_end: START + count * 3600, data, min: 0, max: 999,
+  };
+}
+
+test('a taller neighbour lifts the limit to the plot edge', async () => {
+  // The clamped block proposes 37.5; the flat one runs at 100 and has no
+  // outlier group, so the axis ends at 100. Left at 37.5 the record would cut
+  // ink — and hang an arrowhead — over every value between 37.5 and 100, all
+  // of them comfortably inside the box.
+  const ts = await build([barSource({}, [5]), flatSource(100, SLOTS)],
+                         { clampOutliers: true });
+  assert.equal(ts.getValueRange().ymax, 100);
+  assert.deepEqual(ts.getActiveData()[0]._clamped,
+                   { up: { bulk: 30, limit: 100 }, down: null });
+});
+
+test('a coverage-weighted blend drops the limit to the plot edge', async () => {
+  // The mirror image, and the shape the resolution cross-fade produces: the
+  // clamped block covers a tenth of the viewport, the flat one all of it, so
+  // the ratio-weighted blend lands the axis at 13.4375 — well below the
+  // proposed 37.5. Left at 37.5, everything between the two leaves the box
+  // unmarked, and the marks that do get drawn sit at an x their ink left long
+  // before.
+  const view = [START * 1000, (START + 10 * SLOTS * 3600) * 1000];
+  const ts = await build([barSource({}, [5]), flatSource(10, 10 * SLOTS)],
+                         { clampOutliers: true }, view);
+  const ymax = ts.getValueRange().ymax;
+  assert.ok(Math.abs(ymax - 13.4375) < 1e-9, 'ymax ' + ymax);
+  assert.deepEqual(ts.getActiveData()[0]._clamped,
+                   { up: { bulk: 30, limit: ymax }, down: null });
+});
+
+test('the limit still equals the edge when the axis is rate-scaled', async () => {
+  // The entry was pushed as `limit × _vscale`, so the re-stamp divides by it
+  // again — a record is in drawn value space, the axis in axis space.
+  const ts = await build([barSource({ extensive: true }, [5])],
+                         { clampOutliers: true });
+  ts.setRateUnit(60);
+  await setView(ts, START * 1000, (START + SLOTS * 3600) * 1000);
+  const r = ts.getValueRange();
+  const cl = ts.getActiveData()[0]._clamped;
+  assert.ok(Math.abs(cl.up.limit - 37.5) < 1e-9, 'limit ' + cl.up.limit);
+  assert.ok(Math.abs(cl.up.limit * (60 / 3600) - r.ymax) < 1e-9, 'ymax ' + r.ymax);
+});
+
 // ── 7. Coalescing ────────────────────────────────────────────────────────────
 
 function areaSource(startSec, dataOver, extra) {

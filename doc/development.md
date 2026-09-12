@@ -239,9 +239,11 @@ asserts `isLanedType('gantt')`, since the rework must not take the lane axis awa
 renderer it came from),
 `test/clamp.test.mjs` (outlier clamping, core side: the top-K detection at
 unit and instance level, the clamped extent overwrite — `limit = bulk / bulkFrac` at the
-plot edge — incl. its composition with the rate axis, the per-plot override in both
+plot edge — incl. its composition with the rate axis, the re-stamp that keeps `limit` on the
+axis the chart settled on when a second block shares it (in both directions: a taller
+neighbour lifting it, a coverage-weighted blend dropping it), the per-plot override in both
 directions, the clamp following the window and dissolving when the outlier's series is
-hidden, the waterfall/heatmap exclusions, the coalesced group re-deriving its state, hit
+hidden, the waterfall/heatmap exclusions, the coalesced group inheriting its state, hit
 testing — raw value plus `clamped: true`, unhittable past the plot edge, clamped point
 markers hit-tested at their drawn position — the off invariant pinned per shape, the
 settings validation, and the tooltip's `▲ clamped to axis` hint row),

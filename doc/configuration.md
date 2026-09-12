@@ -112,6 +112,12 @@ Worth knowing:
   also carries the same arrowhead at the x where its ink leaves the box, one per series
   and direction at least 14 px apart. The full table is in
   [Data formats](data-formats.md#outlier-clamping).
+- **`bulk / clampBulkFrac` is what a block *proposes* for the axis.** One block on the
+  chart gets exactly that. Several blocks share one y-axis, though, and the axis that comes
+  out is derived from all of them — including the second resolution tier of the same signal
+  while a zoom cross-fades between the two — so a clamped block may end up with more or
+  less headroom than its own 80 %. The clamp always follows the axis the chart actually
+  drew: the arrowheads mark exactly the values that left the plot box, no more and no less.
 - **`waterfall` and the laned family do not take part at all.** Clamping a waterfall's
   deltas would detach every later bar from the running total, and a laned block has no
   magnitude axis to squash.

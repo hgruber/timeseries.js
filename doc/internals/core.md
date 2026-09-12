@@ -257,6 +257,20 @@ the bulk fewer than two samples declines, and a bulk of zero has no scale to cla
   is the value **at the plot edge**, so the bulk lands at `clampBulkFrac` of the plot height
   by construction — there is no second fraction to keep consistent — and the entry composes
   with the rate axis for free, because `limit` is in value space.
+- **…but detection only *proposes* that edge; the axis has the last word, so `limit` is
+  re-stamped once the axis is settled** (`ymax / _vscale` upward, `-ymin / _vscale`
+  downward — the exact inverse of the `× _vscale` the entry was pushed with). On a chart
+  with one block the two agree and the re-stamp is a no-op. With a second block on the same
+  axis the number that comes out is a *blend*: `blendExtents` interpolates the two tiers
+  taking part in a cross-fade, and the final pick weights the two tallest entries by
+  coverage. Every consumer of the record means the value at the edge — the renderer clamps
+  its ink there, `clampMark` puts the arrowhead's apex there, the hit test calls a value
+  clamped when it passed it — so a stale proposal shows up as paint. Both directions were
+  visible: a limit *above* the blended edge let ink leave the box unmarked and then marked a
+  later, higher value at an x its ink had long left; one *below* it grew arrowheads over
+  values still comfortably inside the box. The resolution cross-fade hits this on every
+  clamped chart with two tiers, which is where it was found. `test/clamp.test.mjs` §6b pins
+  both directions.
 - **Three consumers read the record**: the extent scan (the overwrite), the renderer
   ([renderers.md](renderers.md#outlier-clamping--the-renderer-half) — which follows the
   record per family), and the hit test. The multibar hit test applies the same headroom
@@ -274,18 +288,26 @@ the bulk fewer than two samples declines, and a bulk of zero has no scale to cla
   and the slope alone would not always reveal the cut — a near-vertical riser or a
   staircase hides it ([renderers.md](renderers.md#outlier-clamping--the-renderer-half)
   has the full reasoning).
-- **Culling is by pixels, not timestamps, on purpose.** `coalesceBlocks` re-derives the
-  merged block's clamp state from inside `plotData`, where the timestamps are not reachable
-  but `rctx` is; `X(tmin)` is `margin.left` and `X(tmax)` is `margin.left + plotWidth`, so
-  the pixel window the two callers pass agrees by construction. The right-edge comparison is
-  `>=` (`g.x0 >= xHi`) deliberately: the extent scan measures a slot only while
-  `slotTime < tmax`, and `xHi` is `X(tmax)`, so an exactly-on-`tmax` slot must not be
-  sampled either — a clamp on an unmeasured bin would disagree with the axis.
-- **`coalesceBlocks` re-derives the merged block's clamp state from the merged data** rather
-  than carrying a member's `_clamped` over: `max(limitᵢ)` would crush a non-clamping
-  sibling's genuine values down to the other block's limit. The group is clamped when any
-  member is, so the merged draw matches what its blocks drew — the mirror image of the
-  `_partial` rebasing, which *must* carry because the record belongs to one slot.
+- **Culling is by pixels, not timestamps, on purpose.** `collectClampSamples` takes a pixel
+  window because it is also reachable from inside `plotData`, where the timestamps are not
+  reachable but `rctx` is; `X(tmin)` is `margin.left` and `X(tmax)` is
+  `margin.left + plotWidth`, so the pixel window every caller passes agrees by construction.
+  The right-edge comparison is `>=` (`g.x0 >= xHi`) deliberately: the extent scan measures a
+  slot only while `slotTime < tmax`, and `xHi` is `X(tmax)`, so an exactly-on-`tmax` slot
+  must not be sampled either — a clamp on an unmeasured bin would disagree with the axis.
+- **`coalesceBlocks` *inherits* its members' record rather than re-deriving one from the
+  merged data.** Detection ran per block and it is the per-block result the axis was built
+  from; a merged re-derivation reads a different sample set (each block covers only its own
+  stretch of the window, so `K = ⌊share × n⌋` lands elsewhere) and would clamp the ink at a
+  limit the axis never adopted — arrowheads over values still inside the box, the same
+  defect the re-stamp above fixes. Carrying a member's `limit` over is exact rather than a
+  compromise now that it *is* the axis edge: every block on the axis shares that edge, and a
+  coalesced group shares an interval (the coalesce key carries it) and so a `_vscale` too.
+  The group is clamped when any member is — which is what a member holding a record means —
+  and a sibling whose own detection declined is drawn under the same edge, which is the
+  honest rendering: past the edge is off-canvas either way, and the two halves of one drawn
+  line cannot follow two policies. The mirror image of the `_partial` rebasing, which *must*
+  be recomputed because the record belongs to one slot.
 - **The stale-record reset mirrors `_partial`'s**: `_clamped` is deleted for every block
   that ever had one, each frame, so a runtime toggle of the per-plot flag cannot leave a
   record behind. Only blocks that had one are touched — a chart that never clamps sees no

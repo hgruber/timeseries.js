@@ -31,6 +31,19 @@ for a reader who has not seen the commits.
   "just below the threshold" control card moved from 2.9× to 2.8× so it keeps testing
   the no-clamp side of the new threshold.
 
+- **Clamp marks now sit on the axis the chart actually drew.** The clamp line a block
+  proposes (`bulk / clampBulkFrac`) is only the *proposed* plot edge: as soon as a second
+  block shares the axis — above all the two resolution tiers of a signal mid-cross-fade —
+  the edge that comes out is a blend of both, and the ink was still being cut, and the
+  arrowheads still placed, at the proposal. On a clamped chart in the fade band that showed
+  as arrowheads over spikes that plainly stayed inside the plot box, next to spikes that
+  ran out of the box with no arrow at all. The record is now re-stamped with the settled
+  axis edge, so "past the limit" and "outside the box" mean the same thing again for the
+  renderer, the arrowheads and the hit test. A chart with a single block is unaffected —
+  there the proposal *is* the edge. Coalesced fetch blocks inherit their members' record
+  instead of re-deriving one from the merged data, which had the same defect: the merged
+  sample set is not the one the axis was built from.
+
 ### Changed
 
 - **Outlier clamping marks the line and area family too.** `multiline`, `stackarea`,

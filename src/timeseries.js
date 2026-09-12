@@ -373,11 +373,12 @@ export default function TimeSeries(options) {
         settings[key] = value;
     }
   }
-  // Normalise the clamping constants once, here: the params object is shared
-  // with the renderer module through rctx.clamp (coalesceBlocks has no access
-  // to the settings object), and an invalid combination would otherwise put a
-  // NaN or an inverted fraction on the axis. Same spirit as setFadeBand()'s
-  // `0 < lo < hi` rejection — warn and fall back to the defaults.
+  // Normalise the clamping constants once, here: the params object is what
+  // every detection pass is handed (and what rctx.clamp exposes to the
+  // renderer module, which has no access to the settings object), and an
+  // invalid combination would otherwise put a NaN or an inverted fraction on
+  // the axis. Same spirit as setFadeBand()'s `0 < lo < hi` rejection — warn
+  // and fall back to the defaults.
   var _clampParams = null;
   if (settings.clampBulkFrac <= 0 || settings.clampBulkFrac >= 1
       || !(settings.clampOutliersFactor > 1)
@@ -2742,6 +2743,33 @@ export default function TimeSeries(options) {
     } else if (ymin_array.length === 1) _downMax = ymin_array[0][1];
     ymin = -_downMax;
 
+    // Outlier clamping: the axis has the last word. Detection stamps
+    // `limit = bulk / bulkFrac` and pushes it as this block's axis entry, but
+    // the number that comes out above is a *blend* — of the two tiers taking
+    // part in a cross-fade (blendExtents), and of the two tallest entries by
+    // coverage — so a clamped block's own limit is not where the plot edge
+    // ends up, and it is the edge that every consumer means: the renderer
+    // clamps its ink there, `clampMark` puts the arrowhead's apex there, and
+    // the hit test calls a value clamped when it passed it. Re-stamp each
+    // surviving record with the value AT the edge — `ymax / _vscale` upward,
+    // `-ymin / _vscale` downward, the exact inverse of the `× _vscale` the
+    // entry was pushed with — so the three agree again by construction.
+    //
+    // Left un-stamped, both directions of the disagreement are visible:
+    // a limit *above* the blended edge lets ink leave the box unmarked (and
+    // then marks a later, higher value at an x its ink had long left), one
+    // *below* it grows arrowheads over values that are still comfortably
+    // inside the box and were never cut at all.
+    if (ymax > 0 || ymin < 0)
+      for (var _ci = 0; _ci < activePlot.length; _ci++) {
+        var _cplot = data[activePlot[_ci]];
+        var _ccl = _cplot && _cplot._clamped;
+        if (!_ccl) continue;
+        var _cvs = _cplot._vscale || 1;
+        if (_ccl.up)   _ccl.up.limit   = ymax / _cvs;
+        if (_ccl.down) _ccl.down.limit = -ymin / _cvs;
+      }
+
     ygrid = [];
     // A laned plot labels its axis with lane names at row centres, not numeric
     // ticks — row indices carry no quantity worth printing. Only honoured when
@@ -3484,11 +3512,11 @@ export default function TimeSeries(options) {
   // panSnap does: set/get/toggle, and toggle hands back the state now in force
   // so a host's own button can relabel itself without a second read.
   //
-  // BOTH fields have to move together. clampModeOf() reads settings.clampOutliers
-  // for the per-plot decision, while mergeGroup() (renderers.js) reads
-  // rctx.clamp.on for a group's merged block — and rctx.clamp *is* _clampParams
-  // (see plotAll). Setting only one leaves grouped blocks disagreeing with
-  // ungrouped ones about whether the feature is on at all.
+  // BOTH fields move together. clampModeOf() reads settings.clampOutliers for
+  // the per-plot decision; `on` is the same answer carried on the params
+  // object that rctx.clamp hands the renderer module (rctx.clamp *is*
+  // _clampParams — see plotAll), so a reader on that side cannot be told the
+  // feature is on while the detection pass has it off.
   //
   // Nothing needs clearing beyond that: prepare_grid deletes a stale
   // plot._clamped on every pass before re-deriving it, so one plotAll() is the

@@ -470,11 +470,17 @@ test('heatmap ignores a clamp record: identical paint with and without it', () =
 
 // ── coalescing ──────────────────────────────────────────────────────────────
 
+// The record prepare_grid stamps on the member whose detection fired: the
+// merged stack totals are [30, 30, 30, 320, 30], so bulk = 30 and the axis
+// edge — which is what the limit is re-stamped with — is 30 / 0.8.
+const coalCl = () => ({ up: { bulk: 30, limit: 30 / 0.8 }, down: null });
+
 test('a coalesced clamping group still draws the TRUE band edges and the mark', () => {
-  // Two abutting fetch blocks of one signal; the outlier in the newer one. The
-  // merged block re-derives its clamp state from the merged data, so the merged
-  // draw carries the same arrowhead a hand-merged block would: the crossing
-  // band's mark at the outlier's x, on ink that stays TRUE either way.
+  // Two abutting fetch blocks of one signal; the outlier in the newer one, so
+  // that is the member prepare_grid stamps. The merged block INHERITS that
+  // record — it does not re-derive one — so the merged draw carries the same
+  // arrowhead a hand-merged block would: the crossing band's mark at the
+  // outlier's x, on ink that stays TRUE either way.
   const b1 = {
     type: 'stackarea', name: 's', interval: 100, interval_start: 0,
     data: { 0: { a: 10, b: 20 }, 1: { a: 10, b: 20 }, 2: { a: 10, b: 20 } },
@@ -483,7 +489,7 @@ test('a coalesced clamping group still draws the TRUE band edges and the mark', 
   const b2 = {
     type: 'stackarea', name: 's', interval: 100, interval_start: 300,
     data: { 0: { a: 300, b: 20 }, 1: { a: 10, b: 20 } },
-    clampOutliers: true,
+    clampOutliers: true, _clamped: coalCl(),
   };
   const { c, calls } = recorder();
   const rctx = rctxCl(c);
@@ -514,12 +520,12 @@ test('a coalesced group draws identically to the same block merged by hand', () 
   const b2 = {
     type: 'stackarea', name: 's', interval: 100, interval_start: 300,
     data: { 0: { a: 300, b: 20 }, 1: { a: 10, b: 20 } },
-    clampOutliers: true,
+    clampOutliers: true, _clamped: coalCl(),
   };
-  // The merged block, stamped by hand with the record the merge derives: the
-  // merged stack totals are [30, 30, 30, 320, 30], so bulk = arr[1] = 30 and
-  // limit = 30 / 0.8. The merged draw must be byte-identical to the coalesced
-  // group's — the mark the merged record implies is not a coalescing artifact.
+  // The merged block, stamped by hand with the record the merge inherits. The
+  // merged draw must be byte-identical to the coalesced group's — the mark the
+  // record implies is not a coalescing artifact, and the member that carries
+  // no record of its own is drawn under the very same limit.
   const merged = {
     type: 'stackarea', name: 's', interval: 100, interval_start: 0,
     data: { 0: { a: 10, b: 20 }, 1: { a: 10, b: 20 }, 2: { a: 10, b: 20 },

@@ -180,24 +180,31 @@ function coalesceBlocks(group, data, rctx) {
   if (name != null) merged.name = name;
   for (var fk2 in flags) if (flags[fk2] != null) merged[fk2] = flags[fk2];
   if (partial) merged._partial = partial;
-  // Outlier clamping: the merged block re-derives its clamp state from the
-  // merged data — NOT by carrying a member's `_clamped` over: max(limitᵢ)
-  // would crush a non-clamping sibling's genuine values down to the other
-  // block's limit. The group is clamped when any block is (the per-plot flag
-  // or the global setting), so the merged draw matches its blocks' drawn state.
-  // Re-deriving costs one O(N) pass per coalesced group, only when on.
-  if (rctx && rctx.clamp) {
-    var anyOn = false;
-    for (const ci of group) {
-      var cb = data[ci];
-      if ((cb.clampOutliers != null) ? cb.clampOutliers : rctx.clamp.on) { anyOn = true; break; }
-    }
-    if (anyOn) {
-      var cs = collectClampSamples(merged, rctx.margin.left, rctx.margin.left + rctx.plotWidth, rctx);
-      var mc = deriveClamp(cs.ups, cs.downs, rctx.clamp);
-      if (mc) merged._clamped = mc;
-    }
+  // Outlier clamping: the merged block inherits its members' record rather
+  // than re-deriving one from the merged data. Detection ran per block, and
+  // it is the per-block result that the axis was built from — a merged
+  // re-derivation reads a different sample set (each block covers only its
+  // own stretch of the window, so `K = share × n` lands elsewhere) and would
+  // clamp the ink at a limit the axis never adopted: arrowheads over values
+  // still inside the box.
+  //
+  // Carrying a member's `limit` over is exact rather than a compromise now
+  // that prepare_grid re-stamps it with the axis edge: every block on the
+  // same axis shares that edge, and a coalesced group shares an interval (the
+  // coalesce key carries it) and so a `_vscale` too. The group is clamped
+  // when any member is — which is what a member holding a record means, since
+  // a block only gets one when clamping was on for it and detection fired.
+  // A sibling whose own detection declined is then drawn clamped at the same
+  // edge, which is the honest rendering: past the edge is off-canvas either
+  // way, and the two halves of one drawn line cannot follow two policies.
+  var mUp = null, mDown = null;
+  for (const ci of group) {
+    var mc = data[ci] && data[ci]._clamped;
+    if (!mc) continue;
+    if (mc.up && !mUp) mUp = mc.up;
+    if (mc.down && !mDown) mDown = mc.down;
   }
+  if (mUp || mDown) merged._clamped = { up: mUp, down: mDown };
   return merged;
 }
 
@@ -243,7 +250,11 @@ function partialAt(plot, n) {
 // `plot._clamped = { up: {bulk, limit} | null, down: {…} | null }` (in drawn
 // value space, pre-`_vscale`, like `_partial.scale`), and three consumers read
 // it: the extent scan (the axis entry becomes bulk × stretch instead of the
-// true max), the renderer (ink clamped at `limit`) and the hit test. No slot
+// true max), the renderer (ink clamped at `limit`) and the hit test. `limit`
+// is the value AT the plot edge — detection proposes `bulk / bulkFrac` and
+// prepare_grid re-stamps it with the edge the axis actually settled on, which
+// differs as soon as a second block shares that axis — so "past `limit`" and
+// "outside the plot box" are the same statement here. No slot
 // map is needed: every drawn value past `limit` is a member of the top-K
 // outlier group (there are at most K samples above `bulk`, and `limit > bulk`),
 // everything at or under `bulk` is not. Between the two may sit up to K
@@ -301,9 +312,9 @@ function Y_of(rctx, v) { return rctx.Y(v); }
  * share))` samples are the candidate group, `bulk` is the largest value that
  * does NOT belong to it — `arr[K]` after a descending sort — and when the top
  * value exceeds factor × bulk, the axis falls to the bulk: the group clamps,
- * returning `{ bulk, limit }` with `limit = bulk / bulkFrac`, the value AT the
- * plot edge, where the arrowhead's apex touches (see doc/internals/core.md).
- * Otherwise null.
+ * returning `{ bulk, limit }` with `limit = bulk / bulkFrac` — the value this
+ * block *proposes* for the plot edge, which prepare_grid re-stamps with the
+ * edge the axis settles on (see doc/internals/core.md). Otherwise null.
  *
  * By construction up to K samples may then sit between the bulk and the limit —
  * a dense tail under a dominant spike. That is harmless: `clampValue` lets
@@ -353,11 +364,11 @@ export function deriveClamp(ups, downs, cp) {
  * and a laned block has no magnitude axis to clamp against (both exclusions
  * are pinned by test).
  *
- * Culling is by pixels, not timestamps, on purpose: `coalesceBlocks` re-derives
- * the merged block's clamp state from inside plotData, where the timestamps
- * are not reachable but rctx is. `X(tmin)` === margin.left and
- * `X(tmax)` === margin.left + plotWidth, so the two callers agree by
- * construction. `rctx` here is minimal: { X, ppms, hidden }.
+ * Culling is by pixels, not timestamps, on purpose: the window is expressible
+ * from inside plotData too, where the timestamps are not reachable but rctx
+ * is. `X(tmin)` === margin.left and `X(tmax)` === margin.left + plotWidth, so
+ * a pixel window and a timestamp window agree by construction. `rctx` here is
+ * minimal: { X, ppms, hidden }.
  */
 export function collectClampSamples(plot, xLo, xHi, rctx) {
   var ups = [], downs = [];

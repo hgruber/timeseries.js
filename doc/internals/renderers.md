@@ -275,7 +275,9 @@ Things worth knowing before touching this family:
 The core half of the feature lives in
 [core.md](core.md#outlier-clamping--plot._clamped--clampoutliers): `prepare_grid` detects the
 outlier group and stamps `plot._clamped = { up: {bulk, limit} | null, down: {…} | null }`,
-with `limit = bulk / bulkFrac` the value **at the plot edge**. The renderer's job differs
+where `limit` is the value **at the plot edge** — detection proposes `bulk / bulkFrac` and
+`prepare_grid` re-stamps it with the edge the axis actually settled on, so a renderer may
+take "past `limit`" and "outside the box" to mean the same thing. The renderer's job differs
 per family, and the split is deliberate:
 
 | Family | Treatment |
