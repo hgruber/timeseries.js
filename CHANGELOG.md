@@ -48,7 +48,7 @@ for a reader who has not seen the commits.
   picks the direction, as with the `f`/`F` and `p`/`P` follow pair. No modifier combination
   was used: `Ctrl`/`Alt`/`Meta` events are still handed to the browser untouched, so `Ctrl+F`
   and `Ctrl+P` keep working from a focused chart. The canvas `aria-label` now names the two
-  keys alongside the others.
+  keys alongside the others (`b` back through the visited windows, `B` forward again).
 
 ### Fixed
 
@@ -480,7 +480,8 @@ For anyone arriving at the project with this release, the library covers:
 - Opt-in tooltip and series-visibility legend overlays that follow the palette.
 - Four built-in themes and a fully overridable colour palette.
 
-[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.6...HEAD
+[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.7...HEAD
+[0.10.7]: https://github.com/hgruber/timeseries.js/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/hgruber/timeseries.js/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/hgruber/timeseries.js/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/hgruber/timeseries.js/compare/v0.10.3...v0.10.4
