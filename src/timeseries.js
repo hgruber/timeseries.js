@@ -309,21 +309,22 @@ export default function TimeSeries(options) {
     yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
     yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
     // Outlier clamping ("Kappung"): when on, the per-window detection
-    // (clampOne/deriveClamp, src/renderers.js) finds the contiguous top group
-    // of samples whose minimum exceeds `clampOutliersFactor` × the max of the
-    // rest, capped at `clampOutliersShare` of the visible samples. The axis is
-    // then derived from the bulk alone (bulk at clampBulkFrac of the plot
-    // height); bar- and glyph-family ink fills to the plot edge, topped by the
-    // "continues beyond" arrow whose tip touches the edge, while the line and
-    // area family draws through the TRUE values — the line visibly leaves the
-    // plot box instead of being flattened onto a fake point. A per-plot
-    // `plot.clampOutliers` (true/false) overrides in both directions.
-    // Waterfall and laned types are excluded by design — see
+    // (clampOne/deriveClamp, src/renderers.js) asks whether the top
+    // `clampOutliersShare` (5 %) of the visible samples are outliers: `bulk`
+    // is the largest value that does NOT belong to that top group, and the
+    // group clamps when the top value exceeds `clampOutliersFactor` × bulk.
+    // The axis is then derived from the bulk alone (bulk at clampBulkFrac of
+    // the plot height); bar- and glyph-family ink fills to the plot edge,
+    // topped by the "continues beyond" arrow whose tip touches the edge, while
+    // the line and area family draws through the TRUE values — the line
+    // visibly leaves the plot box instead of being flattened onto a fake
+    // point. A per-plot `plot.clampOutliers` (true/false) overrides in both
+    // directions. Waterfall and laned types are excluded by design — see
     // doc/internals/core.md. Default OFF: with it off, no detection runs and
     // nothing about the extent, the paint or the hit test changes at all.
     clampOutliers: false,      // global toggle
-    clampOutliersFactor: 3,    // F: outlier group min > F × bulk max
-    clampOutliersShare: 0.05,  // outlier group ≤ share of the visible samples
+    clampOutliersFactor: 3,    // F: the top value must exceed F × bulk
+    clampOutliersShare: 0.05,  // the candidate group is the top share of samples
     clampBulkFrac: 0.8,        // bulk max at 80 % of the plot height
     // Copied so that a per-instance override never writes through to the shared
     // DEFAULT_COLORS object.

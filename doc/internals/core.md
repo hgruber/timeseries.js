@@ -234,19 +234,24 @@ Default **off** — and the off state is an invariant, not just a default:
 **The scheme.** `collectClampSamples` (renderers.js) gathers one direction's samples per
 block — the same numbers the y-extent scan measures: stack totals for a stacked type, every
 array entry for a banded one, per-series values otherwise, hidden series excluded, a partial
-bin contributing its scaled value. `deriveClamp` → `clampOne` sorts them and looks for the
-largest **contiguous prefix from the top** with `k ≤ K = max(1, ⌊n × share⌋)` members whose
-minimum exceeds `factor` × the max of the rest; it returns `{bulk, limit}` with
-`limit = bulk / bulkFrac`. Fewer than four samples declines to mean anything, the
-bulk always keeps two samples, and a bulk of zero has no scale to clamp against.
+bin contributing its scaled value. `deriveClamp` → `clampOne` sorts them descending and asks
+whether the top value clears `factor` × `arr[K]` with `K = max(1, ⌊n × share⌋)` — `arr[K]`
+is the largest value that does NOT belong to the top share of the samples. If so, the top K
+samples are the outlier group and it returns `{bulk, limit}` with `limit = bulk / bulkFrac`
+(bulk is `arr[K]`). Fewer than four samples declines to mean anything, a K that would leave
+the bulk fewer than two samples declines, and a bulk of zero has no scale to clamp against.
 
-- **No slot map is needed** — the one thing that keeps this cheap. The outlier group is a
-  contiguous prefix from the top, so every drawn value past `limit` *is* an outlier and
-  everything at or under `bulk` is not; the interval between the two is empty by
-  construction. A renderer therefore clamps with `clampValue(cl, v)` against the record
-  alone and never asks "was *this* slot an outlier", which is also why hiding the series
-  that carried the outlier cleanly dissolves the clamp (`collectClampSamples` runs next
-  frame and finds no group).
+- **No slot map is needed** — the one thing that keeps this cheap. Every drawn value past
+  `limit` *is* a member of the top group (there are at most K samples above `bulk`, and
+  `limit > bulk`), everything at or under `bulk` is not, and a renderer clamps with
+  `clampValue(cl, v)` against the record alone and never asks "was *this* slot an outlier",
+  which is also why hiding the series that carried the outlier cleanly dissolves the clamp
+  (`collectClampSamples` runs next frame and finds no group). What is gone is the old
+  "interval bulk … limit empty by construction" claim: under the top-K rule up to K samples
+  may sit between `bulk` and `limit` — a dense tail under a dominant spike. That is
+  harmless by design, not a hole: `clampValue` lets them through, so they draw just under
+  the edge, the hit test answers them unclamped, and they are the very samples the
+  detection counted into the group.
 - **The extent overwrite carries `_vscale` exactly once**: the entry becomes
   `limit × _vscale`, the same shape as the ordinary push above it. `limit = bulk / bulkFrac`
   is the value **at the plot edge**, so the bulk lands at `clampBulkFrac` of the plot height
@@ -263,9 +268,11 @@ bulk always keeps two samples, and a bulk of zero has no scale to clamp against.
 - **The ink policy is a split the core does not make — but it is why the axis entry is what
   it is.** `limit` is the edge value, so bar ink can fill right up to the edge (its shaft
   stops `CLAMP_HEAD` px short and the arrowhead completes it), while the line and area
-  family deliberately draws through the **true** values and leaves the plot box: the axis
-  clamps, the line does not. Clamping a line's vertex instead would draw a connection to a
-  point the data never had ([renderers.md](renderers.md#outlier-clamping--the-renderer-half)
+  family draws through the **true** values, leaves the plot box and marks each clamped
+  value with the same arrowhead where its ink leaves: the axis clamps, the line does not.
+  Clamping a line's vertex instead would draw a connection to a point the data never had,
+  and the slope alone would not always reveal the cut — a near-vertical riser or a
+  staircase hides it ([renderers.md](renderers.md#outlier-clamping--the-renderer-half)
   has the full reasoning).
 - **Culling is by pixels, not timestamps, on purpose.** `coalesceBlocks` re-derives the
   merged block's clamp state from inside `plotData`, where the timestamps are not reachable

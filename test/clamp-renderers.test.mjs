@@ -11,8 +11,12 @@
 //     cut value sits at the shaft line; an arrow with apex at the edge marks it.
 //   • the line/area family (multiline, stackarea, quantile-bands, quantile-
 //     steps) draws through the TRUE values — a clamped vertex/band/ribbon
-//     leaves the plot box upward; only the axis clamps, so no ink code and
-//     no marks at all.
+//     leaves the plot box upward — AND marks each clamped value with an
+//     arrowhead at the x where its ink leaves the box: one per series and
+//     direction, at least MIN_GAP (14 px) apart (greedy — a dense run
+//     collapses to one at its entry). The ink part and the mark part are
+//     asserted separately: the ink path is byte-identical to the unclamped
+//     draw, the arrow ops come on top.
 // Draws are deterministic (same input -> same recorded calls) and no draw here
 // uses ctx.clip() — the recorder records it, so that is asserted rather than
 // implied by "the draw did not throw".
@@ -187,16 +191,19 @@ const areaPlot = extra => Object.assign({
   data: { 0: { a: 20, b: 20 }, 1: { a: 300, b: 20 } },
 }, extra);
 
-test('stackarea: the edges are the TRUE cumulative totals — the clamped band '
-     + 'leaves the plot box', () => {
+test('stackarea: the edges are the TRUE cumulative totals — the crossing band '
+     + 'leaves the plot box and carries the arrow', () => {
   const calls = draw(areaPlot({ _clamped: clOf() }));
   assert.deepEqual(path(calls), [
     'moveTo 0,60', 'lineTo 100,-500',              // a: 20, 300 (true, unclamped)
     'lineTo 100,100', 'lineTo 0,100',              // a base
     'moveTo 0,20', 'lineTo 100,-540',              // b: 40, 320 (on a's true top)
     'lineTo 100,-500', 'lineTo 0,60',              // b base = a's true top
+    // the crossing band a's arrowhead, drawn last, apex at the edge
+    'moveTo 100,0', 'lineTo 94,9', 'lineTo 106,9',
   ]);
-  assert.equal(calls.filter(k => k.op === 'fill').length, 2, 'two bands');
+  assert.equal(calls.filter(k => k.op === 'fill').length, 3,
+               'two band fills + the crossing band\'s mark');
   assert.deepEqual(fillRects(calls), [], 'no hatch for the line/area family');
 });
 
@@ -207,13 +214,15 @@ const linePlot = extra => Object.assign({
   data: { 0: { a: 20 }, 1: { a: 300 }, 2: { a: 20 } },
 }, extra);
 
-test('multiline: the line runs through the TRUE values, no mark, no hatch', () => {
+test('multiline: the line runs through the TRUE values, the clamped vertex '
+     + 'carries the arrow', () => {
   const calls = draw(linePlot({ _clamped: lineCl() }));
   assert.deepEqual(path(calls), [
     'moveTo 0,60', 'lineTo 100,-500', 'lineTo 200,60',
+    // the arrowhead at the vertex where the ink leaves the box
+    'moveTo 100,0', 'lineTo 94,9', 'lineTo 106,9',
   ]);
-  // No mark: the line family draws no clamp ink at all.
-  assert.equal(lastOp(calls, 'fill'), -1, 'no clampMark');
+  assert.ok(lastOp(calls, 'fill') > -1, 'the mark is drawn');
   assert.deepEqual(fillRects(calls), [], 'no hatch');
 });
 
@@ -225,8 +234,10 @@ test('multiline fill: the top edge follows the TRUE vertices, closing edge uncha
     'moveTo 0,60', 'lineTo 100,-500', 'lineTo 200,60',
     // …its closing edge is untouched by the clamp…
     'lineTo 200,100', 'lineTo 0,100',
-    // …and the stroke runs through the true values again.
+    // …and the stroke runs through the true values again; the clamp mark's
+    // ops come last, on top of everything.
     'moveTo 0,60', 'lineTo 100,-500', 'lineTo 200,60',
+    'moveTo 100,0', 'lineTo 94,9', 'lineTo 106,9',
   ]);
 });
 
@@ -294,10 +305,12 @@ test('quantile-bands: bands and lines draw the TRUE entries — nothing is flatt
     'moveTo 50,80', 'lineTo 150,80',
     'moveTo 50,60', 'lineTo 150,60',
     'moveTo 50,40', 'lineTo 150,-1700',
+    // the mark at the bin centre, where the ink leaves the box
+    'moveTo 150,0', 'lineTo 144,9', 'lineTo 156,9',
   ]);
   assert.deepEqual(fillRects(calls), [], 'no hatch');
-  assert.equal(calls.filter(k => k.op === 'fill').length, 2,
-               'only the two band fills — no arrowhead');
+  assert.equal(calls.filter(k => k.op === 'fill').length, 3,
+               'the two band fills + the mark at the bin centre');
 });
 
 // ── quantile-steps ──────────────────────────────────────────────────────────
@@ -327,10 +340,12 @@ test('quantile-steps: ribbons and step lines draw the TRUE entries', () => {
     'moveTo 0,80', 'lineTo 100,80', 'lineTo 100,80', 'lineTo 200,80',
     'moveTo 0,60', 'lineTo 100,60', 'lineTo 100,60', 'lineTo 200,60',
     'moveTo 0,40', 'lineTo 100,40', 'lineTo 100,-1700', 'lineTo 200,-1700',
+    // the mark at the clamped bin's riser (x0 = 100, connect defaults on)
+    'moveTo 100,0', 'lineTo 94,9', 'lineTo 106,9',
   ]);
   assert.deepEqual(fillRects(calls), []);
-  assert.equal(calls.filter(k => k.op === 'fill').length, 2,
-               'only the two ribbon fills — no arrowhead');
+  assert.equal(calls.filter(k => k.op === 'fill').length, 3,
+               'the two ribbon fills + the mark at the riser');
 });
 
 // ── error-bars ──────────────────────────────────────────────────────────────
@@ -455,11 +470,11 @@ test('heatmap ignores a clamp record: identical paint with and without it', () =
 
 // ── coalescing ──────────────────────────────────────────────────────────────
 
-test('a coalesced clamping group still draws the TRUE band edges', () => {
+test('a coalesced clamping group still draws the TRUE band edges and the mark', () => {
   // Two abutting fetch blocks of one signal; the outlier in the newer one. The
-  // merged block re-derives its clamp state from the merged data — but the
-  // line/area family ignores the record, so the merged draw is the TRUE data
-  // either way.
+  // merged block re-derives its clamp state from the merged data, so the merged
+  // draw carries the same arrowhead a hand-merged block would: the crossing
+  // band's mark at the outlier's x, on ink that stays TRUE either way.
   const b1 = {
     type: 'stackarea', name: 's', interval: 100, interval_start: 0,
     data: { 0: { a: 10, b: 20 }, 1: { a: 10, b: 20 }, 2: { a: 10, b: 20 } },
@@ -481,10 +496,16 @@ test('a coalesced clamping group still draws the TRUE band edges', () => {
             'the true band edge, unflattened');
   assert.ok(path(calls).includes('lineTo 300,-540'),
             "band b rides on a's true top");
+  // Exactly one mark: band a crosses the limit (lower 20 ≤ 37.5), band b rides
+  // fully above it (lower 300 > 37.5) and is not marked.
+  const iMark = lastOp(calls, 'fill');
+  assert.deepEqual(path(calls.slice(iMark - 3, iMark + 1)), [
+    'moveTo 300,0', 'lineTo 294,9', 'lineTo 306,9',
+  ]);
   assert.deepEqual(fillRects(calls), [], 'no hatch');
 });
 
-test('a coalesced group draws identically with and without the clamp state', () => {
+test('a coalesced group draws identically to the same block merged by hand', () => {
   const b1 = {
     type: 'stackarea', name: 's', interval: 100, interval_start: 0,
     data: { 0: { a: 10, b: 20 }, 1: { a: 10, b: 20 }, 2: { a: 10, b: 20 } },
@@ -495,6 +516,17 @@ test('a coalesced group draws identically with and without the clamp state', () 
     data: { 0: { a: 300, b: 20 }, 1: { a: 10, b: 20 } },
     clampOutliers: true,
   };
+  // The merged block, stamped by hand with the record the merge derives: the
+  // merged stack totals are [30, 30, 30, 320, 30], so bulk = arr[1] = 30 and
+  // limit = 30 / 0.8. The merged draw must be byte-identical to the coalesced
+  // group's — the mark the merged record implies is not a coalescing artifact.
+  const merged = {
+    type: 'stackarea', name: 's', interval: 100, interval_start: 0,
+    data: { 0: { a: 10, b: 20 }, 1: { a: 10, b: 20 }, 2: { a: 10, b: 20 },
+            3: { a: 300, b: 20 }, 4: { a: 10, b: 20 } },
+    clampOutliers: true,
+    _clamped: { up: { bulk: 30, limit: 30 / 0.8 }, down: null },
+  };
   const draw1 = () => {
     const { c, calls } = recorder();
     const rctx = rctxCl(c);
@@ -504,13 +536,126 @@ test('a coalesced group draws identically with and without the clamp state', () 
   };
   const draw2 = () => {
     const { c, calls } = recorder();
-    plotData([0, 1], [b1, b2], rctxCl(c));      // no rctx.clamp
+    const rctx = rctxCl(c);
+    rctx.clamp = { on: true, factor: 3, share: 0.05, bulkFrac: 0.8 };
+    plotData([0], [merged], rctx);
     return calls;
   };
   assert.deepEqual(draw1(), draw2());
 });
 
-// ── determinism and the no-clip invariant ───────────────────────────────────
+// ── the line family's marks ─────────────────────────────────────────────────
+
+test('the ink is byte-identical to the unclamped draw — the marks come on top',
+     () => {
+  // For every line/area renderer: with the record stamped, the ink path is the
+  // unclamped draw's path and nothing else — the arrow ops only append, so the
+  // slope stays true AND the record decides the marks, never the ink.
+  const plain = path(draw(linePlot()));
+  assert.deepEqual(path(draw(linePlot({ _clamped: lineCl() }))).slice(0, plain.length),
+                   plain);
+  const aPlain = path(draw(areaPlot()));
+  assert.deepEqual(path(draw(areaPlot({ _clamped: clOf() }))).slice(0, aPlain.length),
+                   aPlain);
+  const lPlain = path(draw(ladPlot()));
+  assert.deepEqual(path(draw(ladPlot({ _clamped: clOf() }))).slice(0, lPlain.length),
+                   lPlain);
+  const sPlain = path(draw(stepPlot()));
+  assert.deepEqual(path(draw(stepPlot({ _clamped: clOf() }))).slice(0, sPlain.length),
+                   sPlain);
+});
+
+test('a dense run of clamped values collapses to one mark at its entry', () => {
+  // interval 1 s → vertices 1 px apart: every slot is clamped, MIN_GAP (14 px)
+  // suppresses everything after the first mark.
+  const plot = {
+    type: 'multiline', interval: 1, interval_start: 0,
+    data: { 0: { a: 300 }, 1: { a: 300 }, 2: { a: 300 }, 3: { a: 300 },
+            4: { a: 300 }, 5: { a: 300 }, 6: { a: 300 }, 7: { a: 300 },
+            8: { a: 300 }, 9: { a: 300 } },
+    _clamped: lineCl(),
+  };
+  const calls = draw(plot);
+  assert.equal(calls.filter(k => k.op === 'fill').length, 1, 'one mark only');
+  const iMark = lastOp(calls, 'fill');
+  assert.deepEqual(path(calls.slice(iMark - 3, iMark + 1)), [
+    'moveTo 0,0', 'lineTo -6,9', 'lineTo 6,9',
+  ]);
+});
+
+test('sparse clamped values each get their mark, on the MIN_GAP grid', () => {
+  // interval 10 s → vertices 10 px apart: 10 < 14 suppresses the second mark,
+  // 20 ≥ 14 draws the third — marks at x = 0, 20, 40.
+  const plot = {
+    type: 'multiline', interval: 10, interval_start: 0,
+    data: { 0: { a: 300 }, 1: { a: 300 }, 2: { a: 300 }, 3: { a: 300 },
+            4: { a: 300 } },
+    _clamped: lineCl(),
+  };
+  const calls = draw(plot);
+  assert.deepEqual(path(calls), [
+    // the line ink through all five true vertices…
+    'moveTo 0,-500', 'lineTo 10,-500', 'lineTo 20,-500', 'lineTo 30,-500',
+    'lineTo 40,-500',
+    // …and marks at x = 0, 20, 40 (10 px after 0 is under MIN_GAP).
+    'moveTo 0,0', 'lineTo -6,9', 'lineTo 6,9',
+    'moveTo 20,0', 'lineTo 14,9', 'lineTo 26,9',
+    'moveTo 40,0', 'lineTo 34,9', 'lineTo 46,9',
+  ]);
+});
+
+test('the direction mirrors: a down-clamped value marks the bottom edge', () => {
+  const plot = {
+    type: 'multiline', interval: 100, interval_start: 0,
+    data: { 0: { a: -20 }, 1: { a: -300 } },
+    _clamped: { up: null, down: { bulk: 20, limit: 25 } },
+  };
+  const calls = draw(plot);
+  const iMark = lastOp(calls, 'fill');
+  assert.deepEqual(path(calls.slice(iMark - 3, iMark + 1)), [
+    'moveTo 100,100', 'lineTo 94,91', 'lineTo 106,91',
+  ]);
+  assert.equal(calls.filter(k => k.op === 'fill').length, 1);
+  assert.ok(path(calls).includes('lineTo 100,700'), 'the true value, unflattened');
+});
+
+test("step 'before' marks the previous vertex — where the riser stands", () => {
+  const plot = linePlot({ step: 'before', _clamped: lineCl() });
+  const calls = draw(plot);
+  // The value 300 sits at slot 1; under 'before' its riser is at slot 0's x.
+  const iMark = lastOp(calls, 'fill');
+  assert.deepEqual(path(calls.slice(iMark - 3, iMark + 1)), [
+    'moveTo 0,0', 'lineTo -6,9', 'lineTo 6,9',
+  ]);
+  assert.ok(path(calls).includes('lineTo 0,-500'),
+            "the riser into 300 stands at slot 0's x");
+});
+
+test('a partial quantile-steps bin tests its SCALED value', () => {
+  const plot = {
+    type: 'quantile-steps', interval: 100, interval_start: 0,
+    percentiles: [5, 50, 95],
+    data: { 0: { a: [10, 20, 30] }, 1: { a: [10, 20, 60] } },
+    _partial: { slot: 1, frac: 0.5, scale: 0.5, skip: false },
+    _clamped: clOf(),
+  };
+  const calls = draw(plot);
+  // The raw rung 60 clears the limit 50, but the bin draws 60 × 0.5 = 30 —
+  // what the bin draws is what gets tested, so no mark.
+  assert.equal(calls.filter(k => k.op === 'fill').length, 2,
+               'no mark beyond the two ribbon fills');
+});
+
+test('a record without cuts paints byte-identically to no record', () => {
+  // All values inside the clamp: the paint must be the unrecorded draw — this
+  // is the off invariant for the marks, per family.
+  const inside = { 0: { a: 20 }, 1: { a: 20 }, 2: { a: 20 } };
+  assert.deepEqual(draw(linePlot({ data: inside, _clamped: lineCl() })),
+                   draw(linePlot({ data: inside })));
+  const ldata = { 0: { a: [10, 20, 30] }, 1: { a: [10, 20, 30] } };
+  assert.deepEqual(draw(ladPlot({ data: ldata, _clamped: clOf() })),
+                   draw(ladPlot({ data: ldata })));
+});
 
 test('every draw here is deterministic: same input, same recorded calls', () => {
   const plots = [

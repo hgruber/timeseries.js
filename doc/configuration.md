@@ -21,8 +21,8 @@ const ts = new TimeSeries({
   yAxisFormat:    null,          // (value) => string; defaults to SI prefixes
   yAxisLabel:     '',            // unit text above the y-axis, e.g. 'txn/s'
   clampOutliers:  false,         // clamp a few extreme values so the bulk stays legible
-  clampOutliersFactor: 3,        // outlier group min > F × max of the rest
-  clampOutliersShare:  0.05,     // outlier group ≤ this share of the visible samples
+  clampOutliersFactor: 3,        // F: the top value must exceed F × bulk
+  clampOutliersShare:  0.05,     // the candidate group is the top share of samples
   clampBulkFrac:  0.8,           // bulk max at this fraction of the plot height
   colors:         { … },         // full palette object — see below
   holidays:       { … },         // holiday map — see below
@@ -52,8 +52,8 @@ const ts = new TimeSeries({
 | `yAxisFormat` | function | SI format | `(value) => string` for y-axis tick labels. |
 | `yAxisLabel` | string | `''` | Unit caption above the axis. |
 | `clampOutliers` | boolean | `false` | Clamp a few extreme values so the bulk stays legible — see [below](#outlier-clamping). Off by default: with it off nothing about the chart changes at all. |
-| `clampOutliersFactor` | number | `3` | The factor rule: the outlier group's minimum must exceed this × the max of the rest. |
-| `clampOutliersShare` | number | `0.05` | Cap on the outlier group's share of the visible samples; must be `0 < share < 0.5`. |
+| `clampOutliersFactor` | number | `3` | The factor rule: the top value must exceed this × bulk. |
+| `clampOutliersShare` | number | `0.05` | The candidate outlier group is the top share of the visible samples; must be `0 < share < 0.5`. |
 | `clampBulkFrac` | number | `0.8` | Where the bulk max sits, as a fraction of the plot height. The clamp scale is `bulk / clampBulkFrac` — the value that lands at the plot edge. |
 | `colors` | object | light theme | A **full palette object**, not a name — see below. |
 | `holidays` | object | German set | Fixed and Easter-relative holidays — see below. |
@@ -85,11 +85,11 @@ the plot edge. [Which renderers mark it how](data-formats.md#outlier-clamping).
 new TimeSeries({ canvas: 'chart', clampOutliers: true });   // everything else defaults
 ```
 
-The detection is one rule: the **contiguous top group** of samples whose minimum exceeds
-`clampOutliersFactor` × the max of the rest, capped at `clampOutliersShare` of the visible
-samples. At the defaults (factor 3, share 5 %) a bin past 3× the bulk clamps and one at 2×
-does not. Detection runs per window, so panning an outlier out of view releases the axis
-again.
+The detection is one rule: the **top `clampOutliersShare` (5 %) of the visible samples**
+are the candidate group, `bulk` is the largest value that does not belong to it, and the
+group clamps when the top value exceeds `clampOutliersFactor` × bulk. At the defaults
+(factor 3, share 5 %) a bin past 3× the bulk clamps and one at 2× does not. Detection runs
+per window, so panning an outlier out of view releases the axis again.
 
 Worth knowing:
 
@@ -102,13 +102,16 @@ Worth knowing:
   directions — see [Data formats](data-formats.md#binned-series). That precedence holds for
   the runtime toggle too: `c` moves the global setting, and a block that decided for itself
   keeps its answer.
-- **The ink policy is per family.** Bars truncate at the plot edge: the shaft tops out a few
-  pixels below it and an arrowhead — apex touching the edge — completes the arrow, with a
-  Point and glyph renderers draw their marker or
-  whisker just below the same arrowhead. The line and area family deliberately does neither:
-  it draws through the **true** values, so the line visibly leaves the plot box toward the
-  real point — connecting to a flattened vertex would falsify the slope and lie about where
-  the data went. The full table is in [Data formats](data-formats.md#outlier-clamping).
+- **The ink policy is per family.** Bars truncate at the plot edge — the shaft tops out a
+  few pixels below it and an arrowhead whose apex touches the edge completes the arrow;
+  point and glyph renderers draw their marker or whisker just below the same arrowhead.
+  The line and area family does not clamp its ink: it draws through the **true** values,
+  so the line visibly leaves the plot box toward the real point — connecting to a
+  flattened vertex would falsify the slope and lie about where the data went. Because the
+  slope alone hides the cut on a near-vertical riser or a staircase, each clamped value
+  also carries the same arrowhead at the x where its ink leaves the box, one per series
+  and direction at least 14 px apart. The full table is in
+  [Data formats](data-formats.md#outlier-clamping).
 - **`waterfall` and the laned family do not take part at all.** Clamping a waterfall's
   deltas would detach every later bar from the running total, and a laned block has no
   magnitude axis to squash.

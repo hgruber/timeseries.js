@@ -244,15 +244,21 @@ function partialAt(plot, n) {
 // value space, pre-`_vscale`, like `_partial.scale`), and three consumers read
 // it: the extent scan (the axis entry becomes bulk × stretch instead of the
 // true max), the renderer (ink clamped at `limit`) and the hit test. No slot
-// map is needed: the outlier group is a contiguous prefix from the top, so
-// every drawn value past `limit` IS an outlier and everything at or under
-// `bulk` is not — the interval between the two is empty by construction.
+// map is needed: every drawn value past `limit` is a member of the top-K
+// outlier group (there are at most K samples above `bulk`, and `limit > bulk`),
+// everything at or under `bulk` is not. Between the two may sit up to K
+// samples — a dense tail under a dominant spike — which `clampValue` lets
+// through: they draw just under the edge and the hit test answers them
+// unclamped.
 
 // Arrowhead geometry, in px. Drawing style, not axis math, so these stay
 // module constants; promote them to settings only if the tuning page shows
 // they must scale with plot height.
 const CLAMP_HEAD = 9;   // the arrowhead's height; the shaft tops out here
 const CLAMP_MARK = 6;   // the arrowhead's half-width at its base
+// The line/area family's clamp marks never overlap: two arrowheads of the same
+// series and direction sit at least head-width-plus-a-hairline apart.
+const MIN_GAP = 2 * CLAMP_MARK + 2;
 export const CLAMP_HEAD_PX = CLAMP_HEAD;
 
 /**
@@ -291,37 +297,37 @@ export function clampY(rctx, cl, raw) {
 function Y_of(rctx, v) { return rctx.Y(v); }
 
 /**
- * The outlier group of one direction's samples: the largest contiguous prefix
- * from the top with `k <= K` members whose minimum exceeds factor × the max of
- * the rest. Returns `{ bulk, limit }` or null. `limit = bulk / bulkFrac` puts
- * the bulk at clampBulkFrac of the plot height; `limit` is the value AT the
+ * The outlier group of one direction's samples: the top `K = max(1, floor(n ×
+ * share))` samples are the candidate group, `bulk` is the largest value that
+ * does NOT belong to it — `arr[K]` after a descending sort — and when the top
+ * value exceeds factor × bulk, the axis falls to the bulk: the group clamps,
+ * returning `{ bulk, limit }` with `limit = bulk / bulkFrac`, the value AT the
  * plot edge, where the arrowhead's apex touches (see doc/internals/core.md).
+ * Otherwise null.
+ *
+ * By construction up to K samples may then sit between the bulk and the limit —
+ * a dense tail under a dominant spike. That is harmless: `clampValue` lets
+ * them through, so they draw just under the edge and the hit test reports them
+ * unclamped.
  *
  * `K = max(1, floor(n × share))` softens the strict "< 5 %" reading below 20
  * samples, where the floor would be 0 and the feature permanently inert on
- * small windows; `n < 4` declines to mean anything at all, and the bulk always
- * keeps at least two samples. `bulk <= 0` (everything else at zero) has no
- * meaningful scale to clamp against either.
+ * small windows; `n < 4` declines to mean anything at all, and when K would
+ * leave the bulk fewer than two samples the whole detection declines rather
+ * than clamping against a degenerate bulk. `bulk <= 0` (everything else at
+ * zero) has no meaningful scale to clamp against either.
  */
 export function clampOne(arr, cp) {
   var n = arr.length;
   if (n < 4) return null;
   arr.sort(function (a, b) { return b - a; });
   var K = Math.max(1, Math.floor(n * cp.share));
-  var out = null;
-  // The group is the largest k <= K whose minimum exceeds factor × the max of
-  // the rest — evaluated for every k up to K rather than breaking at the first
-  // gap, or a group of near-equal spikes (five equal bars, say) would fail the
-  // very first comparison and never be detected at all.
-  // `limit = bulk / bulkFrac` is the value AT the plot edge: the bulk lands at
-  // clampBulkFrac of the plot height, and the clamped ink (shaft) tops out
-  // CLAMP_HEAD px below the edge, where the arrowhead (apex touching the edge)
-  // completes the arrow — the shaft never reaches into the head.
-  for (var k = 1; k <= K && k <= n - 2; k++) {
-    if (arr[k - 1] > cp.factor * arr[k] && arr[k] > 0)
-      out = { bulk: arr[k], limit: arr[k] / cp.bulkFrac };
-  }
-  return out;
+  if (K > n - 2) return null; // the bulk always keeps at least two samples
+  var bulk = arr[K];
+  if (!(bulk > 0)) return null; // no scale to clamp against
+  return arr[0] > cp.factor * bulk
+    ? { bulk: bulk, limit: bulk / cp.bulkFrac }
+    : null;
 }
 
 /**
@@ -445,6 +451,53 @@ export function clampMark(c, x, y, dir, fillStyle) {
   }
   c.closePath();
   c.fill();
+}
+
+/**
+ * The direction a value leaves the plot box in under clamping — 'up' | 'down'
+ * — or null when the clamp does not cut it. Value space, pre-_vscale (a
+ * renderer's Y already carries it), so a renderer may test its raw drawn value
+ * directly. The split mirrors clampValue: a cut value > 0 was cut by the up
+ * record, a cut value < 0 by the down record.
+ */
+function clampDir(cl, v) {
+  var cv = clampValue(cl, v);
+  if (cv === v) return null;
+  return v > 0 ? 'up' : 'down';
+}
+
+/**
+ * The line/area family's clamp marks: one arrowhead per clamped value, at the
+ * x where its ink leaves the plot box, in the series' colour — on top of ink
+ * that stays TRUE (the per-renderer policy comments carry the reasoning).
+ * Drawn once at the END of the draw call so no band fill or later series can
+ * paint over them.
+ *
+ * Greedy overlap guard: a mark is drawn only when it sits at least MIN_GAP px
+ * from the last one drawn for the same series and direction — sporadic cuts
+ * each get their arrow, a dense run collapses to one at its entry (and one
+ * every MIN_GAP px along a long run). Candidates for one series arrive in
+ * ascending x by construction (slots, columns and runs are walked
+ * chronologically), so the last drawn x per (series, direction) is the only
+ * state needed — no global x-sorting. Arrowheads of different series cut at
+ * the same x overlap by design: the mark says "a value here was cut", the
+ * colour is a bonus.
+ */
+function drawClampMarks(c, plot, rctx, cands) {
+  if (!cands.length) return;
+  var last = Object.create(null);
+  var xLo = rctx.margin.left, xHi = xLo + rctx.plotWidth;
+  var yTop = rctx.margin.top, yBot = rctx.margin.top + rctx.plotHeight;
+  for (var i = 0; i < cands.length; i++) {
+    var m = cands[i];
+    if (m.x < xLo || m.x > xHi) continue;   // same cull the point family uses
+    var key = m.id + '|' + m.dir;
+    var lx = last[key];
+    if (lx !== undefined && m.x - lx < MIN_GAP) continue;
+    last[key] = m.x;
+    clampMark(c, m.x, m.dir === 'up' ? yTop : yBot, m.dir,
+              resolveColor(plot, m.id, 0.9));
+  }
 }
 
 /**
@@ -970,19 +1023,32 @@ function traceRun(c, Y, run, step, binW) {
 // draws it as a staircase instead of interpolating, and `plot.fill` shades the
 // area down to the zero line. Both apply to binned and point blocks.
 //
-// Outlier clamping deliberately does NOT touch the ink: the line is drawn
-// through the TRUE values, so it runs diagonally out of the plot box toward
-// the real point outside it — connecting a clamped vertex instead would
-// falsify the slope and lie about where the data went. The axis still clamps
-// (the extent entry comes from the bulk), which is exactly what makes the
-// line leave the box.
+// Outlier clamping does not touch the ink — the line is drawn through the TRUE
+// values (connecting a clamped vertex would falsify the slope and lie about
+// where the data went), but the slope alone does not always tell the story: a
+// near-vertical riser leaves the box at essentially the x it entered it, and a
+// staircase draws the cut segment horizontally. So each clamped value ALSO
+// carries an arrowhead at the x where its ink leaves the box (drawClampMarks),
+// the same mark the bar, marker and glyph families draw.
 function multiline(plot, rctx) {
   var { c, Y, margin, plotHeight, hidden } = rctx;
   var step = (plot.step === 'after' || plot.step === 'before') ? plot.step : null;
+  var cl = clampOf(plot);
+  var cands = [];
   c.lineWidth = 1.5;
   for (const sid of plotSeriesIds(plot)) {
     if (hidden && hidden.has(sid)) continue;
     var lr = lineRuns(plot, sid, rctx);
+    // The mark sits where the value's ink leaves the box — the riser's x. Under
+    // 'after' (and without a step) that is the value's own vertex; under
+    // 'before' the riser into v is at the PREVIOUS vertex's x (traceRun), so
+    // the mark moves there with it.
+    for (const run of lr.runs)
+      for (var i = 0; i < run.length; i++) {
+        var dir = clampDir(cl, run[i].v);
+        if (dir) cands.push({ x: (step === 'before' && i > 0) ? run[i - 1].x : run[i].x,
+                              dir: dir, id: sid });
+      }
     if (plot.fill) {
       // Clamped to the plot box: the zero line can sit far outside the viewport
       // (a series that never approaches zero), and an unclamped fill would paint
@@ -1005,6 +1071,7 @@ function multiline(plot, rctx) {
     for (const run of lr.runs) traceRun(c, Y, run, step, lr.binW);
     c.stroke();
   }
+  drawClampMarks(c, plot, rctx, cands);
   c.lineWidth = 1;
 }
 
@@ -1076,14 +1143,19 @@ function edgePoints(run, cols, vals, step, binW) {
 // decides how to measure the y-extent from the *type* (see isStackedType), and a
 // per-plot flag would leave that decision somewhere the registry cannot see.
 //
-// Outlier clamping deliberately does NOT touch the ink — same rule as
-// multiline: the bands are drawn through the TRUE cumulative edges and the
-// clamped band leaves the plot box upward, instead of being flattened onto a
-// fake edge (clamping an individual band would also tear the bands above it
-// off their baselines). Only the axis clamps.
+// Outlier clamping does not touch the ink — same rule as multiline: the bands
+// are drawn through the TRUE cumulative edges (flattening one would tear the
+// bands above it off their baselines), but the band the axis edge actually
+// CROSSES carries the arrowhead, the same attribution multibar's crossingUp
+// makes (a band fully above the limit rides over a crossing one — marking it
+// too would paint coincident arrowheads of different colours per column). The
+// direction reads off the band's own top edge, so a band pushed below the
+// bottom limit is marked for the series that pushed it there (drawClampMarks).
 function stackarea(plot, rctx) {
   var { c, X, Y, hidden } = rctx;
   var step = (plot.step === 'after' || plot.step === 'before') ? plot.step : null;
+  var cl = clampOf(plot);
+  var cands = [];
   // Hidden series are dropped from the stack entirely, not drawn transparent —
   // exactly as multibar does it. Leaving a gap in the stack would float every
   // band above it off its own baseline.
@@ -1127,6 +1199,22 @@ function stackarea(plot, rctx) {
       upper[k] = lower[k] + (raw == null ? 0 : raw);
     }
     c.fillStyle = resolveColor(plot, id, 0.75);
+    // Only the band the axis edge actually crosses carries the mark, the same
+    // attribution multibar's crossingUp makes: tested on the band's own top
+    // edge upper[k] (the lower edge belongs to the previous band — the first
+    // band has lower = 0 and would never be caught over lower[]), with the
+    // straddle postcondition lower[k] still inside the clamp, else a band
+    // FULLY above the limit would be marked too. Runs are walked
+    // chronologically, so candidates per (series, direction) ascend in x.
+    for (const run of runs)
+      for (var ti = 0; ti < run.length; ti++) {
+        var ki = run[ti];
+        var dir = clampDir(cl, upper[ki]);
+        if (!dir || (dir === 'up'   && lower[ki] > cl.up.limit)
+                 || (dir === 'down' && lower[ki] < -cl.down.limit)) continue;
+        cands.push({ x: (step === 'before' && ti > 0) ? cols[run[ti - 1]].x : cols[ki].x,
+                     dir: dir, id: id });
+      }
     for (const run of runs) {
       var top = edgePoints(run, cols, upper, step, binW);
       var bot = edgePoints(run, cols, lower, step, binW);
@@ -1139,6 +1227,7 @@ function stackarea(plot, rctx) {
     }
     lower = upper;
   }
+  drawClampMarks(c, plot, rctx, cands);
 }
 
 /**
@@ -1549,10 +1638,13 @@ function quantilebands(plot, rctx) {
   if (skipPart && skipPart.skip)
     slots = slots.filter(function (s) { return s !== skipPart.slot; });
   var medianIdx = Math.floor((npct - 1) / 2);   // which line to draw bold
-  // Outlier clamping deliberately does NOT touch the ink — same rule as
-  // multiline: the bands and lines are drawn through the TRUE entries, so a
-  // clamped slot's band leaves the plot box upward rather than being
-  // flattened onto a fake rung. Only the axis clamps.
+  // Outlier clamping does not touch the ink — same rule as multiline: the
+  // bands and lines draw through the TRUE entries (a flattened rung would
+  // falsify the slope), but each clamped entry ALSO carries an arrowhead at
+  // the bin centre, where its ink leaves the box (drawClampMarks). Several
+  // rungs of one bin past the limit collapse to one mark there.
+  var cl = clampOf(plot);
+  var cands = [];
   for (const id of plotSeriesIds(plot)) {
     if (hidden && hidden.has(id)) continue;
     // Fills: one polygon per band segment, broken on slot gaps so disjoint
@@ -1590,10 +1682,13 @@ function quantilebands(plot, rctx) {
         var x = X(start + slots[sl] * step + half);
         if (!started) { c.moveTo(x, Y(vv[jl])); started = true; }
         else c.lineTo(x, Y(vv[jl]));
+        var dir = clampDir(cl, vv[jl]);
+        if (dir) cands.push({ x: x, dir: dir, id: id });
       }
       c.stroke();
     }
   }
+  drawClampMarks(c, plot, rctx, cands);
   c.lineWidth = 1;
 }
 
@@ -1610,14 +1705,15 @@ function quantilesteps(plot, rctx) {
   if (plot.category === 'point') return;        // binned series only
   var connect = plot.connect !== false;
   var medianIdx = Math.floor((npct - 1) / 2);   // which line to draw bold
-  // Outlier clamping deliberately does NOT touch the ink — same rule as
-  // multiline: the ribbons and step lines are drawn through the TRUE entries,
-  // so a clamped bin's ribbon leaves the plot box upward (a riser rises past
-  // the box edge) instead of being flattened onto a fake rung. Only the axis
-  // clamps.
-  // Geometry once per slot: the fills and every percentile line read it, and a
-  // partial bin has to narrow all of them by the very same amount.
-
+  // Outlier clamping does not touch the ink — same rule as multiline: the
+  // ribbons and step lines draw through the TRUE entries (a flattened rung
+  // would falsify the staircase), but each clamped entry ALSO carries an
+  // arrowhead at the bin's riser (x0) when connect is on, at the bin centre
+  // when the segments stand free — where its ink leaves the box
+  // (drawClampMarks). The cut test is on the SCALED value vv × k: that is
+  // what a partial bin draws and what detection sampled.
+  var cl = clampOf(plot);
+  var cands = [];
   // Geometry once per slot: the fills and every percentile line read it, and a
   // partial bin has to narrow all of them by the very same amount.
   var bins = [];
@@ -1658,15 +1754,19 @@ function quantilesteps(plot, rctx) {
       for (const bin of bins) {
         var vv = bin.v[id];
         if (vv === undefined) { prev = null; continue; }
-        var y = Y(vv[jl] * bin.k);
-        if (connect && prev && bin.slot === prev.slot + 1) c.lineTo(bin.x0, y);
-        else c.moveTo(bin.x0, y);
-        c.lineTo(bin.x1, y);
+        var yv = vv[jl] * bin.k;           // what the bin draws and detection sampled
+        if (connect && prev && bin.slot === prev.slot + 1) c.lineTo(bin.x0, Y(yv));
+        else c.moveTo(bin.x0, Y(yv));
+        c.lineTo(bin.x1, Y(yv));
+        var dir = clampDir(cl, yv);
+        if (dir) cands.push({ x: connect ? bin.x0 : bin.x0 + (bin.x1 - bin.x0) / 2,
+                              dir: dir, id: id });
         prev = bin;
       }
       c.stroke();
     }
   }
+  drawClampMarks(c, plot, rctx, cands);
   c.lineWidth = 1;
 }
 

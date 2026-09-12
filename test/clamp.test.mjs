@@ -8,7 +8,8 @@
 // edge — the bulk lands at clampBulkFrac of the plot height. Three consumers
 // read the record: the extent scan, the renderer and the hit test. The ink
 // policy is split by family (bars and glyphs fill to the edge under an
-// arrowhead; the line/area family draws through the TRUE values — pinned in
+// arrowhead; the line/area family draws through the TRUE values and marks each
+// clamped value with the arrowhead where its ink leaves the box — pinned in
 // clamp-renderers.test.mjs). Default OFF: with it off, nothing about the
 // extent, the paint or the hit test changes at all — the off-invariant section
 // below pins that per shape.
@@ -43,22 +44,19 @@ const one = (arr, cp = CP) => clampOne(arr.slice(), cp);
 
 test('the top group clamps at limit = bulk / bulkFrac', () => {
   // 12 bulk slots of 30 and one spike of 320 (the multibar fixture below):
-  // the group is the single top sample, the bulk is the max of the rest.
+  // share 0.05 of 4 samples → K = 1, so the group is the single top sample and
+  // the bulk is arr[1] = 30, the max of the rest.
   assert.deepEqual(one([320, 30, 30, 30]), { bulk: 30, limit: lim(30) });
   assert.equal(lim(30), 37.5);
   // Order in the input is irrelevant — the detection sorts.
   assert.deepEqual(one([30, 320, 30, 30]), { bulk: 30, limit: lim(30) });
 });
 
-test('a group of near-equal spikes is found by the largest-k rule', () => {
-  // Five equal spikes: the strict "min > factor × rest" reading fails for
-  // every k < 5 because arr[k] is a spike too, and breaking at the first
-  // comparison would miss the group entirely. The loop evaluates every k up to
-  // K and keeps the largest that matches.
+test('a group of near-equal spikes clamps together inside the share cap', () => {
+  // Five equal spikes: they occupy the top K = 5 positions (share 0.45 of 12
+  // samples), so the bulk is the first sample below the group — arr[5] = 30 —
+  // and the top value clears factor × bulk by a wide margin.
   const spikes = [320, 320, 320, 320, 320, 30, 30, 30, 30, 30, 30, 30];
-  // share 0.45 of 12 samples → K = 5; the reads at k = 1..4 fail (arr[k] is
-  // still a spike), the one at k = 5 compares the last spike against the first
-  // bulk sample and is the group.
   assert.deepEqual(one(spikes, Object.assign({}, CP, { share: 0.45 })),
                    { bulk: 30, limit: lim(30) });
 });
@@ -69,21 +67,21 @@ test('fewer than four samples declines to mean anything', () => {
   assert.equal(one([]), null);
 });
 
-test('the bulk always keeps at least two samples (k ≤ n - 2)', () => {
-  // share 0.75 of 4 samples → K = 3, so k = 3 would leave a one-sample bulk.
-  // The candidate exists there (80 > 3 × 20) but the k ≤ n - 2 guard suppresses
-  // it, and at k = 1..2 no read matches either — so this declines entirely
-  // rather than clamping against a degenerate bulk.
+test('the bulk always keeps at least two samples (K ≤ n - 2)', () => {
+  // share 0.75 of 4 samples → K = 3, so arr[3] would leave a one-sample bulk.
+  // The detection declines entirely — there is no smaller k to fall back to:
+  // the top group IS the top K, not "the fewest samples that could work".
   const cp = Object.assign({}, CP, { share: 0.75 });
   assert.equal(one([320, 160, 80, 20], cp), null);
-  // The same shape one step wider does clamp, at the k = 2 read.
+  assert.equal(one([320, 160, 50, 20], cp), null);
+  // The same shape with a share that keeps two samples below the group clamps.
   assert.deepEqual(one([320, 160, 50, 20],
-                       Object.assign({}, cp, { bulkFrac: 0.5 })),
+                       Object.assign({}, cp, { share: 0.5, bulkFrac: 0.5 })),
                    { bulk: 50, limit: 100 });
 });
 
 test('a bulk of zero or less has no scale to clamp against', () => {
-  // arr[1] = 0 fails the `arr[k] > 0` guard even though arr[0] > 3 × 0 holds.
+  // arr[1] = 0 fails the `bulk > 0` guard even though arr[0] > 3 × 0 holds.
   assert.equal(one([320, 0, 0, 0]), null);
   assert.equal(one([0, 0, 0, 0]), null);
 });
@@ -93,6 +91,23 @@ test('the factor decides whether a ratio is an outlier group', () => {
   assert.equal(one([60, 30, 30, 30]), null);
   assert.deepEqual(one([60, 30, 30, 30], Object.assign({}, CP, { factor: 1.5 })),
                    { bulk: 30, limit: lim(30) });
+});
+
+test('a dominant spike over a dense tail clamps even without a gap in the top', () => {
+  // The regression this rule was corrected for: the head is dense — 181, 117,
+  // 112 … sit right under the 364, so no two NEIGHBOURING values inside the
+  // top group are 3× apart and the old largest-k loop found nothing, leaving
+  // the spike in charge of the axis. Under the top-K rule the tail decides:
+  // n = 199, share 0.05 → K = 9, bulk = arr[9] = 73, and 364 > 3 × 73.
+  // (Shape and numbers of the 1h tier of the real /plot.json this fixed.)
+  const arr = [364, 181, 117, 112, 106, 97, 95, 84, 79, 73];
+  while (arr.length < 199) arr.push(73);
+  assert.deepEqual(one(arr), { bulk: 73, limit: lim(73) });
+  assert.equal(lim(73), 91.25);
+  // A dense tail that does NOT clear the factor keeps the axis honest — the
+  // same shape scaled down (364 → 200, just above 2 × 73) declines.
+  arr[0] = 200;
+  assert.equal(one(arr), null);
 });
 
 test('deriveClamp detects both directions and null when neither has one', () => {
@@ -309,8 +324,9 @@ test('the factor decides whether a 2× spike is an outlier at all', async () => 
 
 test('the share cap decides between 5 and 6 equal outliers', async () => {
   // 100 bulk slots of 30, N outliers of 320. K = max(1, floor(105 × 0.05)) = 5:
-  // five spikes are the group (the k = 5 read compares the last spike against
-  // the first bulk slot), a sixth drops the whole detection.
+  // with five spikes the bulk below the group is 30 and the group clamps; a
+  // sixth spike is arr[5] itself, so the top no longer clears factor × bulk
+  // and the detection declines.
   const wideSource = (extra, nOut) => {
     const data = {};
     for (let i = 0; i < 100; i++) data[i] = { a: 10, b: 20 };
@@ -330,8 +346,8 @@ test('the share cap decides between 5 and 6 equal outliers', async () => {
 
 test('descending outliers collapse onto the same limit', async () => {
   // Unstacked (multiline), so the samples are the per-series values: 98 bulk
-  // slots of 10, one of 300 and one of 1000. The largest matching k wins, so
-  // the bulk is the 10s and BOTH spikes clamp to limit = 10/0.8.
+  // slots of 10, one of 300 and one of 1000. Both spikes sit inside the top K
+  // = 5, so the bulk is the 10s and BOTH clamp to limit = 10/0.8.
   const data = {};
   for (let i = 0; i < 100; i++) data[i] = { a: 10 };
   data[10] = { a: 300 };

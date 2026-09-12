@@ -237,7 +237,7 @@ the axis landing on `0…laneCount` rather than on the values, the stamped lane 
 by-row hit test, and that a hidden lane is blanked without moving the others; it also
 asserts `isLanedType('gantt')`, since the rework must not take the lane axis away from the
 renderer it came from),
-`test/clamp.test.mjs` (outlier clamping, core side: the contiguous-top-group detection at
+`test/clamp.test.mjs` (outlier clamping, core side: the top-K detection at
 unit and instance level, the clamped extent overwrite — `limit = bulk / bulkFrac` at the
 plot edge — incl. its composition with the rate axis, the per-plot override in both
 directions, the clamp following the window and dissolving when the outlier's series is
@@ -249,7 +249,9 @@ settings validation, and the tooltip's `▲ clamped to axis` hint row),
 recording context: per family — the bars' shaft stopping `CLAMP_HEAD` px short of the plot
 edge with the arrowhead completing it, the glyph
 markers sitting at the shaft line under the arrow, the line/area family drawing through the
-TRUE values with no marks at all, `highlight_multibar` framing the bar as it was *drawn*,
+TRUE values and marking each clamped value with the arrowhead where its ink leaves the box
+(ink byte-identical to the unclamped draw, marks greedily spaced `MIN_GAP` apart per series
+and direction), `highlight_multibar` framing the bar as it was *drawn*,
 the excluded families ignoring a clamp record entirely, and the
 no-`ctx.clip()` invariant),
 and `test/crossfade.test.mjs` (the generic tier

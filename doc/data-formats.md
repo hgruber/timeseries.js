@@ -397,7 +397,7 @@ and how each marks the truncation:
 | Renderer | Clamps? | What the ink does |
 |---|:--:|---|
 | `multibar` | ✓ | Segments clamp at the plot edge: the shaft tops out a few pixels below it and an **arrowhead** whose apex touches the edge completes the arrow, in the colour of the straddling series |
-| `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | ✓ (axis only) | The ink is **not** clamped: the line, bands and ribbons draw through the **true** values, so a clamped vertex or band leaves the plot box toward the real point — connecting to a flattened one would falsify the slope. A riser rises straight past the box edge |
+| `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | ✓ | The ink is **not** clamped: the line, bands and ribbons draw through the **true** values, so a clamped vertex or band leaves the plot box toward the real point — connecting to a flattened one would falsify the slope. Each clamped value also carries the **arrowhead** where its ink leaves the box, one per series and direction at least 14 px apart — a near-vertical riser or a staircase would otherwise hide the cut |
 | `multipoint`, `scatter` | ✓ | The marker is the arrow's shaft: it sits just below an **arrowhead** whose apex touches the plot edge and never reaches into it |
 | `error-bars`, `candlestick`, `ohlc` | ✓ | Whisker / wick / body flatten just below the **arrowhead** (apex at the edge); the glyph families carry the arrow alone |
 | `waterfall` | — | Clamping a delta detaches the bar from the running total and shifts later bars' bases |
@@ -412,9 +412,10 @@ Two things that hold everywhere:
   clamp draws no ink there and is not hittable in its own right.
 - **The samples are what the axis scan measures**: stack totals for the stacked types, every
   array entry for the ladder five, per-series values otherwise — hidden series excluded. For
-  a ladder block the rungs count as individual samples, so a five-rung ladder's top group
-  has five members and `clampOutliersShare` must let a group that wide through — 5 divided
-  by the number of visible samples, ~2 % for a 48-bin window at the defaults.
+  a ladder block the rungs count as individual samples — a 48-bin five-rung window samples
+  240 values, so the top-5 % group is its top 12 — and the bulk below the group is usually a
+  neighbouring bin's top rung. A dense ladder therefore clamps only when one bin clears
+  `clampOutliersFactor` × the rest's top rung.
 
 ---
 

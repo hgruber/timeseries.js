@@ -12,6 +12,38 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
+## [0.10.7] - 2026-09-12
+
+### Fixed
+
+- **Outlier clamping now detects the group its documentation describes.** The rule
+  `clampOutliers` implemented was narrower than the one intended: it looked for a 3× jump
+  between **two neighbouring values inside** the top 5 % of the visible samples, so a
+  dominant spike over a dense tail — effectively every multi-series chart — was never
+  detected, and the clamp toggle visibly did nothing (the button showed active, the axis
+  stayed put). The rule is now the one the docs described: the top `clampOutliersShare`
+  (5 %) of the visible samples are the candidate group, `bulk` is the largest value that
+  does not belong to it, and the group clamps when the top value exceeds
+  `clampOutliersFactor` × bulk. Up to K samples may now sit between `bulk` and `limit` —
+  a dense tail under a spike — which `clampValue` lets through: they draw just under the
+  edge and the tooltip reports them unclamped. The per-plot flag, the ink policy, the
+  hit test and the rate-axis composition are unchanged; `demo/clamp-tuning.html`'s
+  "just below the threshold" control card moved from 2.9× to 2.8× so it keeps testing
+  the no-clamp side of the new threshold.
+
+### Changed
+
+- **Outlier clamping marks the line and area family too.** `multiline`, `stackarea`,
+  `quantile-bands` and `quantile-steps` used to draw through the true values with no mark
+  at all — correct about the slope, but on a near-vertical riser or a staircase the slope
+  does not reveal that a value was cut. They still draw through the true values (no ink is
+  clamped) and now add the same arrowhead the bar, marker and glyph families draw: apex at
+  the plot edge, at the x where the ink leaves the box, in the series' colour. One arrow
+  per clamped value, at least 14 px apart per series and direction (`MIN_GAP = 2 ×
+  CLAMP_MARK + 2`), so a dense run collapses to one arrow at its entry and one every 14 px
+  along a long run; `stackarea` marks only the band the axis edge actually crosses. Hit
+  test and tooltips are unchanged.
+
 ## [0.10.6] - 2026-09-12
 
 ### Added

@@ -47,7 +47,7 @@
   <body>
     <header>
       <h1>timeseries<span>.js</span> — Outlier clamping</h1>
-      <p>tuning page: the bulk at <code>clampBulkFrac</code>, the limit (= bulk / <code>clampBulkFrac</code>) at the plot edge, detection via <code>clampOutliersFactor</code> × <code>clampOutliersShare</code> — all cards share one viewport-sync group</p>
+      <p>tuning page: the bulk at <code>clampBulkFrac</code>, the limit (= bulk / <code>clampBulkFrac</code>) at the plot edge, the candidate group is the top <code>clampOutliersShare</code> of samples against <code>clampOutliersFactor</code> × the bulk below it — all cards share one viewport-sync group</p>
       <!-- Nav bar + theme picker are built by demo-nav.js -->
       <div id="demo-nav"></div>
     </header>
@@ -127,8 +127,10 @@
       }
 
       // The bulk maxima, computed once from the clean data: these are the
-      // "max of the rest" the detector will measure, so every card's outlier
-      // is defined against a number the reader can check.
+      // values the cards define their outliers against. The rule itself
+      // measures the bulk below the top ⌊n × share⌋ samples — on 48 slots at
+      // the 5 % default that is the third-largest stack — so the readout
+      // under each card is the number to check against.
       function seriesMax(key) { var m = 0; for (var i = 0; i < N; i++) if (CLEAN[i][key] > m) m = CLEAN[i][key]; return m; }
       function stackMax(keys) {
         var m = 0;
@@ -224,7 +226,7 @@
       var defs = [
         {
           id: 'mild', family: 'multibar', title: 'Mild — 2× outlier',
-          note: 'The stack at one bin is exactly 2× the bulk. 2 &lt; 3×1, so at the default F=3 the group test fails and nothing clamps; drop F under 2 and it does.',
+          note: 'The stack at one bin is exactly 2× the bulk. The rule measures the bulk below the top share — here the third-largest stack, ~0.95× the clean max — so 2× &lt; 3 × 0.95: at the default F=3 nothing clamps; drop F under ~2.1 and it does.',
           sources: function () {
             return [binned('multibar', withStackOutliers(['a', 'b', 'c'], 'a',
               [{ slot: S_LO, total: 2 * BULK }]))];
@@ -240,7 +242,7 @@
         },
         {
           id: 'multiline', family: 'multiline', title: 'Multiline — extreme outlier',
-          note: 'One vertex of series a at 10× its own bulk: the line family draws through the TRUE value — the line leaves the plot box upward toward the real point, no arrow.',
+          note: 'One vertex of series a at 10× its own bulk: the line family draws through the TRUE value — the line leaves the plot box toward the real point, and the arrowhead marks where it leaves (one per clamped value, at least 14 px apart).',
           sources: function () {
             return [binned('multiline', withOutliers(['a', 'b'],
               [{ slot: S_LO, key: 'a', value: 10 * MAXA }]))];
@@ -264,7 +266,7 @@
         },
         {
           id: 'multi', family: 'multibar', title: 'Multiple — 9× and 6×',
-          note: 'Two outliers, 9× and 6× the bulk: one contiguous top group of 2, detected in a single pass (K = ⌊48 × share⌋ ≥ 2).',
+          note: 'Two outliers, 9× and 6× the bulk: they fill the top K = ⌊48 × share⌋ = 2 samples exactly, so the group is those two and the bulk below it is the largest clean stack.',
           sources: function () {
             return [binned('multibar', withStackOutliers(['a', 'b', 'c'], 'a',
               [{ slot: S_LO, total: 9 * BULK }, { slot: 8, total: 6 * BULK }]))];
@@ -281,15 +283,15 @@
         },
         {
           id: 'below', family: 'multibar', title: 'Just below the threshold',
-          note: 'The control case: the stack is 2.9× the bulk — under F=3, so this must NOT clamp at the defaults. Raise F… it still does not; lower F under 2.9 and it flips.',
+          note: 'The control case: the stack is 2.8× the bulk — under F=3 against the measured bulk (the third-largest stack, ~0.95× the clean max), so this must NOT clamp at the defaults. Raise F… it still does not; lower F under ~2.9 and it flips.',
           sources: function () {
             return [binned('multibar', withStackOutliers(['a', 'b', 'c'], 'a',
-              [{ slot: S_LO, total: 2.9 * BULK }]))];
+              [{ slot: S_LO, total: 2.8 * BULK }]))];
           },
         },
         {
           id: 'stackarea', family: 'stackarea', title: 'Stackarea — outlier',
-          note: 'One band pushes the stack total 10× past the bulk: stackarea is now LINE family — the band edge draws through the TRUE value and leaves the plot box upward. No arrow, only the axis clamps.',
+          note: 'One band pushes the stack total 10× past the bulk: stackarea is LINE family — the band edge draws through the TRUE value and leaves the plot box upward, and the band the edge actually crosses carries the arrowhead. Only the axis clamps.',
           sources: function () {
             return [binned('stackarea', withStackOutliers(['a', 'b'], 'b',
               [{ slot: S_LO, total: 10 * BULK2 }]))];
@@ -297,12 +299,12 @@
         },
         {
           id: 'errorbars', family: 'error-bars', title: 'Error-bars — outlier',
-          note: 'One bin 10× the bulk: the whisker flattens just below the arrowhead (apex at the plot edge). A ladder contributes 5 samples per bin and the whole rung set forms the group, so detection needs share ≥ ~2 %.',
+          note: 'One bin 10× the bulk: the whisker flattens just below the arrowhead (apex at the plot edge). A ladder contributes 5 rungs per bin as individual samples — the top share (5 % of 240 samples) absorbs the outlier rungs, and the bulk below the group is a neighbouring bin\'s top rung.',
           sources: function () {
             var d = ladderData();
             // Every rung of the outlier bin sits far above F × bulk: the five
-            // rungs are five contiguous samples, and the group test needs the
-            // group minimum above 3× the max of the rest.
+            // rungs are five of the top K = 12 samples (5 % of 240), and the
+            // bulk below the group is a neighbouring bin's top rung.
             for (var q = 0; q < 5; q++) d[S_LO].load[q] = 10 * LAD_TOP * (0.96 + 0.01 * q);
             return [binned('error-bars', d,
               { percentiles: [5, 25, 50, 75, 95], series_colors: { load: '#2d6a9f' } })];
@@ -310,7 +312,7 @@
         },
         {
           id: 'qbands', family: 'quantile-bands', title: 'Quantile bands — outlier',
-          note: 'One bin 10× the bulk: the band family draws through the TRUE rungs — the band leaves the plot box upward toward the real point, no arrow. Same ladder caveat as error-bars: 5 rungs per bin, so detection needs share ≥ ~2 %.',
+          note: 'One bin 10× the bulk: the band family draws through the TRUE rungs — the band leaves the plot box upward toward the real point, and the arrowhead at the bin centre marks where the ink leaves. Same ladder shape as error-bars: 5 rungs per bin as individual samples, and the top share absorbs the outlier rungs.',
           sources: function () {
             var d = ladderData();
             for (var q = 0; q < 5; q++) d[S_LO].load[q] = 10 * LAD_TOP * (0.96 + 0.01 * q);

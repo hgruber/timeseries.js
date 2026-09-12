@@ -281,19 +281,29 @@ per family, and the split is deliberate:
 | Family | Treatment |
 |---|---|
 | `multibar` | Segments clamp at `limit`; the **shaft rule** — the drawn bar tops out `CLAMP_HEAD` (9 px) below the plot edge, the `clampMark` arrowhead completes it with its apex touching the edge and its base exactly on the shaft line, so the shaft never reaches into the head. `highlight_multibar` frames the shaft as drawn, not as stored |
-| `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | **The ink is untouched — on purpose.** Lines, bands and ribbons draw through the TRUE values; a clamped vertex/band leaves the plot box upward toward the real point, a riser rises straight past the edge. No hatch, no arrow, no `clampY` |
+| `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | **The ink is untouched.** Lines, bands and ribbons draw through the TRUE values — a clamped vertex/band leaves the plot box toward the real point — and each clamped value carries the arrowhead at the x where its ink leaves the box, one per series and direction at least `MIN_GAP` (14 px) apart. No hatch, no `clampY` |
 | `multipoint`, `scatter` | The marker is the arrow's shaft: it sits `CLAMP_HEAD + r` below the edge, the `clampMark` arrowhead's apex touches the edge with its base exactly at the marker's top |
 | `error-bars`, `candlestick`, `ohlc` | Whisker/wick/body/median tick clamped via `clampY` — a cut value sits at the shaft line, just below the arrowhead whose apex touches the edge. Hatch would make no sense on a hairline whisker, so the glyph families carry the arrow alone |
 | `waterfall`, `heatmap`, `horizon`, `gantt` | **Excluded.** Nothing is stamped, nothing drawn, the extent identical with the feature on |
 
-- **Why the line/area family does not clamp its ink.** Connecting two points is a claim
-  about what happened *between* them — the same judgement that keeps `multiline`
-  interpolating and `stackarea` shading. A vertex flattened onto a clamp line would draw a
-  connection to a value the data never had, and a slope that says the signal *landed* where
-  it was merely cut; a band edge flattened would pinch every band above it onto a fake
-  edge. Drawing through the true value costs nothing (the canvas does not clip), and the
-  line running out of the plot box *is* the "continues beyond" mark — exactly what the
-  clamped axis underneath makes visible.
+- **Why the line/area family keeps its ink true — and still gets the arrow.** Connecting
+  two points is a claim about what happened *between* them — the same judgement that keeps
+  `multiline` interpolating and `stackarea` shading. A vertex flattened onto a clamp line
+  would draw a connection to a value the data never had, and a slope that says the signal
+  *landed* where it was merely cut. So the ink stays true, and the line still runs out of
+  the plot box. But the slope alone does not always tell the story: a near-vertical riser
+  leaves the box at essentially the x it entered it, and a staircase (`step`,
+  `quantile-steps`) draws the cut segment horizontally — neither reads as "cut off" rather
+  than "peaked and came back". Hence the same arrowhead the other families draw, apex at
+  the plot edge at the x where the ink leaves the box, in the series' colour at 0.9 — on
+  top of the true ink, never instead of it. One arrow per clamped value, greedily spaced
+  `MIN_GAP` (14 px) apart per series and direction: sporadic cuts each get their arrow, a
+  dense run collapses to one at its entry and one every 14 px along a long run. Arrowheads
+  of different series clamped at the same x overlap — the mark says "a value here was
+  cut", the colour is a bonus. `stackarea` marks only the band the edge actually crosses
+  (`upper > limit && lower ≤ limit`), the same attribution as multibar's `crossingUp`; the
+  direction reads off the band's own top edge, so a band pushed below the bottom limit is
+  marked for the series that pushed it there.
 - **`clampOf(plot)` is the null-safe read; `clampValue(cl, v)` the clamp in value space.**
   With the feature off (or no record) both pass everything through unchanged — `Infinity`
   limits, no marks — so the with-feature-off arithmetic is *exactly* the old arithmetic, per
@@ -310,13 +320,20 @@ per family, and the split is deliberate:
   exactly on the shaft line. `CLAMP_HEAD_PX` is exported because the hit test in
   `timeseries.js` must place a clamped point marker's hit circle at the same drawn position
   (the third "keep these in step" arrangement beside `barRect()` and `POINT_RADIUS`).
+  The line/area family calls it through **`drawClampMarks`**, which collects the clamped
+  values during the draw and paints the marks once at the END of the draw call (so no
+  band fill or later series paints over them) under the greedy `MIN_GAP` overlap guard —
+  candidates per (series, direction) ascend in x by construction, so one `lastX` per key
+  is the only state. `clampDir(cl, v)` is the shared cut test: `'up'`/`'down'` or null,
+  mirroring `clampValue`'s split.
 - **`collectClampSamples(plot, xLo, xHi, rctx)` must measure what the extent scan measures**
   — stack totals for a stacked type, every array entry for a banded one, per-series values
   otherwise, hidden series excluded, partial bins contributing their scaled value. Detection
   and extent can never disagree about what the block draws, because they sample the same
-  pass. Note a ladder block's **rungs count as individual samples**: five rungs per bin
-  means five contiguous top samples, so the share has to let a group that wide through —
-  5 divided by the visible samples, ~2 % for a 48-bin window.
+  pass. Note a ladder block's **rungs count as individual samples**: a 48-bin five-rung
+  window samples 240 values, so the top-5 % group is its top 12, and the bulk below the
+  group is usually a neighbouring bin's top rung — a dense ladder clamps only when one bin
+  clears the factor × the rest's top rung.
 - **Alpha lives on the colour, never on `globalAlpha`** — that belongs to the tier
   cross-fade, and writing it inside a renderer cancels the dissolve (the `horizon` rule,
   now twice over). And **no `ctx.clip()`**: no chart content uses one, and none of this
