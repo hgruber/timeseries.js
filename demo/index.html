@@ -437,6 +437,16 @@
                               title="The axis level the arrow keys currently step in">&mdash;</span>
                     </div>
                     <div class="divider"></div>
+                    <!-- Outlier clamping: rescale the y-axis from the bulk, arrow off the rest -->
+                    <div class="control-group">
+                        <span class="group-label">Clamp</span>
+                        <button class="btn-ghost"
+                                id="btn-clamp"
+                                aria-pressed="false"
+                                onclick="toggleClamp()"
+                                title="Clamp extreme values into the axis so the bulk stays legible (key: c). These signals are smooth, so nothing here is extreme enough to clamp — see the Clamping page for data that is.">Off</button>
+                    </div>
+                    <div class="divider"></div>
                     <!-- Live -->
                     <div class="control-group" id="live-group">
                         <span class="group-label">Live</span>
@@ -1075,6 +1085,29 @@
       btn.textContent = on ? 'Off' : 'Grid';
       showSnapGrid();
     }
+
+    // ── Outlier clamping ─────────────────────────────────────────────────────
+    // The same flip the c key does. toggleClampOutliers() hands back the state
+    // now in force, so the button relabels itself from that instead of reading
+    // the setting back.
+    function toggleClamp() {
+      ts.toggleClampOutliers();
+      showClamp();
+    }
+
+    function showClamp() {
+      var on = ts.getClampOutliers();
+      var btn = document.getElementById('btn-clamp');
+      btn.setAttribute('aria-pressed', String(on));
+      btn.textContent = on ? 'On' : 'Off';
+    }
+
+    // The c key flips the same switch without going through the button, so the
+    // label has to follow it. addEventListener rather than onkeydown: the chart
+    // owns that property, and this listener runs after its handler either way.
+    ts.getCanvas().addEventListener('keydown', function (e) {
+      if (e.key === 'c' && !e.ctrlKey && !e.altKey && !e.metaKey) showClamp();
+    });
 
     function showSnapGrid() {
       var el = document.getElementById('snap-grid-label');

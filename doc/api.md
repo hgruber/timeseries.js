@@ -70,7 +70,7 @@ The chart tracks "now" like a seismograph, scrolling the window as time passes.
 ts.follow(fraction);   // start; fraction 0–100 = where "now" sits, 0 = left edge … 100 = right
 ts.followNow();        // animate to "now" at the right edge, then roll — the window looks back
 ts.previewNow();       // animate to "now" at the left edge, then roll — the window looks ahead
-ts.centerNow();        // animate to "now" in the middle, then roll — half back, half ahead
+ts.centerNow();        // animate to "now" in the middle, then roll — half back, half ahead (key: n)
 ts.followNowStretch(); // as followNow(), but the left edge stays put and the window stretches
 ts.previewNowStretch();// as previewNow(), but the right edge stays put
 ts.stop();             // leave follow mode, keeping the window where it is
@@ -220,10 +220,18 @@ themes; a host on an older palette object falls back to the light default).
 ts.setColors(TimeSeries.themes.dark);   // merges key-by-key with the current palette, then redraws
 ts.setYAxisLabel('req/s');
 ts.setWatermark(urlOrImage);            // string URL or HTMLImageElement; null clears
+ts.setClampOutliers(on);                // outlier clamping on the y-axis; redraws (key: c)
+ts.getClampOutliers();
+ts.toggleClampOutliers();               // flip it; returns the state now in force
 ```
 
 `setColors` merges, so a partial object overrides only the keys it names. It also fires
 `onColorsChange`, which is how the tooltip and legend restyle themselves on a theme switch.
+
+The clamp trio moves the **global** setting only — a block carrying its own `clampOutliers`
+keeps deciding for itself, in both directions. `toggleClampOutliers()` returns the state now
+in force so a host's button can relabel itself without reading the setting back; the `c` key
+calls the same method. See [Configuration → Outlier clamping](configuration.md#outlier-clamping).
 
 See [Configuration → Colours and themes](configuration.md#colours-and-themes) for the palette keys.
 

@@ -357,11 +357,14 @@ only moves the focused one. Set `keyboard: false` to opt out entirely. On the mo
 wheel zooms and **Shift+wheel pans**, both continuous.
 
 Five letters enter follow mode: `f`/`F` anchor now at the right edge, `p`/`P` at the left,
-`c` in the centre. All five land in the identical rolling state, and case picks only the
+`n` in the centre. All five land in the identical rolling state, and case picks only the
 span left on screen — `f` slides the current width onto now, `F` pins the left edge and
 stretches the right one out to it. `withinZoomLimits()` is what stops a window lying wholly
 on the wrong side of now from producing an inverted target that `clampRange()` would flip;
-it falls back to the sliding entry. The letters deliberately do **not** call `dropGrid()`:
+it falls back to the sliding entry. The centre anchor sat on `c` until that letter was
+needed for the clamp switch below; `n` ("now") took it over, which is a change to the
+keyboard contract and is recorded as one in the CHANGELOG. The letters deliberately do
+**not** call `dropGrid()`:
 a follow jump lands on a now-relative window, `ensureGridFor()` sees `snapState.lo/hi` no
 longer match it and picks a fresh grid on the next arrow press by itself. Any modifier
 returns early, so `Ctrl+F` and `Ctrl+P` stay with the browser.
@@ -378,7 +381,8 @@ around new year — 31 Dec 2025 is week 1 of 2026 while `getFullYear()` says 202
 Everything here resolves on local midnight via `dayStart()`, never by adding 86400000: a
 23-hour DST day has to end where the axis says it does.
 
-Two more are switches: `g` is `togglePanSnap()`, and `l` is `toggleLegend()`. The second is
+Three more are switches: `g` is `togglePanSnap()`, `l` is `toggleLegend()`, and `c` is
+`toggleClampOutliers()`. The second is
 the one place the core holds a reference to an overlay, in `_legend`, and it does so for
 exactly one reason — the keyboard has no other route to a controller `attachLegend()` handed
 back to the *host*. The coupling is kept as thin as it can be: the core only ever calls
@@ -387,6 +391,18 @@ both sides (`legend.js` guards every `ts` call because it also runs against a ho
 object). `destroy()` clears the slot only if it is still the controller in it, so a second
 legend outliving the first is not unregistered by it. `toggleLegend()` on an empty slot is
 silent, not a warning: a page without a legend is not a misconfiguration.
+
+`setClampOutliers()` has to move **two** fields, and that is the whole subtlety of the
+runtime toggle. `clampModeOf()` reads `settings.clampOutliers` to decide per block, while
+`mergeGroup()` (`renderers.js`) reads `rctx.clamp.on` to decide for a coalesced group's
+merged block — and `rctx.clamp` *is* the `_clampParams` object the constructor built. Move
+only one and grouped blocks disagree with ungrouped ones about whether the feature is on.
+Beyond that a single `plotAll()` is the entire state transition: `prepare_grid` deletes a
+stale `plot._clamped` on every pass before re-deriving it, so switching off cannot leave a
+record behind, and the constructor already validated (or replaced) the three numbers, so
+switching on at runtime cannot enable a configuration that was rejected. The key moves the
+global setting only — a block with its own `clampOutliers` keeps its answer, the same
+precedence the constructor-time setting has.
 
 **A viewport is a grid state `{unit, mult, k, lo}`, not a pair of timestamps.** That framing
 is the whole feature and two earlier designs died without it:

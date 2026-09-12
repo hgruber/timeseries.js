@@ -93,9 +93,15 @@ again.
 
 Worth knowing:
 
+- **It flips at runtime.** `ts.setClampOutliers(on)` / `ts.getClampOutliers()` /
+  `ts.toggleClampOutliers()` switch it after construction, and the `c` key
+  ([Keyboard](#keyboard)) is bound to the toggle. The chart redraws on the spot; nothing
+  about the data is touched, so switching back restores the axis exactly.
 - **Per plot it is a property of the signal, not of the chart.** A block may carry
   `clampOutliers: true` or `false` itself and overrides the global setting in both
-  directions — see [Data formats](data-formats.md#binned-series).
+  directions — see [Data formats](data-formats.md#binned-series). That precedence holds for
+  the runtime toggle too: `c` moves the global setting, and a block that decided for itself
+  keeps its answer.
 - **The ink policy is per family.** Bars truncate at the plot edge: the shaft tops out a few
   pixels below it and an arrowhead — apex touching the edge — completes the arrow, with a
   Point and glyph renderers draw their marker or
@@ -271,7 +277,7 @@ The default is the German set (`Neujahr`, `Karfreitag`, `Tag der Einheit`, …).
 
 With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`,
 `role="application"`, and an `aria-label` unless the page set one) and binds the arrows for
-navigation, six letters for the calendar, five for follow mode and two switches.
+navigation, six letters for the calendar, five for follow mode and three switches.
 
 **Navigation**
 
@@ -298,7 +304,7 @@ navigation, six letters for the calendar, five for follow mode and two switches.
 |---|---|---|
 | f | the right edge | `ts.followNow()` |
 | p | the left edge | `ts.previewNow()` |
-| c | the middle | `ts.centerNow()` |
+| n | the middle | `ts.centerNow()` |
 | F | the right edge, stretching there | `ts.followNowStretch()` |
 | P | the left edge, stretching there | `ts.previewNowStretch()` |
 
@@ -308,6 +314,7 @@ navigation, six letters for the calendar, five for follow mode and two switches.
 |---|---|---|
 | l | the legend overlay | `ts.toggleLegend()` |
 | g | grid snapping for the arrows | `ts.togglePanSnap()` |
+| c | [outlier clamping](#outlier-clamping) on the y-axis | `ts.toggleClampOutliers()` |
 
 ### The two switches
 
@@ -335,7 +342,7 @@ the follow keys, there is no second span a capital could sensibly pick.
 
 All five end in the **same** rolling state: the window keeps its width and slides so that
 "now" stays at the anchor the letter names — right edge for `f`/`F`, left for `p`/`P`,
-centre for `c`. Each animates there over `zoomDuration`.
+centre for `n`. Each animates there over `zoomDuration`.
 
 Case picks the **span left on screen**, and nothing else. `f` slides the current window onto
 now, keeping its width. `F` instead pins the left edge and runs the right one out to now, so

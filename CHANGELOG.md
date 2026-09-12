@@ -42,6 +42,24 @@ for a reader who has not seen the commits.
   twelve chart cards in one viewport-sync group. See
   [Outlier clamping](doc/configuration.md#outlier-clamping).
 
+- **Outlier clamping flips at runtime, and the `c` key flips it.** `ts.setClampOutliers(on)`,
+  `ts.getClampOutliers()` and `ts.toggleClampOutliers()` switch the feature after
+  construction — the chart redraws on the spot, the data is untouched, and switching back
+  restores the axis exactly. `toggleClampOutliers()` returns the state now in force, so a
+  host's own button can relabel itself without reading the setting back; that is what the
+  new Clamp button on `demo/index.html` does. The toggle moves the **global** setting only:
+  a block carrying its own `clampOutliers` keeps deciding for itself, in both directions,
+  exactly as before. With `keyboard: true` the `c` key is bound to it (`Ctrl+C` stays Copy —
+  any modifier is handed back to the browser).
+
+### Changed
+
+- **The centre-follow key moved from `c` to `n`.** `c` now toggles outlier clamping, so the
+  third follow anchor — "now" in the middle of the window — is on `n`. `f`, `p`, `F` and `P`
+  are unchanged, and `ts.centerNow()` itself is unchanged; only the key that calls it moved.
+  A page that documents the chart's keys to its users has to say `n` from here on. See
+  [Keyboard](doc/configuration.md#keyboard).
+
 ## [0.10.5] - 2026-09-01
 
 ### Fixed

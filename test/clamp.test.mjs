@@ -825,3 +825,80 @@ test('the tooltip appends the "▲ clamped to axis" hint on a clamped hit only',
 
   tip.destroy();
 });
+// ── 12. The runtime toggle ───────────────────────────────────────────────────
+// The clamp is a display policy, so it flips at runtime like panSnap does —
+// setClampOutliers / getClampOutliers / toggleClampOutliers, which is what the
+// c key calls. The transition is one plotAll(): prepare_grid deletes a stale
+// `_clamped` before re-deriving it, so switching off has to leave the chart
+// byte-identical to one that was never switched on.
+
+test('setClampOutliers rescales the axis both ways', async () => {
+  const ts = await build([barSource({}, [5])]);
+  assert.equal(ts.getClampOutliers(), false, 'off is the default');
+  assert.equal(ts.getValueRange().ymax, 320);
+
+  ts.setClampOutliers(true);
+  assert.equal(ts.getClampOutliers(), true);
+  assert.equal(ts.getValueRange().ymax, 37.5, 'the bulk-stretched limit');
+  assert.ok(ts.getActiveData()[0]._clamped, 'and a record is stamped');
+
+  ts.setClampOutliers(false);
+  assert.equal(ts.getValueRange().ymax, 320, 'the true max is back');
+  assert.equal(ts.getActiveData()[0]._clamped, undefined,
+               'and no stale record survives the flip');
+});
+
+test('toggleClampOutliers flips and reports the state now in force', async () => {
+  const ts = await build([barSource({}, [5])]);
+  assert.equal(ts.toggleClampOutliers(), true, 'returns what a host would relabel to');
+  assert.equal(ts.getValueRange().ymax, 37.5);
+  assert.equal(ts.toggleClampOutliers(), false);
+  assert.equal(ts.getValueRange().ymax, 320);
+});
+
+test('a chart constructed with the clamp on can switch it off again', async () => {
+  const ts = await build([barSource({}, [5])], { clampOutliers: true });
+  assert.equal(ts.getClampOutliers(), true);
+  ts.setClampOutliers(false);
+  assert.equal(ts.getValueRange().ymax, 320);
+});
+
+test('the runtime toggle only moves the global setting', async () => {
+  // Per-plot flags keep deciding for themselves, in both directions — the same
+  // precedence the constructor-time setting has.
+  const ts = await build([barSource({ clampOutliers: false }, [5])]);
+  ts.setClampOutliers(true);
+  assert.equal(ts.getValueRange().ymax, 320, 'an opted-out block stays unclamped');
+  assert.equal(ts.getActiveData()[0]._clamped, undefined);
+
+  const ts2 = await build([barSource({ clampOutliers: true }, [5])],
+                          { clampOutliers: true });
+  ts2.setClampOutliers(false);
+  assert.equal(ts2.getValueRange().ymax, 37.5, 'an opted-in block stays clamped');
+});
+
+test('setting the value it already has changes nothing', async () => {
+  const ts = await build([barSource({}, [5])]);
+  const before = ts.getValueRange();
+  ts.setClampOutliers(false);
+  assert.deepEqual(ts.getValueRange(), before);
+  assert.equal(ts.getClampOutliers(), false);
+});
+
+test('invalid params leave the toggle switched off but still usable', async () => {
+  // The constructor replaced the three numbers with the defaults and forced the
+  // feature off. Switching on at runtime must therefore clamp by the defaults,
+  // not re-apply the rejected configuration.
+  const warn = console.warn;
+  console.warn = () => {};
+  let ts;
+  try {
+    ts = await build([barSource({}, [5])],
+                     { clampOutliers: true, clampOutliersFactor: 0.5 });
+  } finally { console.warn = warn; }
+
+  assert.equal(ts.getClampOutliers(), false, 'the bad config was forced off');
+  assert.equal(ts.getValueRange().ymax, 320);
+  ts.setClampOutliers(true);
+  assert.equal(ts.getValueRange().ymax, 37.5, 'and clamps by factor 3, the default');
+});

@@ -8,15 +8,16 @@
 // the nav buttons, at any zoom level.
 //
 // Five letters enter follow mode, anchored where the letter says: f/F right
-// edge, p/P left, c centre. All five end in the same rolling state; shift only
+// edge, p/P left, n centre. All five end in the same rolling state; shift only
 // picks the span left on screen — slide the current width onto now, or pin the
 // far edge and stretch to it.
 //
 // Six more jump to a calendar unit: t today, and d/w/m/y the day, ISO week,
 // month or year the middle of the window falls in.
 //
-// Two are switches rather than movement: l flips the legend overlay, g flips
-// whether the arrows snap to the axis grid.
+// Three are switches rather than movement: l flips the legend overlay, g flips
+// whether the arrows snap to the axis grid, and c flips the outlier clamp on
+// the y-axis.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -223,8 +224,8 @@ test('panSnap: off pans by the exact width instead of snapping', async () => {
 
 const HOUR = 3600000;
 
-test('f, p and c roll with now at the right edge, the left and the centre', async () => {
-  for (const [key, pct] of [['f', 100], ['p', 0], ['c', 50]]) {
+test('f, p and n roll with now at the right edge, the left and the centre', async () => {
+  for (const [key, pct] of [['f', 100], ['p', 0], ['n', 50]]) {
     const { ts, canvas } = build();
     const t0 = Date.now() - 6 * HOUR;
     await setView(ts, t0, t0 + HOUR);
@@ -314,12 +315,13 @@ test('P on a window entirely in the past falls back to p', async () => {
 });
 
 test('a modifier hands the key back to the browser', async () => {
-  // Ctrl+F is Find and Ctrl+P is Print; a focused chart must not swallow either.
+  // Ctrl+F is Find, Ctrl+P is Print and Ctrl+C is Copy; a focused chart must
+  // not swallow any of them.
   const { ts, canvas } = build();
   const t0 = new Date(2026, 4, 11).getTime();
   await setView(ts, t0, t0 + 7 * 24 * HOUR);
 
-  for (const key of ['f', 'p', 'c', 'm', 'w', 'ArrowRight']) {
+  for (const key of ['f', 'p', 'n', 'c', 'm', 'w', 'ArrowRight']) {
     const e = keyEvent(key, false, true);
     canvas.onkeydown(e);
     assert.equal(e.prevented, false, `Ctrl+${key} must be left to the browser`);
@@ -329,6 +331,7 @@ test('a modifier hands the key back to the browser', async () => {
   const vp = ts.getViewport();
   assert.equal(vp.tmin, t0, 'and must not move the viewport');
   assert.equal(vp.tmax, t0 + 7 * 24 * HOUR);
+  assert.equal(ts.getClampOutliers(), false, 'nor flip a switch: Ctrl+C is Copy');
 });
 
 // -- The calendar keys ---------------------------------------------------------
@@ -428,9 +431,10 @@ test('a calendar key leaves follow mode instead of entering it', async () => {
 });
 
 // -- The switches --------------------------------------------------------------
-// Neither moves the viewport. g flips the snap policy, which only shows on the
+// None moves the viewport. g flips the snap policy, which only shows on the
 // next arrow press; l flips the legend, and is bound whether or not one is
-// attached so the binding never depends on what the host hung off the chart.
+// attached so the binding never depends on what the host hung off the chart;
+// c flips the outlier clamp, which redraws the y-axis but leaves time alone.
 
 test('g flips the snap policy back and forth', async () => {
   const { ts, canvas } = build();
@@ -495,5 +499,28 @@ test('l is harmless when no legend is attached', async () => {
   assert.equal(e.prevented, true, 'bound regardless of what the host attached');
   const vp = ts.getViewport();
   assert.equal(vp.tmin, t0, 'and moves nothing');
+  assert.equal(vp.tmax, t1);
+});
+
+test('c flips the outlier clamp without touching the viewport', async () => {
+  const { ts, canvas } = build();
+  const t0 = new Date(2026, 4, 11).getTime();
+  const t1 = new Date(2026, 4, 18).getTime();
+  await setView(ts, t0, t1);
+  assert.equal(ts.getClampOutliers(), false, 'off is the default');
+
+  const e = keyEvent('c');
+  canvas.onkeydown(e);
+  assert.equal(e.prevented, true, 'c should preventDefault');
+  assert.equal(ts.getClampOutliers(), true);
+
+  canvas.onkeydown(keyEvent('c'));
+  assert.equal(ts.getClampOutliers(), false, 'it is a toggle, not a one-way switch');
+
+  // The whole point of moving centerNow() off c: the key is a display switch
+  // now, so it must not enter follow mode or move the window an inch.
+  await sleep(200);
+  const vp = ts.getViewport();
+  assert.equal(vp.tmin, t0, 'c is no longer centerNow()');
   assert.equal(vp.tmax, t1);
 });

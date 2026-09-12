@@ -1832,8 +1832,9 @@ export default function TimeSeries(options) {
         canvas.setAttribute('aria-label',
           'Time series chart. Left and right arrow keys page through time, up and down zoom; hold shift for a single step. ' +
           'T, D, W, M and Y jump to today, or to the day, week, month or year in the middle of the window. ' +
-          'F, P and C follow the present at the right edge, the left edge or the centre. ' +
-          'L shows or hides the legend, G turns grid snapping on or off.');
+          'F, P and N follow the present at the right edge, the left edge or the centre. ' +
+          'L shows or hides the legend, G turns grid snapping on or off, ' +
+          'C clamps extreme values into the axis or releases them.');
     }
 
     canvas.onkeydown = function (e) {
@@ -1852,7 +1853,7 @@ export default function TimeSeries(options) {
       else if (e.key === 'ArrowUp')    self.zoomStep(1, cell);
       else if (e.key === 'ArrowDown')  self.zoomStep(-1, cell);
       // The five follow keys. All of them end in the same rolling state, anchored
-      // where the letter says: f/F right edge, p/P left, c centre. Shift picks the
+      // where the letter says: f/F right edge, p/P left, n centre. Shift picks the
       // span that is left on screen — slide the current width onto now, or pin the
       // far edge and stretch to it — and nothing about how the window then moves.
       // Case, not e.shiftKey: the binding is on the character the user typed.
@@ -1860,7 +1861,7 @@ export default function TimeSeries(options) {
       else if (e.key === 'F')          self.followNowStretch();
       else if (e.key === 'p')          self.previewNow();
       else if (e.key === 'P')          self.previewNowStretch();
-      else if (e.key === 'c')          self.centerNow();
+      else if (e.key === 'n')          self.centerNow();
       // The calendar keys jump to the unit the middle of the window falls in —
       // t is the exception, being today whatever the window shows. Each leaves
       // follow mode, as every named view does. No shifted variants: unlike the
@@ -1870,12 +1871,17 @@ export default function TimeSeries(options) {
       else if (e.key === 'w')          self.zoomWeekAt(midTime());
       else if (e.key === 'm')          self.zoomMonthAt(midTime());
       else if (e.key === 'y')          self.zoomYearAt(midTime());
-      // The two switches. Neither moves the viewport: l flips an overlay, g
-      // flips whether the arrows snap — which shows on the next press, not now.
-      // l is bound whether or not a legend is attached, so what the key does
-      // never depends on what the host happened to hang off the chart.
+      // The three switches. None moves the viewport: l flips an overlay, g flips
+      // whether the arrows snap — which shows on the next press, not now — and c
+      // flips the outlier clamp, which redraws the y-axis on the spot. l is bound
+      // whether or not a legend is attached, so what the key does never depends
+      // on what the host happened to hang off the chart. c only moves the global
+      // setting: a block carrying its own clampOutliers keeps deciding for itself,
+      // in both directions, exactly as the option documents. Ctrl+C is Copy and
+      // never reaches here — the modifier guard above returns first.
       else if (e.key === 'l')          self.toggleLegend();
       else if (e.key === 'g')          self.togglePanSnap();
+      else if (e.key === 'c')          self.toggleClampOutliers();
       else return;                     // leave every other key to the browser
       e.preventDefault();              // ... but don't let the page scroll
     };
@@ -3471,6 +3477,38 @@ export default function TimeSeries(options) {
   this.toggleLegend = function () {
     if (_legend && typeof _legend.toggle === 'function') _legend.toggle();
   };
+
+  // ── Outlier clamping, at runtime ─────────────────────────────────────────────
+  // The clamp is a display policy, not a property of the data, so it flips like
+  // panSnap does: set/get/toggle, and toggle hands back the state now in force
+  // so a host's own button can relabel itself without a second read.
+  //
+  // BOTH fields have to move together. clampModeOf() reads settings.clampOutliers
+  // for the per-plot decision, while mergeGroup() (renderers.js) reads
+  // rctx.clamp.on for a group's merged block — and rctx.clamp *is* _clampParams
+  // (see plotAll). Setting only one leaves grouped blocks disagreeing with
+  // ungrouped ones about whether the feature is on at all.
+  //
+  // Nothing needs clearing beyond that: prepare_grid deletes a stale
+  // plot._clamped on every pass before re-deriving it, so one plotAll() is the
+  // whole state transition. The constructor already validated (or replaced) the
+  // three numbers in _clampParams, so switching on at runtime cannot enable an
+  // invalid configuration — there is nothing left to re-check here.
+  this.getClampOutliers = function () { return settings.clampOutliers; };
+
+  this.setClampOutliers = function (on) {
+    var next = !!on;
+    if (next === settings.clampOutliers) return;
+    settings.clampOutliers = next;
+    _clampParams.on = next;
+    plotAll();
+  };
+
+  this.toggleClampOutliers = function () {
+    self.setClampOutliers(!settings.clampOutliers);
+    return settings.clampOutliers;
+  };
+
   this.onStop   = function (fn) { follow_stop_cb = fn; };
   this.onFollow = function (fn) { follow_start_cb = fn; };
 
