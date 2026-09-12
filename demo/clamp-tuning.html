@@ -232,7 +232,7 @@
         },
         {
           id: 'extreme', family: 'multibar', title: 'Extreme — 10× outlier',
-          note: '10× the bulk. Clamps at the defaults: the bulk sits at 80 % of the plot height (limit = bulk / 0.8), the shaft tops out 9 px below the edge and the arrowhead completes it — apex at the edge. The tooltip is attached here.',
+          note: '10× the bulk. Clamps at the defaults: the bulk sits at 80 % of the plot height (limit = bulk / 0.8), the shaft tops out 9 px below the edge and the arrowhead completes it — apex at the edge.',
           sources: function () {
             return [binned('multibar', withStackOutliers(['a', 'b', 'c'], 'a',
               [{ slot: S_LO, total: 10 * BULK }]))];
@@ -354,11 +354,11 @@
       // ── Settings + rebuild ──────────────────────────────────────────────────
       // The clamp settings are constructor-time, and a canvas can never be
       // reused (a second TimeSeries on the same canvas warns and returns a
-      // half-built object). So every change: destroy the tooltip, replace each
+      // half-built object). So every change: destroy the tooltips, replace each
       // <canvas> node with a fresh one, rebuild every instance.
       var state = { on: true, factor: 3, share: 0.05, bulk: 0.8 };
       var charts = [];
-      var tip = null;
+      var tips = [];
       var rebuildTimer = null;
 
       var els = {
@@ -417,7 +417,11 @@
       }
 
       function rebuild() {
-        if (tip) { tip.destroy(); tip = null; }
+        // Every card carries its own tooltip, so a hover reads the value off
+        // whichever chart is under the pointer. They are owned by the instances
+        // being replaced, so all of them go before the rebuild.
+        for (const t of tips) t.destroy();
+        tips = [];
         // Preserve the live viewport across the rebuild: the PREVIOUS
         // instances are still alive at this point (charts is cleared only
         // after the read, and their canvases are replaced afterwards), so
@@ -447,7 +451,7 @@
             group: 'clamp-tuning',
           });
           charts.push({ id: d.id, ts: ts });
-          if (d.id === 'extreme') tip = attachTooltip(ts);
+          tips.push(attachTooltip(ts));
         }
         // The readouts need one painted frame behind them (getValueRange and
         // the stamped _clamped are both written during plotAll).
