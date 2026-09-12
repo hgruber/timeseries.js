@@ -1962,7 +1962,7 @@ export default function TimeSeries(options) {
       if (!canvas.getAttribute('aria-label'))
         canvas.setAttribute('aria-label',
           'Time series chart. Left and right arrow keys page through time, up and down zoom; hold shift for a single step. ' +
-          'B steps back through the windows you have visited, shift B forward again. ' +
+          'b steps back through the windows you have visited, B forward again. ' +
           'T, D, W, M and Y jump to today, or to the day, week, month or year in the middle of the window. ' +
           'F, P and N follow the present at the right edge, the left edge or the centre. ' +
           'L shows or hides the legend, G turns grid snapping on or off, ' +
