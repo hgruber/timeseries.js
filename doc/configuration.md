@@ -15,6 +15,7 @@ const ts = new TimeSeries({
   autoFollow:     false,         // enter follow mode when "now" reaches the right edge
   keyboard:       true,          // focusable canvas + arrow-key paging and zooming
   panSnap:        'grid',        // 'grid' | 'off' — snap keyboard navigation to the axis grid
+  historyDepth:   50,            // how many visited windows b/B step back through; 0 = off
   fadeHi:         2,             // resolution-tier switch point, px of bar width
   fadeLo:         1,             // dissolve band lower edge, px of bar width
   partialBins:    'full',        // 'full' | 'clip' | 'scale' — how an incomplete bin is drawn
@@ -47,6 +48,7 @@ const ts = new TimeSeries({
 | `autoFollow` | boolean | `false` | Start rolling once the right edge reaches the present. `follow` is the explicit "roll now"; `autoFollow` is the trigger that starts it later. |
 | `keyboard` | boolean | `true` | Focusable canvas and arrow-key navigation — see [below](#keyboard). |
 | `panSnap` | string | `'grid'` | `'grid'` snaps keyboard navigation to the labelled axis grid, `'off'` moves continuously — see [below](#keyboard). |
+| `historyDepth` | number | `50` | How many visited windows the history keeps, and therefore how far `b` / `ts.back()` reach. `0` switches the history off; `back()` and `forward()` then always report `false` — see [below](#keyboard). |
 | `fadeHi` / `fadeLo` | number (px) | `2` / `1` | Resolution-tier switch point and dissolve band — see [Resolution tiers](tiers.md). |
 | `partialBins` | string | `'full'` | How the bin holding a block's `data_until` is drawn — see [Partial bins](api.md#partial-bins). |
 | `yAxisFormat` | function | SI format | `(value) => string` for y-axis tick labels. |
@@ -286,7 +288,8 @@ The default is the German set (`Neujahr`, `Karfreitag`, `Tag der Einheit`, …).
 
 With `keyboard: true` (the default) the canvas joins the tab order (`tabindex=0`,
 `role="application"`, and an `aria-label` unless the page set one) and binds the arrows for
-navigation, six letters for the calendar, five for follow mode and three switches.
+navigation, two letters for the viewport history, six for the calendar, five for follow mode
+and three switches.
 
 **Navigation**
 
@@ -296,6 +299,8 @@ navigation, six letters for the calendar, five for follow mode and three switche
 | Shift+←/→ | one grid cell back/forward | `ts.pan(∓1, { cells: 1 })` |
 | ↑/↓ | zoom in/out, halving or doubling the window | `ts.zoomStep(±1)` |
 | Shift+↑/↓ | one cell narrower/wider | `ts.zoomStep(±1, { cells: 1 })` |
+| b | back to the previous window | `ts.back()` |
+| B | forward again into what `b` left | `ts.forward()` |
 
 **Calendar** — the unit the middle of the window falls in
 
@@ -335,6 +340,31 @@ object with a `toggle()` — see [Overlays](overlays.md#controller-1).
 `g` switches `panSnap` between `'grid'` and `'off'`. Nothing happens on screen when you
 press it: it changes what the **next** arrow press does, and deliberately does not move the
 window onto the grid on its own.
+
+### The viewport history
+
+`b` steps back to the window you were looking at before, `B` forward again into the one `b`
+left. The history is kept the way a browser keeps it, and the same two rules apply: stepping
+somewhere **new** after a `b` discards the forward branch, and at either end the key simply
+does nothing (`ts.back()` / `ts.forward()` report `false`, so a host can grey out its own
+buttons from `ts.getHistory()`).
+
+What counts as one step is the part worth knowing:
+
+- **One call, one entry.** Every named view, every arrow, every axis click, `zoom()`,
+  `pan()`, `zoomStep()` and the follow keys file the window they leave.
+- **One gesture, one entry.** A drag, a pinch and a wheel flick file the window they started
+  from — once, no matter how many frames they take. A click that never moves the window
+  files nothing.
+- **A rolling window comes back rolling.** An entry carries the follow anchor as well, so
+  `b` into a window you were following restores the roll at the same anchor and width, not a
+  frozen copy of it. `ts.stop()` is undoable for the same reason.
+- **Starting up is not navigating**, so `initialView` never lands on the stack, and a
+  viewport pushed in by a [sync-group](api.md#viewport-sync-groups) peer is not recorded
+  either: the gesture is already in the history of the chart it happened on.
+
+`historyDepth` (default 50) sets how far back the stack reaches; `0` switches recording off
+entirely, and the two keys stay bound but have nowhere to go.
 
 ### The calendar keys
 

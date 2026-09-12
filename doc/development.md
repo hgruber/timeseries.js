@@ -201,6 +201,11 @@ reach it), `test/options.test.mjs`
 `test/keyboard.test.mjs` (focusability, all four arrows and their shift variants, the
 five follow keys, the six calendar keys incl. the ISO-week and DST boundary cases, the two
 switches and the modifier escape hatch),
+`test/history.test.mjs` (the viewport history behind `b`/`B`: walking back and forward, a
+new navigation discarding the forward branch, one entry per call *and* per gesture — a drag,
+a wheel flick, a click that never moves — the follow anchor surviving the round trip,
+`historyDepth` capping and switching it off, and what deliberately records nothing: start-up
+and a sync-group peer),
 `test/offset.test.mjs`
 (hit testing survives the canvas moving in the viewport — see below),
 `test/zabbix.test.mjs` (the zoom-adaptive Zabbix source: the pure ring helpers

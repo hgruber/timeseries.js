@@ -15,6 +15,9 @@
 // Six more jump to a calendar unit: t today, and d/w/m/y the day, ISO week,
 // month or year the middle of the window falls in.
 //
+// Two walk the viewport history: b back to the previous window, B forward again
+// into what b left. Their own coverage is in history.test.mjs.
+//
 // Three are switches rather than movement: l flips the legend overlay, g flips
 // whether the arrows snap to the axis grid, and c flips the outlier clamp on
 // the y-axis.

@@ -12,7 +12,8 @@ are trying to do.
 
 ## Navigation
 
-Any of these method names is also a valid `initialView` value. `initialView` additionally accepts a `[tmin, tmax]` window in ms (Date objects are accepted too), which is applied synchronously — before the first paint — for the case where the host has computed the start window itself and wants it on screen without the brief flash of the default window. The follow state is a separate concern: see [Follow mode](#follow-rolling-mode) and the `follow` option in [Configuration](configuration.md).
+Any of these method names is also a valid `initialView` value — bar `back()`/`forward()`,
+which have nothing to step to at construction time and would simply do nothing. `initialView` additionally accepts a `[tmin, tmax]` window in ms (Date objects are accepted too), which is applied synchronously — before the first paint — for the case where the host has computed the start window itself and wants it on screen without the brief flash of the default window. The follow state is a separate concern: see [Follow mode](#follow-rolling-mode) and the `follow` option in [Configuration](configuration.md).
 
 ```js
 ts.today()       ts.yesterday()   ts.tomorrow()
@@ -44,6 +45,13 @@ ts.togglePanSnap();                // flip between the two; returns the mode now
 ts.getSnapGrid();                  // { unit, mult, k, tmin, tmax } currently in force
 ```
 
+```js
+ts.back();                         // to the window before this one; false if there is none
+ts.forward();                      // back into what back() left; false if there is none
+ts.getHistory();                   // { back, forward, depth } — entry counts and the cap
+ts.clearHistory();                 // forget where the chart has been
+```
+
 `pan()` and `zoomStep()` move in whole cells of the **coarsest x-axis level that is currently
 labelled and fits the window**, so they land on readable boundaries at any zoom: 18:55–20:04
 pages to 20:00–21:00, a six-hour window pages six full hours on without changing width, a
@@ -55,6 +63,14 @@ daylight-saving change comes out 23 or 25 hours long rather than a wrong 24, and
 Monday to Monday. `zoomWeekAt()` is not `zoomWeek()` with a week number worked out for you:
 the ISO week-numbering year is not the calendar year around new year — 31 December 2025 sits
 in week 1 of 2026 — and walking back to the Monday sidesteps that entirely.
+
+`back()` and `forward()` walk the **viewport history**, kept the way a browser keeps it:
+every navigation above files the window it leaves, and stepping somewhere new after a
+`back()` discards the forward branch. One call is one entry and one pointer gesture is one
+entry, whatever it costs in frames; an entry carries the follow anchor too, so stepping back
+into a window you were following restores the roll rather than a frozen copy. `historyDepth`
+(default 50) caps the stack and `0` switches it off. The keys are `b` and `B` — see
+[the viewport history](configuration.md#the-viewport-history) for the full rules.
 
 The grid is attached once — rounding the window onto whole cells by at most 20 % of its width
 — and then held, so repeated paging is exact and never drifts. Wheel, drag and pinch are never
@@ -116,6 +132,12 @@ or join and leave at runtime:
 ts.joinGroup('dashboard');
 ts.leaveGroup();
 ```
+
+A viewport arriving from a peer is **not** recorded in the receiving chart's
+[history](#navigation): the gesture that caused it is already in the history of the chart it
+happened on, and recording it again would fill every peer's stack with one entry per frame of
+someone else's drag. `back()` on any chart in the group therefore moves the whole group,
+guided by the history of the one the key was pressed on.
 
 Within a group one instance is elected to drive the clock in follow mode. The election runs
 once, when following starts, and the widest visible canvas wins — a chart in a hidden

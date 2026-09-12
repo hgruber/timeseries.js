@@ -21,6 +21,7 @@ five-minute version; everything else lives here.
 | Set constructor options, colours, themes, holidays | [Configuration](configuration.md) |
 | Keep a few extreme values from squashing the axis | [Configuration → Outlier clamping](configuration.md#outlier-clamping) |
 | Navigate, zoom, follow "now", sync several charts | [API reference → Navigation](api.md#navigation) |
+| Step back to the window I was just looking at | [Configuration → The viewport history](configuration.md#the-viewport-history) |
 | Read or change what is on screen at runtime | [API reference](api.md) |
 | Add a hover tooltip or a clickable legend | [Overlays](overlays.md) |
 | Pull data from Zabbix, a CalDAV server, Prometheus, InfluxDB, Home Assistant, a WebSocket feed, or DuckDB-WASM | [Data sources](sources.md) |

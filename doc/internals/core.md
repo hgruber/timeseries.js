@@ -410,6 +410,10 @@ around new year — 31 Dec 2025 is week 1 of 2026 while `getFullYear()` says 202
 Everything here resolves on local midnight via `dayStart()`, never by adding 86400000: a
 23-hour DST day has to end where the axis says it does.
 
+Two walk the viewport history: `b` is `back()`, `B` is `forward()`. Case, not `e.shiftKey`,
+like the follow pair, and both stay bound with an empty stack so what the key does never
+depends on where the user has been — see *Viewport history* below.
+
 Three more are switches: `g` is `togglePanSnap()`, `l` is `toggleLegend()`, and `c` is
 `toggleClampOutliers()`. The second is
 the one place the core holds a reference to an overlay, in `_legend`, and it does so for
@@ -464,6 +468,61 @@ wheel, `onmousedown` and `ontouchstart` — so the hand is never fighting the gr
 `panSnap: 'off'` (or `{snap: false}` per call) skips all of it: `pan()` moves by the exact
 width, `zoomStep()` by a factor of two. `snapView()` snaps without paging, `getSnapGrid()`
 reports the state, `setPanSnap`/`getPanSnap` switch modes at runtime.
+
+## Viewport history — `back()` / `forward()`, the `b` and `B` keys
+
+Two stacks, exactly as a browser keeps them: `backStack` holds the windows left behind,
+`fwdStack` the ones a `back()` stepped out of, and `fileEntry()` clears the forward branch
+whenever something new is filed. `historyDepth` (default 50) caps both. An entry is
+`{ tmin, tmax, follow }`; `follow` is the anchor in percent when the window was rolling,
+`null` when it was frozen.
+
+**`zoom()` is the one chokepoint.** Every discrete navigation ends there — named views,
+`pan()`, `zoomStep()`, `snapView()`, the axis-click `navigate()`, the follow entries — so a
+single `recordNav()` covers all of them. It files `pendingView()`, not `tmin`/`tmax`: a key
+pressed mid-animation must leave behind the window being animated *to*, not the frame that
+happens to be on screen, which is the same rule `pan()` and `zoomStep()` already read the
+viewport by. The call sits **after** zoom()'s no-op early return, so a navigation that
+changes nothing files nothing.
+
+**The follow anchor is filed where it dies, not where the window changes.** Every named view
+calls `doStop()` *before* `zoom()`, so by the time `recordNav()` runs inside `zoom()` the
+anchor is already cleared and the window would be filed as a frozen one — `b` would then
+bring a rolling window back stopped. `doStop()` and `doFollow()` therefore file the window
+themselves while the anchor is still live (skipping it under `_syncing`, since a peer's stop
+is not this chart's navigation). The `zoom()` that follows files the same window a second
+time, and `fileEntry()`'s duplicate check — which compares `tmin`/`tmax` only, deliberately
+**not** `follow` — drops it. Compare the anchor there and one key press leaves two entries,
+the second indistinguishable from the first on screen.
+
+**An analogue gesture is one navigation.** Drag and pinch snapshot the window at
+`onmousedown`/`ontouchstart` into `gestureEntry` — before the handler's own `doStop()`, for
+the reason above — and `recordGesture()` files it on the first movement, so a click that
+never moves files nothing and an axis click leaves only the entry its `zoom()` made. The
+wheel has no start event to hang that on, so `wheelNav()` files on the first notch and treats
+400 ms without another as the end of the flick; it is called past each branch's guards, so a
+notch the zoom limits refuse does not file a window it never left.
+
+**`_restoring` guards the jump itself.** `back()`/`forward()` move one entry between the
+stacks and then call `zoom()` or `follow_animated_to()` like anyone else; without the flag
+that call would file the jump as a new navigation and wipe the stack it had just filled.
+
+A restored **rolling** entry is re-anchored on the current `Date.now()` with its recorded
+width, not replayed at its recorded edges: for a rolling window the width and the anchor are
+what the user chose, the edges only recorded where now happened to be, and `follower_tick`
+would snap them onto the present at its first tick anyway — `last24()` staggers its
+`start_follower` for the same reason.
+
+Two things deliberately record **nothing**: `follower_tick()`, because a rolling window is
+not navigating, and `setViewport()`, because a group peer's viewport belongs to the history of
+the chart the gesture happened on (recording it would give every peer one entry per frame of
+someone else's drag). The constructor's deferred dispatch clears the history after
+`initialView` and `applyFollow()` have run — both pass through the history, and the chart's
+own default window is not a place the user has been.
+
+`snapState` is **not** part of an entry and is not dropped on a jump. The restored window no
+longer matches `snapState.lo/hi`, so `ensureGridFor()` attaches a fresh grid on the next
+arrow press by itself — the same reason the follow keys do not call `dropGrid()`.
 
 ## Module-level exports
 

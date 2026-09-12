@@ -56,7 +56,8 @@ Save this as an HTML file and open it. That is the whole setup.
 ```
 
 Drag to pan, scroll to zoom (shift+scroll to pan), click a time label to zoom to it,
-arrow keys to page and zoom — snapped to the axis grid at every zoom level.
+arrow keys to page and zoom — snapped to the axis grid at every zoom level, and `b` to step
+back to the window you were just looking at.
 
 > Using it for real? Pin a version — `@0.10` tracks patch releases, `@0.10.0` is immutable.
 > With a bundler: `npm i @hgruber/timeseries.js`.
@@ -80,7 +81,8 @@ arrow keys to page and zoom — snapped to the axis grid at every zoom level.
 
 ## Features
 
-- **Fluid navigation** — drag to pan, wheel to zoom, animated transitions, arrow-key paging
+- **Fluid navigation** — drag to pan, wheel to zoom, animated transitions, arrow-key paging,
+  and a viewport history to step back through the windows you have visited
 - **Calendar-aware time axis** — labels adapt to the zoom level, with ISO calendar weeks,
   public holidays and working days
 - **Correct DST** — every day, week and month boundary computed in the browser's local zone

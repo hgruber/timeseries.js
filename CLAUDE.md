@@ -111,6 +111,10 @@ is a deliberate act with its own commit — not a cleanup.
   it silently mismeasures the axis. → `renderers.md`
 - **Do not let `barRect()` (`gantt.js`) and `get_element()` (`timeseries.js`) drift.** They
   are hand-kept in sync; `test/gantt-hittest.test.mjs` is what catches it. → `renderers.md`
+- **Do not file viewport history from `setViewport()` or `follower_tick()`**, and do not
+  drop the `_restoring` guard around the jump in `back()`/`forward()`. A peer's sync and a
+  follow tick are not navigation, and an unguarded jump files itself as one — wiping the
+  stack it just filled. → `core.md`
 - **Do not absorb app-specific analytics into `attachLegend`.** It is a series-visibility
   legend; extend via `formatter`/`extra`/`onItemClick`. → `core.md`
 - **Do not create branches, worktrees, or non-trivial git operations (merge, rebase,

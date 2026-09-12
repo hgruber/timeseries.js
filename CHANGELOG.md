@@ -14,6 +14,42 @@ for a reader who has not seen the commits.
 
 ## [0.10.7] - 2026-09-12
 
+### Added
+
+- **Viewport history — `b` steps back, `B` forward again.** The chart had twenty ways to
+  change the time window and none to undo one: a mis-aimed drag or a stray `d` lost a
+  hand-zoomed window for good. Every navigation now files the window it leaves, and the
+  history is kept the way a browser keeps it — stepping somewhere new after a `b` discards
+  the forward branch, and at either end the key does nothing. One call is one entry, and one
+  pointer gesture is one entry however many frames it takes: a drag, a pinch and a wheel
+  flick each file the window they started from, while a click that never moves files nothing.
+  An entry carries the follow anchor as well, so stepping back into a window you were
+  following restores the roll at the same anchor and width rather than a frozen copy — which
+  also makes `stop()` undoable. Starting up is not navigating, so `initialView` never lands
+  on the stack, and a viewport arriving from a sync-group peer is not recorded either.
+  The API is `ts.back()` / `ts.forward()` (each reporting whether it moved),
+  `ts.getHistory()` → `{ back, forward, depth }` and `ts.clearHistory()`; the new
+  `historyDepth` option (default 50) caps the stack and `0` switches recording off.
+
+### Changed
+
+- **Outlier clamping marks the line and area family too.** `multiline`, `stackarea`,
+  `quantile-bands` and `quantile-steps` used to draw through the true values with no mark
+  at all — correct about the slope, but on a near-vertical riser or a staircase the slope
+  does not reveal that a value was cut. They still draw through the true values (no ink is
+  clamped) and now add the same arrowhead the bar, marker and glyph families draw: apex at
+  the plot edge, at the x where the ink leaves the box, in the series' colour. One arrow
+  per clamped value, at least 14 px apart per series and direction (`MIN_GAP = 2 ×
+  CLAMP_MARK + 2`), so a dense run collapses to one arrow at its entry and one every 14 px
+  along a long run; `stackarea` marks only the band the axis edge actually crosses. Hit
+  test and tooltips are unchanged.
+
+- **The keyboard contract gains `b` and `B`**, which were unbound before. Case, not Shift,
+  picks the direction, as with the `f`/`F` and `p`/`P` follow pair. No modifier combination
+  was used: `Ctrl`/`Alt`/`Meta` events are still handed to the browser untouched, so `Ctrl+F`
+  and `Ctrl+P` keep working from a focused chart. The canvas `aria-label` now names the two
+  keys alongside the others.
+
 ### Fixed
 
 - **Outlier clamping now detects the group its documentation describes.** The rule
@@ -43,19 +79,6 @@ for a reader who has not seen the commits.
   there the proposal *is* the edge. Coalesced fetch blocks inherit their members' record
   instead of re-deriving one from the merged data, which had the same defect: the merged
   sample set is not the one the axis was built from.
-
-### Changed
-
-- **Outlier clamping marks the line and area family too.** `multiline`, `stackarea`,
-  `quantile-bands` and `quantile-steps` used to draw through the true values with no mark
-  at all — correct about the slope, but on a near-vertical riser or a staircase the slope
-  does not reveal that a value was cut. They still draw through the true values (no ink is
-  clamped) and now add the same arrowhead the bar, marker and glyph families draw: apex at
-  the plot edge, at the x where the ink leaves the box, in the series' colour. One arrow
-  per clamped value, at least 14 px apart per series and direction (`MIN_GAP = 2 ×
-  CLAMP_MARK + 2`), so a dense run collapses to one arrow at its entry and one every 14 px
-  along a long run; `stackarea` marks only the band the axis edge actually crosses. Hit
-  test and tooltips are unchanged.
 
 ## [0.10.6] - 2026-09-12
 

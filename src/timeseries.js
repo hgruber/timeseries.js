@@ -289,6 +289,9 @@ export default function TimeSeries(options) {
     // Snap policy for the keyboard: 'grid' pages and zooms in whole cells of the
     // labelled x-axis level, 'off' moves the viewport continuously instead.
     panSnap: 'grid',
+    // How many visited windows b/B step back through. 0 switches the history
+    // off; back()/forward() then always report false.
+    historyDepth: 50,
     // Resolution-tier switch point and cross-fade band, in px of bar width.
     // A tier is primary while its bars are at least fadeHi wide; as it shrinks
     // past that the coarser tier takes over, dissolving across fadeHi → fadeLo.
@@ -553,6 +556,22 @@ export default function TimeSeries(options) {
   // Snap grid: the held {unit, mult, k, lo} the keyboard operates on, or null
   // while the viewport is wherever an analogue gesture left it. See ensureGrid().
   var snapState = null;
+  // ── Viewport history ───────────────────────────────────────────────────────
+  // Two stacks, exactly as a browser keeps them: every *new* navigation records
+  // the window it leaves on backStack and discards the forward branch; back()
+  // and forward() move one entry between the two. See recordNav() below.
+  var backStack = [];
+  var fwdStack = [];
+  var history_depth = Math.max(0, settings.historyDepth | 0);
+  // A drag or pinch is one navigation, not one per frame: the entry is taken at
+  // the gesture's start (before doStop() eats the follow anchor) and filed on the
+  // first movement, so a click that never moves leaves nothing behind.
+  var gestureEntry = null;
+  // The same for a wheel flick — see wheelNav().
+  var wheelBurst = null;
+  // Set around the jump in back()/forward(): without it zoom() would file the
+  // jump as a new navigation and wipe the stack the jump just filled.
+  var _restoring = false;
   // Rate axis (setRateUnit): seconds the y-axis is "per". While set, a block the
   // host marked `extensive` is drawn as value * rateUnit / plot.interval, so
   // resolution tiers holding accumulated amounts land on one common scale.
@@ -1222,6 +1241,13 @@ export default function TimeSeries(options) {
   function zoom(target_tmin, target_tmax, time) {
     var r = clampRange(target_tmin, target_tmax);
     if (tmin === r[0] && tmax === r[1]) return;
+    // The one chokepoint every discrete navigation passes through: named views,
+    // pan(), zoomStep(), snapView(), the axis-click navigate() and the follow
+    // entries all end here. pendingView(), not tmin/tmax — a key pressed during
+    // an animation leaves the window being animated *to*, not the frame that
+    // happens to be on screen. Same rule pan() and zoomStep() already follow.
+    var pv = pendingView();
+    recordNav(pv.tmin, pv.tmax);
     var dur = typeof time === 'number' && time >= 0 ? time : zoom_onclick_time;
     animation.startT = +Date.now() - 20;
     animation.endT = animation.startT + dur;
@@ -1421,6 +1447,94 @@ export default function TimeSeries(options) {
   // relative to. pendingView() for the same reason it is used above: a key
   // pressed mid-animation must read the window being animated to.
   function midTime() { var v = pendingView(); return (v.tmin + v.tmax) / 2; }
+
+  // ── Viewport history ──────────────────────────────────────────────────────
+  // One entry is one window the user was looking at, plus the follow anchor it
+  // was rolling at — a rolling window that came back frozen would be a different
+  // window, not the one they left. Taking the snapshot is separate from filing
+  // it because the pointer handlers have to snapshot *before* their doStop(),
+  // while the entry is only filed once the gesture actually moves something.
+  function viewEntry(t1, t2) {
+    return {
+      tmin: t1,
+      tmax: t2,
+      follow: (follow_timers > 0 && !follow_stopped) ? follow_fraction * 100 : null,
+    };
+  }
+
+  function pushStack(stack, e) {
+    stack.push(e);
+    while (stack.length > history_depth) stack.shift();
+  }
+
+  // What every *new* navigation files through. Two jobs beyond the push: discard
+  // the forward branch — stepping somewhere new after b is what ends it, the
+  // same rule a browser follows — and drop a window already on top.
+  //
+  // That duplicate check is load-bearing, and it deliberately ignores `follow`.
+  // One navigation reaches here twice: doStop()/doFollow() file the window while
+  // the follow anchor is still live (see there), and the zoom() that follows
+  // files the same window with the anchor already gone. Comparing the anchor too
+  // would leave two entries for one key press, the second indistinguishable from
+  // the first on screen.
+  function fileEntry(e) {
+    if (history_depth === 0 || _restoring) return;
+    var top = backStack[backStack.length - 1];
+    if (top && top.tmin === e.tmin && top.tmax === e.tmax) return;
+    pushStack(backStack, e);
+    fwdStack.length = 0;
+  }
+
+  function recordNav(t1, t2) { fileEntry(viewEntry(t1, t2)); }
+
+  // File the entry a pointer gesture snapshotted at its start. Separate from
+  // recordNav() only because the entry is older than this moment.
+  function recordGesture() {
+    if (!gestureEntry) return;
+    fileEntry(gestureEntry);
+    gestureEntry = null;
+  }
+
+  function restoreEntry(e) {
+    _restoring = true;
+    if (e.follow === null) {
+      doStop();
+      zoom(e.tmin, e.tmax);
+    } else {
+      // Re-anchor on the current now rather than replaying the recorded edges:
+      // for a rolling window the width and the anchor are what the user chose,
+      // the edges were only where now happened to be. follower_tick would snap
+      // them onto now at its first tick anyway — last24() staggers for the same
+      // reason.
+      var frac = followFraction(e.follow);
+      var range = e.tmax - e.tmin;
+      var t0 = Date.now();
+      follow_animated_to(e.follow, t0 - frac * range, t0 + (1 - frac) * range);
+    }
+    _restoring = false;
+  }
+
+  // The two are mirror images: take where we are now onto the other stack, then
+  // restore the top of this one. pendingView() so that a jump pressed during an
+  // animation files the window being animated to, not the frame on screen — and
+  // the snapshot is taken before restoreEntry()'s doStop() so the anchor of a
+  // rolling window survives the round trip.
+  function historyStep(from, to) {
+    if (!from.length) return false;
+    var here = pendingView();
+    pushStack(to, viewEntry(here.tmin, here.tmax));
+    restoreEntry(from.pop());
+    return true;
+  }
+
+  // Step back to the previous window, or forward again into one back() left.
+  // Both report whether they moved, so a host can grey out its own buttons.
+  this.back = function () { return historyStep(backStack, fwdStack); };
+  this.forward = function () { return historyStep(fwdStack, backStack); };
+  this.getHistory = function () {
+    return { back: backStack.length, forward: fwdStack.length, depth: history_depth };
+  };
+  this.clearHistory = function () { backStack.length = 0; fwdStack.length = 0; };
 
   // Pan by one page (default) or by `opts.cells` cells. `opts.snap === false`,
   // like panSnap: 'off', moves by the exact current width instead.
@@ -1698,6 +1812,11 @@ export default function TimeSeries(options) {
 
   canvas.onmousedown = function (e) {
     refreshOffset();
+    // Snapshot before doStop(), which would erase the follow anchor this window
+    // was rolling at. Filed by recordGesture() on the first movement, so a plain
+    // click — and the axis-click navigate() below, which files its own entry
+    // through zoom() — leaves nothing behind.
+    gestureEntry = viewEntry(tmin, tmax);
     doStop();
     dropGrid();   // dragging is analogue input — see the wheel handler
     var item = mouse_position(e);
@@ -1720,6 +1839,7 @@ export default function TimeSeries(options) {
     refreshOffset();
     if (startDragX !== 0) {
       canvas.style.cursor = 'grabbing';
+      recordGesture();   // the whole drag is one navigation, filed at its start
       var move = ((startDragX - e.clientX) / plotWidth) * (tmax - tmin);
       tmin = startTmin + move;
       tmax = startTmax + move;
@@ -1750,11 +1870,13 @@ export default function TimeSeries(options) {
     }
     pendingClickItem = null;
     startDragX = 0;
+    gestureEntry = null;   // a click that never moved files nothing
   };
 
   canvas.onmouseout = function (e) {
     if (startDragX !== 0) scheduleViewportChange();
     startDragX = 0;
+    gestureEntry = null;
     canvas.style.cursor = 'default';
   };
 
@@ -1764,6 +1886,10 @@ export default function TimeSeries(options) {
     e.preventDefault();
     refreshOffset();
     dropGrid();   // pan and pinch are analogue input — see the wheel handler
+    // Before either branch: the pinch one repositions a rolling window and the
+    // pan one calls doStop(), and both would cost the follow anchor this entry
+    // is meant to carry. Filed on the first movement, like the mouse drag.
+    gestureEntry = viewEntry(tmin, tmax);
     if (e.touches.length === 1) {
       if (follow_timers > 0 && !follow_stopped) return; // pan not allowed while following
       doStop();
@@ -1798,6 +1924,7 @@ export default function TimeSeries(options) {
     refreshOffset();
     if (!touchState) return;
     if (e.touches.length === 1 && touchState.type === 'pan') {
+      recordGesture();
       var move = ((touchState.x0 - e.touches[0].clientX) / plotWidth) * (touchState.tmax0 - touchState.tmin0);
       tmin = touchState.tmin0 + move;
       tmax = touchState.tmax0 + move;
@@ -1806,6 +1933,7 @@ export default function TimeSeries(options) {
     } else if (e.touches.length === 2 && touchState.type === 'pinch') {
       var dist = Math.abs(e.touches[1].clientX - e.touches[0].clientX);
       if (dist === 0) return;
+      recordGesture();
       var scale = touchState.dist0 / dist;
       var newRange = (touchState.tmax0 - touchState.tmin0) * scale;
       tmin = touchState.midTime - touchState.midFrac * newRange;
@@ -1819,6 +1947,7 @@ export default function TimeSeries(options) {
     e.preventDefault();
     if (touchState) scheduleViewportChange();
     touchState = null;
+    gestureEntry = null;
   };
 
   // ── Keyboard navigation ───────────────────────────────────────────────────
@@ -1833,6 +1962,7 @@ export default function TimeSeries(options) {
       if (!canvas.getAttribute('aria-label'))
         canvas.setAttribute('aria-label',
           'Time series chart. Left and right arrow keys page through time, up and down zoom; hold shift for a single step. ' +
+          'B steps back through the windows you have visited, shift B forward again. ' +
           'T, D, W, M and Y jump to today, or to the day, week, month or year in the middle of the window. ' +
           'F, P and N follow the present at the right edge, the left edge or the centre. ' +
           'L shows or hides the legend, G turns grid snapping on or off, ' +
@@ -1854,6 +1984,14 @@ export default function TimeSeries(options) {
       else if (e.key === 'ArrowRight') self.pan(1, cell);
       else if (e.key === 'ArrowUp')    self.zoomStep(1, cell);
       else if (e.key === 'ArrowDown')  self.zoomStep(-1, cell);
+      // The history pair. Every window the arrows, the letters, the axis clicks
+      // or a gesture leave behind is recorded, and b walks back through them, B
+      // forward again into what b left. Case, not e.shiftKey — see the follow
+      // keys below. Both stay bound with an empty stack: a chart with nothing to
+      // step back to is not a misconfiguration, and swallowing the key there
+      // keeps what b does from depending on where the user has been.
+      else if (e.key === 'b')          self.back();
+      else if (e.key === 'B')          self.forward();
       // The five follow keys. All of them end in the same rolling state, anchored
       // where the letter says: f/F right edge, p/P left, n centre. Shift picks the
       // span that is left on screen — slide the current width onto now, or pin the
@@ -1889,6 +2027,16 @@ export default function TimeSeries(options) {
     };
   }
 
+  // A wheel flick is one navigation, not forty: the first notch files the window
+  // it starts from, and the burst is over once 400 ms pass without another notch.
+  // Called past each handler's guards, so a notch the zoom limits refuse — or a
+  // shifted wheel carrying no delta — does not file a window it never left.
+  function wheelNav() {
+    if (wheelBurst) clearTimeout(wheelBurst);
+    else recordNav(tmin, tmax);
+    wheelBurst = setTimeout(function () { wheelBurst = null; }, 400);
+  }
+
   canvas.onwheel = function (e) {
     e.preventDefault();
     refreshOffset();
@@ -1901,6 +2049,7 @@ export default function TimeSeries(options) {
       var d = e.deltaX || e.deltaY;
       if (!d) return;
       var shift = d * mspp;
+      wheelNav();   // before doStop(), which would cost the follow anchor
       doStop();
       tmin += shift;
       tmax += shift;
@@ -1910,6 +2059,7 @@ export default function TimeSeries(options) {
     }
     if (ppms > 25 && e.deltaY < 0) return;
     if (ppms < 6e-9 && e.deltaY > 0) return;
+    wheelNav();
     // When following, reposition to the actual current now before zooming.
     // Without this the pivot maps to the now from the last tick, and the next
     // tick repositioning to real Date.now() causes a visible jump.
@@ -3369,6 +3519,14 @@ export default function TimeSeries(options) {
   }
 
   function doStop() {
+    // Where a rolling window ends — and the only place that still sees what it
+    // was. Every named view calls doStop() before zoom(), so zoom()'s own
+    // recordNav() would find the anchor already cleared and file the window as
+    // a frozen one; b would then bring it back frozen. The zoom() that follows
+    // files the same window again and fileEntry() drops it, so one navigation
+    // still leaves one entry. Not while _syncing: a peer's stop is not this
+    // chart's navigation.
+    if (follow_timers > 0 && !follow_stopped && !_syncing) recordNav(tmin, tmax);
     follow_stopped = true;
     _suppressTick = false;
     if (follow_stop_cb) follow_stop_cb();
@@ -3380,6 +3538,10 @@ export default function TimeSeries(options) {
   function followFraction(p) { return Math.max(0, Math.min(100, p)) / 100; }
 
   function doFollow(p) {
+    // The same reason as doStop(), for the other exit from a rolling state:
+    // moving the anchor (f → n, say) overwrites follow_fraction, so the window
+    // being left has to be filed before that happens.
+    if (follow_timers > 0 && !follow_stopped && !_syncing) recordNav(tmin, tmax);
     if (nowline_timer !== null) { clearTimeout(nowline_timer); nowline_timer = null; }
     follow_stopped = false;
     follow_fraction = followFraction(p);
@@ -3408,6 +3570,7 @@ export default function TimeSeries(options) {
   // Named (rather than inline at this.follow) so applyFollow() can call it before
   // `self` is assigned in the constructor tail without tripping no-use-before-define.
   function followAt(p) {
+    recordNav(tmin, tmax);
     doFollow(p);
     now = Date.now();
     var range = tmax - tmin;
@@ -3811,8 +3974,12 @@ if (ivNamed || hasFollow) setTimeout(function () {
   // A named view animates over zoomDuration; applying follow inside that window
   // would fight animate() for tmin/tmax. last24() staggers its own start_follower
   // for exactly this reason.
-  if (ivNamed && hasFollow) setTimeout(applyFollow, zoom_onclick_time);
+  if (ivNamed && hasFollow) setTimeout(function () { applyFollow(); self.clearHistory(); }, zoom_onclick_time);
   else if (hasFollow) applyFollow();
+  // Starting up is not navigating. Both calls above pass through the history —
+  // the named view through zoom(), follow through followAt() — and would leave
+  // the chart's own default window on the stack as a place the user has been.
+  self.clearHistory();
 }, 0);
 }
 

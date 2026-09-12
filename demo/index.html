@@ -415,6 +415,18 @@
                                 title="Next week">&#8250;</button>
                     </div>
                     <div class="divider"></div>
+                    <!-- Viewport history. Not labelled "Back": that button exists above and
+                         means "one window to the left", which is the opposite of a history. -->
+                    <div class="control-group">
+                        <span class="group-label">History</span>
+                        <button class="btn-ghost"
+                                onclick="ts.back()"
+                                title="Step back to the window you were looking at before (key: b)">&#8617; Last view</button>
+                        <button class="btn-ghost"
+                                onclick="ts.forward()"
+                                title="Step forward again into the window you left (key: shift+B)">Next view &#8618;</button>
+                    </div>
+                    <div class="divider"></div>
                     <!-- Legend -->
                     <div class="control-group">
                         <span class="group-label">Legend</span>
