@@ -270,6 +270,72 @@ Things worth knowing before touching this family:
   so two types pop rather than dissolve. The `zabbix` source's `render` option therefore
   applies to every tier at once.
 
+## Outlier clamping — the renderer half
+
+The core half of the feature lives in
+[core.md](core.md#outlier-clamping--plot._clamped--clampoutliers): `prepare_grid` detects the
+outlier group and stamps `plot._clamped = { up: {bulk, limit} | null, down: {…} | null }`,
+with `limit = bulk / bulkFrac` the value **at the plot edge**. The renderer's job differs
+per family, and the split is deliberate:
+
+| Family | Treatment |
+|---|---|
+| `multibar` | Segments clamp at `limit`; the **shaft rule** — the drawn bar tops out `CLAMP_HEAD` (9 px) below the plot edge, the `clampMark` arrowhead completes it with its apex touching the edge and its base exactly on the shaft line, so the shaft never reaches into the head. The series straddling the limit carries the `clampHatch` overlay, from the bulk line to the shaft line. `highlight_multibar` frames the shaft as drawn, not as stored |
+| `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | **The ink is untouched — on purpose.** Lines, bands and ribbons draw through the TRUE values; a clamped vertex/band leaves the plot box upward toward the real point, a riser rises straight past the edge. No hatch, no arrow, no `clampY` |
+| `multipoint`, `scatter` | The marker is the arrow's shaft: it sits `CLAMP_HEAD + r` below the edge, the `clampMark` arrowhead's apex touches the edge with its base exactly at the marker's top |
+| `error-bars`, `candlestick`, `ohlc` | Whisker/wick/body/median tick clamped via `clampY` — a cut value sits at the shaft line, just below the arrowhead whose apex touches the edge. Hatch would make no sense on a hairline whisker, so the glyph families carry the arrow alone |
+| `waterfall`, `heatmap`, `horizon`, `gantt` | **Excluded.** Nothing is stamped, nothing drawn, the extent identical with the feature on |
+
+- **Why the line/area family does not clamp its ink.** Connecting two points is a claim
+  about what happened *between* them — the same judgement that keeps `multiline`
+  interpolating and `stackarea` shading. A vertex flattened onto a clamp line would draw a
+  connection to a value the data never had, and a slope that says the signal *landed* where
+  it was merely cut; a band edge flattened would pinch every band above it onto a fake
+  edge. Drawing through the true value costs nothing (the canvas does not clip), and the
+  line running out of the plot box *is* the "continues beyond" mark — exactly what the
+  clamped axis underneath makes visible.
+- **`clampOf(plot)` is the null-safe read; `clampValue(cl, v)` the clamp in value space.**
+  With the feature off (or no record) both pass everything through unchanged — `Infinity`
+  limits, no marks — so the with-feature-off arithmetic is *exactly* the old arithmetic, per
+  renderer. `clampValue` clamps in both directions (`v > limit` up, `v < -limit` down
+  mirrored); a renderer's `Y` already carries `_vscale`, so nothing here may multiply it
+  again.
+- **`clampY(rctx, cl, raw)` is the DRAWN pixel of a glyph value** — `Y(v)` normally, but a
+  value the clamp actually cut sits at the shaft line (`margin.top + CLAMP_HEAD`, mirrored
+  at the bottom edge), so the arrowhead has room and the glyph never reaches into the head.
+  Values the clamp did not touch pass through `Y` unchanged. It is what makes the glyph
+  families a one-call change: every Y-mapping site routes through it.
+- **`clampMark(c, x, y, dir, fill)` draws the arrowhead with its APEX at `y`** — callers
+  pass the plot edge, so the tip touches the edge — and its base `CLAMP_HEAD` px inward,
+  exactly on the shaft line. `CLAMP_HEAD_PX` is exported because the hit test in
+  `timeseries.js` must place a clamped point marker's hit circle at the same drawn position
+  (the third "keep these in step" arrangement beside `barRect()` and `POINT_RADIUS`).
+- **`collectClampSamples(plot, xLo, xHi, rctx)` must measure what the extent scan measures**
+  — stack totals for a stacked type, every array entry for a banded one, per-series values
+  otherwise, hidden series excluded, partial bins contributing their scaled value. Detection
+  and extent can never disagree about what the block draws, because they sample the same
+  pass. Note a ladder block's **rungs count as individual samples**: five rungs per bin
+  means five contiguous top samples, so the share has to let a group that wide through —
+  5 divided by the visible samples, ~2 % for a 48-bin window.
+- **`clampHatch(c, x, y0, y1, w, fill, stroke)` is the bars' second mark**: a translucent
+  wash in the crossing series' colour plus two ±45° line families, spanning the clamped
+  section from the bulk line to the shaft line. It is deterministic — both families are
+  anchored at the section's own top-left corner — so the same record paints the same
+  pattern every frame and every test run. Bars are the only family that gets it: an area or
+  a band has no flat section to hatch once the ink is left unclamped, and a hairline
+  whisker has nothing to hatch *on*.
+- **Alpha lives on the colour, never on `globalAlpha`** — that belongs to the tier
+  cross-fade, and writing it inside a renderer cancels the dissolve (the `horizon` rule,
+  now twice over). And **no `ctx.clip()`**: the hatch segments are computed analytically
+  (line–rect intersection), so the overlay needs no clip state — none of the chart content
+  uses one, and this helper is not going to be the first.
+- **Why `waterfall` and the laned family are excluded, not merely unsupported.** Clamping a
+  cumulative block would detach a bar from the running total and shift the base of every
+  later bar — the drawn chart would stop being a waterfall. A laned block's axis is
+  categorical `0…laneCount` with no magnitude to squash, and its colour scale is pinned by
+  `vmin`/`vmax` — clamping there would move nothing but lie anyway. Both are pinned by
+  tests (`collectClampSamples` returns nothing for them; the extent is identical on/off).
+
 ## Series visibility and legends
 
 The core provides the *data* for a legend and never builds DOM for it (the opt-in

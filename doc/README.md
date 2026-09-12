@@ -19,6 +19,7 @@ five-minute version; everything else lives here.
 | Stop a chart interpolating between two measurements | [Data formats → The five renderers](data-formats.md#the-five-renderers) |
 | Draw calendar events, jobs or outages | [Data formats → Spans (Gantt)](data-formats.md#spans-gantt) |
 | Set constructor options, colours, themes, holidays | [Configuration](configuration.md) |
+| Keep a few extreme values from squashing the axis | [Configuration → Outlier clamping](configuration.md#outlier-clamping) |
 | Navigate, zoom, follow "now", sync several charts | [API reference → Navigation](api.md#navigation) |
 | Read or change what is on screen at runtime | [API reference](api.md) |
 | Add a hover tooltip or a clickable legend | [Overlays](overlays.md) |

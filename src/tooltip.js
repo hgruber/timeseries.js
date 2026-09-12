@@ -233,10 +233,19 @@ export function attachTooltip(ts, options) {
       t.textContent = when;
       nodes.push(t);
     }
+    // Outlier clamping: the value shown stays the REAL one; the hint row
+    // underneath says that the ink was truncated at the clamp line.
+    if (ctx.clamped) {
+      var cl = div('ts-tooltip-clamped');
+      cl.style.color = theme.tooltipMuted;
+      cl.style.fontSize = '11px';
+      cl.textContent = '▲ clamped to axis';
+      nodes.push(cl);
+  }
     return nodes;
   }
 
-  function buildCtx(plot, n, key, value) {
+  function buildCtx(plot, n, key, value, clamped) {
     var rawKey = String(key);
     var label = opts.labelFor
       ? opts.labelFor(rawKey, plot, value)
@@ -254,6 +263,7 @@ export function attachTooltip(ts, options) {
       ts: ts, plot: plot, n: n, key: rawKey, value: value,
       label: label, color: color, time: hitTime(plot, n, value),
       interval: interval, colors: theme,
+      clamped: clamped === true,
     };
     ctx.defaultContent = function () { return defaultContent(ctx); };
     return ctx;
@@ -308,7 +318,7 @@ export function attachTooltip(ts, options) {
 
   function render() {
     if (!last) return;
-    var ctx = buildCtx(last.plot, last.n, last.key, last.value);
+    var ctx = buildCtx(last.plot, last.n, last.key, last.value, last.clamped);
     var content = opts.formatter ? opts.formatter(ctx) : undefined;
     if (content === undefined) content = defaultContent(ctx);
     if (content === null || content === false) { hide(); return; }
@@ -318,9 +328,9 @@ export function attachTooltip(ts, options) {
 
   // ── wiring ────────────────────────────────────────────────────────────────
   // The all-null call is the core's "nothing hit" signal.
-  function onHover(plot, n, key, value) {
+  function onHover(plot, n, key, value, clamped) {
     if (plot == null || key == null || !accepts(plot)) { hide(); return; }
-    last = { plot: plot, n: n, key: key, value: value };
+    last = { plot: plot, n: n, key: key, value: value, clamped: clamped === true };
     render();
   }
 

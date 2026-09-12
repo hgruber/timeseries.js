@@ -64,6 +64,7 @@
       { href: 'websocket.html',   label: 'WebSocket', title: 'WebSocket adapter — bring your own WS server' },
       { href: 'duckdb-wasm.html', label: 'DuckDB-WASM', title: 'DuckDB-WASM adapter — bring your own in-browser DB' }
     ] },
+    { href: 'clamp-tuning.html', label: 'Clamping', title: 'Outlier clamping — tuning page, sliders on all four clamp numbers' },
     { href: 'https://github.com/hgruber/timeseries.js', label: 'GitHub', external: true }
   ];
 

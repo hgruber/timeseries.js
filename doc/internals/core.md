@@ -215,6 +215,88 @@ are `'full'` (default, pre-0.9.1 behaviour), `'clip'` (right edge on `data_until
   entry — `array * number` would be `NaN`. Inert today (`quantile-bands` is never
   `extensive`), but the shape must not be allowed.
 
+## Outlier clamping — `plot._clamped` / `clampOutliers`
+
+One or a few values can own almost the whole y-axis and squash the rest against the zero
+line. When the feature is on, `prepare_grid` detects that top group **per block per visible
+window**, stamps `plot._clamped = { up: {bulk, limit} | null, down: {…} | null }` (in drawn
+value space, pre-`_vscale`, exactly like `_partial.scale`), and overwrites the axis entry.
+Default **off** — and the off state is an invariant, not just a default:
+
+- **With the feature off the detection pass is skipped entirely.** `clampModeOf(plot)`
+  returns `null` when neither the global setting nor a per-plot flag says on, and every
+  clamp-related cost sits behind that one guard: no sort, no sample collection, no write.
+  The two `ymax_array`/`ymin_array` pushes are the exact code path they were before the
+  feature, the two overwrite guards after them never fire, and no `_clamped` is stamped
+  anywhere. `test/clamp.test.mjs` pins this per shape with outliers in every fixture, so a
+  silent clamping would be loud.
+
+**The scheme.** `collectClampSamples` (renderers.js) gathers one direction's samples per
+block — the same numbers the y-extent scan measures: stack totals for a stacked type, every
+array entry for a banded one, per-series values otherwise, hidden series excluded, a partial
+bin contributing its scaled value. `deriveClamp` → `clampOne` sorts them and looks for the
+largest **contiguous prefix from the top** with `k ≤ K = max(1, ⌊n × share⌋)` members whose
+minimum exceeds `factor` × the max of the rest; it returns `{bulk, limit}` with
+`limit = bulk / bulkFrac`. Fewer than four samples declines to mean anything, the
+bulk always keeps two samples, and a bulk of zero has no scale to clamp against.
+
+- **No slot map is needed** — the one thing that keeps this cheap. The outlier group is a
+  contiguous prefix from the top, so every drawn value past `limit` *is* an outlier and
+  everything at or under `bulk` is not; the interval between the two is empty by
+  construction. A renderer therefore clamps with `clampValue(cl, v)` against the record
+  alone and never asks "was *this* slot an outlier", which is also why hiding the series
+  that carried the outlier cleanly dissolves the clamp (`collectClampSamples` runs next
+  frame and finds no group).
+- **The extent overwrite carries `_vscale` exactly once**: the entry becomes
+  `limit × _vscale`, the same shape as the ordinary push above it. `limit = bulk / bulkFrac`
+  is the value **at the plot edge**, so the bulk lands at `clampBulkFrac` of the plot height
+  by construction — there is no second fraction to keep consistent — and the entry composes
+  with the rate axis for free, because `limit` is in value space.
+- **Three consumers read the record**: the extent scan (the overwrite), the renderer
+  ([renderers.md](renderers.md#outlier-clamping--the-renderer-half) — which follows the
+  record per family), and the hit test. The multibar hit test applies the same headroom
+  arithmetic the draw pass does, so a clamped band answers with the **raw** value plus
+  `clamped: true`, and a segment past the limit — which draws no ink — is not hittable in
+  its own right. A clamped point marker is hit-tested where it is *drawn*: just below the
+  arrowhead, i.e. `margin.top + CLAMP_HEAD_PX + r` from the edge — the same constant the
+  renderer placed it at, so the two cannot drift.
+- **The ink policy is a split the core does not make — but it is why the axis entry is what
+  it is.** `limit` is the edge value, so bar ink can fill right up to the edge (its shaft
+  stops `CLAMP_HEAD` px short and the arrowhead completes it), while the line and area
+  family deliberately draws through the **true** values and leaves the plot box: the axis
+  clamps, the line does not. Clamping a line's vertex instead would draw a connection to a
+  point the data never had ([renderers.md](renderers.md#outlier-clamping--the-renderer-half)
+  has the full reasoning).
+- **Culling is by pixels, not timestamps, on purpose.** `coalesceBlocks` re-derives the
+  merged block's clamp state from inside `plotData`, where the timestamps are not reachable
+  but `rctx` is; `X(tmin)` is `margin.left` and `X(tmax)` is `margin.left + plotWidth`, so
+  the pixel window the two callers pass agrees by construction. The right-edge comparison is
+  `>=` (`g.x0 >= xHi`) deliberately: the extent scan measures a slot only while
+  `slotTime < tmax`, and `xHi` is `X(tmax)`, so an exactly-on-`tmax` slot must not be
+  sampled either — a clamp on an unmeasured bin would disagree with the axis.
+- **`coalesceBlocks` re-derives the merged block's clamp state from the merged data** rather
+  than carrying a member's `_clamped` over: `max(limitᵢ)` would crush a non-clamping
+  sibling's genuine values down to the other block's limit. The group is clamped when any
+  member is, so the merged draw matches what its blocks drew — the mirror image of the
+  `_partial` rebasing, which *must* carry because the record belongs to one slot.
+- **The stale-record reset mirrors `_partial`'s**: `_clamped` is deleted for every block
+  that ever had one, each frame, so a runtime toggle of the per-plot flag cannot leave a
+  record behind. Only blocks that had one are touched — a chart that never clamps sees no
+  write at all.
+- **The policy half lives in `timeseries.js` (`clampModeOf`), the reading half in
+  `renderers.js`** — the same `_partial`/`vscaleOf` split: the flag is instance state and
+  must not leak into the module-global renderer file.
+- **`rollupBinned` carries `clampOutliers` over**, unlike `extensive`/`data_until` — it is
+  descriptive metadata of the *signal* (like `name`/`series_colors`), not a property of the
+  aggregation, and one tier clamping while the other does not would make the axis breathe
+  through the cross-fade.
+
+**Settings validation** runs once in the constructor: a `clampBulkFrac` outside
+`0 < bulkFrac < 1`, a factor ≤ 1, or a share outside `0 < share < 0.5` warn and
+fall back to the defaults — which also sets `clampOutliers = false`, because drawing with a
+half-corrected constant (a NaN, a fraction that puts the bulk off-plot) would be worse than
+the misreading the user asked for. Same spirit as `setFadeBand()`'s `0 < lo < hi` rejection.
+
 ## Zero-size canvases (hidden containers)
 
 A chart whose container is `display:none` — a tab panel, a collapsed section — measures

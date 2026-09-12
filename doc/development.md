@@ -36,12 +36,13 @@ npm run build && npm run serve
 | `demo/zabbix.html` | no | Installs a synthetic `api_jsonrpc.php`; the real source runs unchanged |
 | `demo/caldav-live.html` | yes | Connect form: URL, user, password, optional proxy prefix |
 | `demo/zabbix-live.html` | yes | Connect form: API URL and token |
+| `demo/clamp-tuning.html` | no | Outlier-clamping tuning page: sliders on the factor, the share and the bulk fraction, twelve chart cards in one viewport-sync group (a rebuild preserves the live viewport), a per-card readout of bulk/limit/axis, tooltip on the extreme card. Imports `src/` directly (no build), but as a module page it must be served (`npm run serve`), not opened from `file://` |
 
-The four non-index pages use `<script type="module">` and import directly from `src/`, so
+The non-index pages use `<script type="module">` and import directly from `src/`, so
 they need **no build step** — edits show up on reload. `demo/index.html` does not: it loads
 `dist/timeseries.js`, so run `npm run watch` while working on it.
 
-Because those four pages import `src/` directly **even in production**,
+Because those pages import `src/` directly **even in production**,
 `.github/workflows/deploy.yml` copies `src/` into the deploy folder alongside `demo/` and
 `dist/` — otherwise they 404 on their `../src/*.js` imports.
 
@@ -52,7 +53,7 @@ from `localhost`, both are cross-origin to whatever server you point them at —
 
 ### Shared demo chrome
 
-All five demo pages link `demo/demo.css` and load `demo/demo-nav.js`.
+All demo pages link `demo/demo.css` and load `demo/demo-nav.js`.
 The stylesheet holds the page frame (header, cards, controls, buttons, footer) with the four
 palettes declared as CSS custom properties on `body` — `light` is the bare default, the others
 are `body.theme-dark` / `.theme-highContrast` / `.theme-warm`. Each page keeps only its own
@@ -236,6 +237,21 @@ the axis landing on `0…laneCount` rather than on the values, the stamped lane 
 by-row hit test, and that a hidden lane is blanked without moving the others; it also
 asserts `isLanedType('gantt')`, since the rework must not take the lane axis away from the
 renderer it came from),
+`test/clamp.test.mjs` (outlier clamping, core side: the contiguous-top-group detection at
+unit and instance level, the clamped extent overwrite — `limit = bulk / bulkFrac` at the
+plot edge — incl. its composition with the rate axis, the per-plot override in both
+directions, the clamp following the window and dissolving when the outlier's series is
+hidden, the waterfall/heatmap exclusions, the coalesced group re-deriving its state, hit
+testing — raw value plus `clamped: true`, unhittable past the plot edge, clamped point
+markers hit-tested at their drawn position — the off invariant pinned per shape, the
+settings validation, and the tooltip's `▲ clamped to axis` hint row),
+`test/clamp-renderers.test.mjs` (outlier clamping, renderer side, as paint assertions on a
+recording context: per family — the bars' shaft stopping `CLAMP_HEAD` px short of the plot
+edge with the arrowhead completing it and the hatch spanning bulk line to shaft, the glyph
+markers sitting at the shaft line under the arrow, the line/area family drawing through the
+TRUE values with no marks at all, `highlight_multibar` framing the bar as it was *drawn*,
+the excluded families ignoring a clamp record entirely, the deterministic hatch, and the
+no-`ctx.clip()` invariant),
 and `test/crossfade.test.mjs` (the generic tier
 dissolve: `plotData` applying `_fade` through `globalAlpha` for `multibar`/`multiline`/
 `multipoint`/`quantile-bands`, faintest-first draw order, the interpolated y-extent across

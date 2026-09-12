@@ -156,7 +156,8 @@ ts.getRateUnit();      // the current rate unit, or null
 legend is attached — see [Overlays → Controller](overlays.md#controller-1). The slot exists
 so the keyboard has something to reach; a host with its own panel can take it instead.
 
-`getValueRange()` reflects hidden series and any tier cross-fade in progress, so it is what
+`getValueRange()` reflects hidden series, any tier cross-fade in progress, and the clamped
+axis while [outlier clamping](configuration.md#outlier-clamping) is on — so it is what
 is *actually* on the axis, not what the data would suggest.
 
 `getViewport().ppms` is the pixel-per-millisecond scale — the number a data source uses to
@@ -233,7 +234,7 @@ ts.onClickDataCallback((plot, slot, item) => { … });
 
 // Hover SUBSCRIBES rather than replaces, and returns an unsubscribe.
 // All arguments arrive null when nothing is hit — that is the "hide" signal.
-const off = ts.onHoverDataCallback((plot, slot, key, value) => { … });
+const off = ts.onHoverDataCallback((plot, slot, key, value, clamped) => { … });
 off();
 
 ts.onColorsChange(fn);    // after setColors — DOM overlays restyle here
@@ -244,6 +245,11 @@ ts.onStop(fn);            // follow mode stopped
 
 `onHoverDataCallback` and `onSeriesChange` are multi-subscriber, so attaching the shipped
 tooltip or legend never displaces a handler of your own.
+
+The hover callback's fifth argument `clamped` arrived **additively**: it is `true` when the
+hit's ink was truncated by [outlier clamping](configuration.md#outlier-clamping) and the
+pinned four-argument contract of every existing handler is unchanged. A clamped hit reports
+the **raw** value — what was measured, not the height it was drawn at.
 
 ## Resolution tiers
 

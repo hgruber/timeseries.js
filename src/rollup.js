@@ -122,5 +122,11 @@ export function rollupBinned(plot, coarseInterval, opts) {
   if (plot.category != null) result.category = plot.category;
   if (plot.series_colors) result.series_colors = plot.series_colors;
   if (plot.series_directions) result.series_directions = plot.series_directions;
+  // The per-plot toggle is descriptive metadata of the signal (like name /
+  // series_colors), not a property of the aggregation — unlike extensive/
+  // data_until, whose truth on the result depends on the agg. Not carrying it
+  // means one tier clamps and the other does not, and the axis breathes
+  // through the cross-fade.
+  if (plot.clampOutliers != null) result.clampOutliers = plot.clampOutliers;
   return result;
 }

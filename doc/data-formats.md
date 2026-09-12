@@ -54,6 +54,7 @@ Values already aggregated into fixed `interval`-wide slots. This is the default 
 | `series_colors` | object | | `{ seriesId: cssColor }` — overrides the automatic palette |
 | `extensive` | boolean | | Values are amounts accumulated over the bin (counts, sums) rather than per-unit rates. Only read when [`setRateUnit`](tiers.md#the-rate-axis) is in use |
 | `data_until` | number | | Unix **seconds**. The block's data only reaches this far; the bin holding it is incomplete. Only read when [`setPartialBins`](api.md#partial-bins) is not `'full'` |
+| `clampOutliers` | boolean | | Clamp this block's extreme values so the bulk stays legible — see [Outlier clamping](#outlier-clamping). Overrides the global `clampOutliers` setting in both directions |
 
 `data` is **sparse** — a slot with no data is simply absent, and renders as a gap rather
 than as zero. Series keys are stable across slots and drive both the stacking order and the
@@ -130,6 +131,7 @@ Every sample carries its own timestamp. Set `category: 'point'` and make `data` 
 | `tmin` / `tmax` | number | ✓ | Unix **milliseconds** |
 | `data` | array | ✓ | `{ t, values }`, `t` in Unix ms; should be sorted ascending |
 | `series` | array | | `{ id, name }` — names and orders the legend. Inferred from the first point if omitted |
+| `clampOutliers` | boolean | | Clamp this block's extreme values so the bulk stays legible — see [Outlier clamping](#outlier-clamping). Overrides the global `clampOutliers` setting in both directions |
 
 `scatter` (a filled circle per point) is **point-only**. `multiline` and `multipoint` render
 either form. Large point series are thinned for drawing by the built-in LTTB downsampling
@@ -382,6 +384,37 @@ Two things to know:
   put — closing the row up would relabel every lane below it.
 
 Registering your own is two dozen lines — see [Plugins](plugins.md).
+
+---
+
+## Outlier clamping
+
+With [`clampOutliers`](configuration.md#outlier-clamping) on — globally, or per plot with a
+`clampOutliers` key on the block — extreme values no longer own the axis: it is rescaled
+from the bulk, and how the *ink* follows depends on the family. Which renderers take part,
+and how each marks the truncation:
+
+| Renderer | Clamps? | What the ink does |
+|---|:--:|---|
+| `multibar` | ✓ | Segments clamp at the plot edge: the shaft tops out a few pixels below it, an **arrowhead** whose apex touches the edge completes the arrow, and a semi-transparent **cross-hatch** spans the clamped section — from the bulk line down to the shaft — in the colour of the straddling series |
+| `multiline`, `stackarea`, `quantile-bands`, `quantile-steps` | ✓ (axis only) | The ink is **not** clamped: the line, bands and ribbons draw through the **true** values, so a clamped vertex or band leaves the plot box toward the real point — connecting to a flattened one would falsify the slope. A riser rises straight past the box edge |
+| `multipoint`, `scatter` | ✓ | The marker is the arrow's shaft: it sits just below an **arrowhead** whose apex touches the plot edge and never reaches into it |
+| `error-bars`, `candlestick`, `ohlc` | ✓ | Whisker / wick / body flatten just below the **arrowhead** (apex at the edge). Hatch would make no sense on a hairline whisker, so the glyph families carry the arrow alone |
+| `waterfall` | — | Clamping a delta detaches the bar from the running total and shifts later bars' bases |
+| `heatmap`, `horizon`, `gantt` | — | Categorical lane axis — no magnitude to squash; heatmap/horizon's colour scale stays pinned by `vmin`/`vmax` |
+
+An excluded type ignores the setting: its axis is identical with the feature on.
+
+Two things that hold everywhere:
+
+- **Tooltips keep the real value.** A hit at the clamp position reports the unclamped value
+  plus `clamped: true` ([Overlays](overlays.md#tooltip)); a series cut off entirely by the
+  clamp draws no ink there and is not hittable in its own right.
+- **The samples are what the axis scan measures**: stack totals for the stacked types, every
+  array entry for the ladder five, per-series values otherwise — hidden series excluded. For
+  a ladder block the rungs count as individual samples, so a five-rung ladder's top group
+  has five members and `clampOutliersShare` must let a group that wide through — 5 divided
+  by the number of visible samples, ~2 % for a 48-bin window at the defaults.
 
 ---
 

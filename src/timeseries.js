@@ -11,6 +11,7 @@ import { getWeek } from './intervals.js';
 import { plotData as _plotData, highlight as _highlight, registerRenderer, seriesColor,
          plotSeriesIds, resolveColor, POINT_RADIUS, isBandedType, isStackedType,
          isCumulativeType, waterfallLevels, isLanedType, layoutPlot,
+         collectClampSamples, deriveClamp, clampOf, clampValue, CLAMP_HEAD_PX,
          ladderPairs, drawSelection as _drawSelection, resolveSelection } from './renderers.js';
 import { initSources, registerSource } from './sources.js';
 // Loading the module also registers the `gantt` renderer, which is why this
@@ -307,6 +308,23 @@ export default function TimeSeries(options) {
     partialBins: 'full',
     yAxisFormat: null,     // (value) → string; defaults to SI-prefixed (k/M/G/T)
     yAxisLabel: '',        // unit text shown above y-axis, e.g. "txn/s"
+    // Outlier clamping ("Kappung"): when on, the per-window detection
+    // (clampOne/deriveClamp, src/renderers.js) finds the contiguous top group
+    // of samples whose minimum exceeds `clampOutliersFactor` × the max of the
+    // rest, capped at `clampOutliersShare` of the visible samples. The axis is
+    // then derived from the bulk alone (bulk at clampBulkFrac of the plot
+    // height); bar- and glyph-family ink fills to the plot edge, topped by the
+    // "continues beyond" arrow whose tip touches the edge, while the line and
+    // area family draws through the TRUE values — the line visibly leaves the
+    // plot box instead of being flattened onto a fake point. A per-plot
+    // `plot.clampOutliers` (true/false) overrides in both directions.
+    // Waterfall and laned types are excluded by design — see
+    // doc/internals/core.md. Default OFF: with it off, no detection runs and
+    // nothing about the extent, the paint or the hit test changes at all.
+    clampOutliers: false,      // global toggle
+    clampOutliersFactor: 3,    // F: outlier group min > F × bulk max
+    clampOutliersShare: 0.05,  // outlier group ≤ share of the visible samples
+    clampBulkFrac: 0.8,        // bulk max at 80 % of the plot height
     // Copied so that a per-instance override never writes through to the shared
     // DEFAULT_COLORS object.
     colors: Object.assign({}, DEFAULT_COLORS),
@@ -354,6 +372,27 @@ export default function TimeSeries(options) {
         settings[key] = value;
     }
   }
+  // Normalise the clamping constants once, here: the params object is shared
+  // with the renderer module through rctx.clamp (coalesceBlocks has no access
+  // to the settings object), and an invalid combination would otherwise put a
+  // NaN or an inverted fraction on the axis. Same spirit as setFadeBand()'s
+  // `0 < lo < hi` rejection — warn and fall back to the defaults.
+  var _clampParams = null;
+  if (settings.clampBulkFrac <= 0 || settings.clampBulkFrac >= 1
+      || !(settings.clampOutliersFactor > 1)
+      || !(settings.clampOutliersShare > 0) || settings.clampOutliersShare >= 0.5) {
+    console.warn('TimeSeries: invalid clampOutliers params — falling back to the defaults');
+    settings.clampOutliersFactor = 3;
+    settings.clampOutliersShare = 0.05;
+    settings.clampBulkFrac = 0.8;
+    settings.clampOutliers = false;
+  }
+  _clampParams = {
+    on: settings.clampOutliers,
+    factor: settings.clampOutliersFactor,
+    share: settings.clampOutliersShare,
+    bulkFrac: settings.clampBulkFrac,
+  };
   var canvas = document.getElementById(settings.canvas);
   if (canvas._tsInstance) {
     console.warn('TimeSeries: canvas "' + settings.canvas + '" already has an instance');
@@ -629,8 +668,10 @@ export default function TimeSeries(options) {
   // registers here, and an app that also wants its own hover logic must not
   // have to choose between the two. onHoverDataCallback returns an unsubscribe.
   var hoverDataHandlers = [];
-  function notifyHoverData(plot, n, key, value) {
-    for (const h of hoverDataHandlers) h(plot, n, key, value);
+  // The 5th argument `clamped` is additive: existing subscribers taking four
+  // arguments keep their exact contract (pinned by test/hover.test.mjs).
+  function notifyHoverData(plot, n, key, value, clamped) {
+    for (const h of hoverDataHandlers) h(plot, n, key, value, clamped);
   }
 
   ////////////////////////////////////
@@ -1611,7 +1652,8 @@ export default function TimeSeries(options) {
     now = Date.now();
     c.clearRect(0, 0, canvas.width, canvas.height);
     prepare_grid(); // must run before rctx is built: recalculates ppms, ppv, ppv, mspp
-    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight, hidden: hiddenSeries, colors: settings.colors };
+    rctx = { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight, hidden: hiddenSeries, colors: settings.colors,
+             clamp: _clampParams };
     background();
     watermark();
     yAxis();
@@ -1689,13 +1731,13 @@ export default function TimeSeries(options) {
       item && item !== 'frame' ? 'grab' :
       'default';
     if (item && item !== 'frame' && item.key != null)
-      notifyHoverData(data[item.plot], item.n, item.key, item.value);
+      notifyHoverData(data[item.plot], item.n, item.key, item.value, item.clamped === true);
     else
-      notifyHoverData(null, null, null, null);
+      notifyHoverData(null, null, null, null, false);
   };
 
   canvas.onmouseleave = function () {
-    notifyHoverData(null, null, null, null);
+    notifyHoverData(null, null, null, null, false);
   };
 
   canvas.onmouseup = function (e) {
@@ -2175,18 +2217,39 @@ export default function TimeSeries(options) {
         // still reports the amount in the bin rather than whatever unit or
         // extrapolation the axis happens to be showing.
         var vs = (data[i]._vscale != null ? data[i]._vscale : 1) * pk;
+        // Outlier clamping: the drawn stack is capped at the clamp line, so a
+        // segment past the limit is not drawn — and not hittable in its own
+        // right. Within the clamped band the series that straddles the limit
+        // carries the hatch, so it is the one the pointer finds there; it
+        // returns its RAW value plus `clamped: true`. The limit is already
+        // post-`ks`, so it carries `_vscale` only — not pk again.
+        var cl = clampOf(data[i]);
+        var limUpD = (cl && cl.up) ? cl.up.limit * (data[i]._vscale != null ? data[i]._vscale : 1) : Infinity;
+        var limDownD = (cl && cl.down) ? cl.down.limit * (data[i]._vscale != null ? data[i]._vscale : 1) : Infinity;
         var hUp = 0, hDown = 0;
         for (const [k, v] of Object.entries(slot)) {
           if (dirs && dirs[k] === 'down') {
-            if (py < -hDown && py >= -(hDown + v * vs)) {
-              return { plot: i, n: n, key: k, value: v };
+            var dvD = v * vs;
+            var roomD = limDownD - hDown;
+            if (limDownD < Infinity && roomD <= 0) continue;   // no ink → unhittable
+            var dvDc = (dvD > roomD) ? roomD : dvD;
+            if (py < -hDown && py >= -(hDown + dvDc)) {
+              var hd = { plot: i, n: n, key: k, value: v };
+              if (dvDc < dvD) hd.clamped = true;
+              return hd;
             }
-            hDown += v * vs;
+            hDown += dvDc;
           } else {
-            if (py >= hUp && py < hUp + v * vs) {
-              return { plot: i, n: n, key: k, value: v };
+            var dvU = v * vs;
+            var roomU = limUpD - hUp;
+            if (limUpD < Infinity && roomU <= 0) continue;
+            var dvUc = (dvU > roomU) ? roomU : dvU;
+            if (py >= hUp && py < hUp + dvUc) {
+              var hu = { plot: i, n: n, key: k, value: v };
+              if (dvUc < dvU) hu.clamped = true;
+              return hu;
             }
-            hUp += v * vs;
+            hUp += dvUc;
           }
         }
       }
@@ -2210,11 +2273,26 @@ export default function TimeSeries(options) {
           if (hiddenSeries.has(psid)) continue;   // hidden means unhittable
           var pval = ppt.values[psid];
           if (pval == null) continue;
-          var dy = Y(pval) - y;
+          // Outlier clamping: a clamped marker is drawn just below the
+          // arrowhead (which touches the plot edge), so it is hittable where
+          // it is drawn — the distance is measured against the drawn y, and
+          // the RAW value plus `clamped: true` comes back from the hit.
+          var pcv = clampValue(clampOf(data[i]), pval);
+          var dy;
+          if (pcv !== pval) {
+            var pr2 = POINT_RADIUS[data[i].type] || POINT_RADIUS.default;
+            dy = (pval > 0)
+              ? (margin.top + CLAMP_HEAD_PX + pr2) - y
+              : (margin.top + plotHeight - CLAMP_HEAD_PX - pr2) - y;
+          } else {
+            dy = Y(pcv) - y;
+          }
           var d2 = dx * dx + dy * dy;
           if (d2 <= bestD2) {
             bestD2 = d2;
-            best = { plot: i, n: pi, key: psid, value: pval };
+            var hb = { plot: i, n: pi, key: psid, value: pval };
+            if (pcv !== pval) hb.clamped = true;
+            best = hb;
           }
         }
       }
@@ -2281,6 +2359,19 @@ export default function TimeSeries(options) {
   // it was accumulated over, so only it may be extrapolated. An average or a
   // percentile over a short window is already the right number for what the axis
   // shows; dividing it by f would invent a spike. Those clip but never scale.
+  // Outlier clamping: policy half. Returns null when the feature is off for
+  // this block — the per-plot flag wins over the global setting, in both
+  // directions. When on, returns the validated constants built once in the
+  // constructor, so prepare_grid can drive the detection (collectClampSamples,
+  // deriveClamp — src/renderers.js). This is the `_partial` split: the policy
+  // half lives in timeseries.js where the instance state (settings) is, the
+  // reading half (clampOf, collectClampSamples, deriveClamp) in renderers.js.
+  function clampModeOf(plot) {
+    var on = (plot && plot.clampOutliers != null) ? plot.clampOutliers : settings.clampOutliers;
+    if (!on) return null;
+    return _clampParams;
+  }
+
   function partialOf(plot, maxSlot) {
     if (settings.partialBins === 'full') return null;
     if (!plot || typeof plot.data_until !== 'number') return null;
@@ -2319,6 +2410,15 @@ export default function TimeSeries(options) {
         // earlier frame would otherwise survive setPartialBins('full') and keep
         // clipping a bar nobody asked to clip.
         plot._partial = null;
+        // Outlier clamping: a stale `_clamped` record must not outlive a
+        // runtime toggle of the per-plot flag, the way `_partial`'s reset
+        // guards setPartialBins('full'). Only a block that ever had one is
+        // touched, so a chart that never clamps sees no write at all.
+        if (plot._clamped) delete plot._clamped;
+        // Resolved once per block per frame: the per-plot flag wins over the
+        // global setting, in both directions. Null when the feature is off for
+        // this block — that is the guard every clamp-related cost sits behind.
+        var cp = clampModeOf(plot);
         // Whatever the renderer needs the axis to know before draw time — for a
         // laned type, laneCount and yticks. gantt derives them by packing events
         // into rows, heatmap and horizon by giving each series a lane; the core
@@ -2480,6 +2580,25 @@ export default function TimeSeries(options) {
           var _up = vpUpMax || plot.max;
           ymax_array.push([i, plot._vscale === 1 ? _up : _up * plot._vscale, pp]);
           ymin_array.push([i, vpDownMax * plot._vscale, pp]);
+          // Outlier clamping: detection runs only when the feature is on for
+          // this block. With it off the two pushes above are the exact code
+          // path they were before the feature, and the two guards below never
+          // fire — no sort, no extra arithmetic, nothing stamped.
+          if (cp) {
+            var s = collectClampSamples(plot, margin.left, margin.left + plotWidth,
+                                        { X: X, ppms: ppms, hidden: hiddenSeries });
+            var cl = deriveClamp(s.ups, s.downs, cp);
+            if (cl) {
+              plot._clamped = cl;
+              // The clamped scale in axis space: `limit` = bulk / bulkFrac is
+              // the value AT the plot edge, so the entry carries `_vscale`
+              // exactly once and the bulk lands at clampBulkFrac of the plot
+              // height; the shaft tops out `CLAMP_HEAD` px below the edge,
+              // the arrowhead completes it to the edge.
+              if (cl.up)   ymax_array[ymax_array.length - 1][1] = cl.up.limit   * plot._vscale;
+              if (cl.down) ymin_array[ymin_array.length - 1][1] = cl.down.limit * plot._vscale;
+            }
+          }
         }
       });
     // For each plot type, keep only blocks at the best interval for the

@@ -12,6 +12,36 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
+## [0.10.6] - 2026-09-12
+
+### Added
+
+- **Outlier clamping ("Kappung").** One or a few extreme values can own almost the whole
+  y-axis and squash the rest of the data against the zero line. `clampOutliers: true` makes
+  the chart detect that top group per visible window and rescale the axis from the bulk
+  alone: the bulk keeps `clampBulkFrac` (default 0.8) of the plot height and the axis edge
+  lands on `bulk / clampBulkFrac`, while the truncated ink is marked so it visibly continues
+  beyond — an arrowhead whose apex touches the plot edge. The detection rule is
+  `clampOutliersFactor` (default 3: an outlier is at least three times the max of the rest)
+  and `clampOutliersShare` (default 0.05: at most 5 % of the visible samples may belong to
+  the group). The ink follows per family: bars truncate at the edge — shaft topped out a few
+  pixels below it, arrowhead completing it, a translucent cross-hatch over the clamped
+  section — point markers and the glyph renderers (error bars, candles, OHLC) draw just
+  below the same arrowhead, and the line and area family deliberately draws through the
+  TRUE values, so a clamped line visibly leaves the plot box toward the real point instead
+  of being flattened onto a value the data never had. Off by default — with it off nothing
+  about the extent, the paint or the hit test changes. Per plot, a block's own
+  `clampOutliers` overrides the global setting in both directions and rides through
+  `rollupBinned` to a derived tier. The `waterfall` and laned renderers (`heatmap`,
+  `horizon`, `gantt`) do not take part: clamping a delta would detach the bar from the
+  running total, and a lane axis has no magnitude to squash. Tooltips keep reporting the
+  real value and append a muted `▲ clamped to axis` hint on a truncated hit;
+  `onHoverDataCallback` delivers the hit's `clamped` flag as a new fifth argument (the
+  four-argument contract is unchanged). The defaults are visual-tuned starting values —
+  `demo/clamp-tuning.html` puts sliders on the factor, share and bulk fraction next to
+  twelve chart cards in one viewport-sync group. See
+  [Outlier clamping](doc/configuration.md#outlier-clamping).
+
 ## [0.10.5] - 2026-09-01
 
 ### Fixed
@@ -364,7 +394,8 @@ For anyone arriving at the project with this release, the library covers:
 - Opt-in tooltip and series-visibility legend overlays that follow the palette.
 - Four built-in themes and a fully overridable colour palette.
 
-[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.5...HEAD
+[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.6...HEAD
+[0.10.6]: https://github.com/hgruber/timeseries.js/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/hgruber/timeseries.js/compare/v0.10.4...v0.10.5
 [0.10.4]: https://github.com/hgruber/timeseries.js/compare/v0.10.3...v0.10.4
 [0.10.3]: https://github.com/hgruber/timeseries.js/compare/v0.10.2...v0.10.3

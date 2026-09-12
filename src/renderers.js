@@ -130,7 +130,7 @@ export function layoutPlot(plot) {
  * *between* bins, so dropping them would make a coalesced block draw differently
  * from the blocks it was built out of.
  */
-function coalesceBlocks(group, data) {
+function coalesceBlocks(group, data, rctx) {
   if (group.length === 1) return data[group[0]];
   var base = data[group[0]];
   var interval = base.interval;
@@ -161,6 +161,9 @@ function coalesceBlocks(group, data) {
     vmin: base.vmin, vmax: base.vmax, horizonBands: base.horizonBands,
     totals: base.totals, waterfallColors: base.waterfallColors,
     roles: base.roles, candleColors: base.candleColors,
+    // The per-plot toggle must survive the merge, or a merged block would draw
+    // unclamped where its blocks drew clamped.
+    clampOutliers: base.clampOutliers,
   };
   for (const i of group) {
     var blk = data[i];
@@ -177,6 +180,24 @@ function coalesceBlocks(group, data) {
   if (name != null) merged.name = name;
   for (var fk2 in flags) if (flags[fk2] != null) merged[fk2] = flags[fk2];
   if (partial) merged._partial = partial;
+  // Outlier clamping: the merged block re-derives its clamp state from the
+  // merged data — NOT by carrying a member's `_clamped` over: max(limitᵢ)
+  // would crush a non-clamping sibling's genuine values down to the other
+  // block's limit. The group is clamped when any block is (the per-plot flag
+  // or the global setting), so the merged draw matches its blocks' drawn state.
+  // Re-deriving costs one O(N) pass per coalesced group, only when on.
+  if (rctx && rctx.clamp) {
+    var anyOn = false;
+    for (const ci of group) {
+      var cb = data[ci];
+      if ((cb.clampOutliers != null) ? cb.clampOutliers : rctx.clamp.on) { anyOn = true; break; }
+    }
+    if (anyOn) {
+      var cs = collectClampSamples(merged, rctx.margin.left, rctx.margin.left + rctx.plotWidth, rctx);
+      var mc = deriveClamp(cs.ups, cs.downs, rctx.clamp);
+      if (mc) merged._clamped = mc;
+    }
+  }
   return merged;
 }
 
@@ -213,6 +234,256 @@ function vscaleOf(plot) {
 function partialAt(plot, n) {
   var p = plot && plot._partial;
   return (p && p.slot === n) ? p : null;
+}
+
+// ── Outlier clamping ("Kappung") ─────────────────────────────────────────────
+//
+// One or a few values can own almost the whole y-axis and squash the rest of
+// the data against the zero line. When the feature is on, prepare_grid stamps
+// `plot._clamped = { up: {bulk, limit} | null, down: {…} | null }` (in drawn
+// value space, pre-`_vscale`, like `_partial.scale`), and three consumers read
+// it: the extent scan (the axis entry becomes bulk × stretch instead of the
+// true max), the renderer (ink clamped at `limit`) and the hit test. No slot
+// map is needed: the outlier group is a contiguous prefix from the top, so
+// every drawn value past `limit` IS an outlier and everything at or under
+// `bulk` is not — the interval between the two is empty by construction.
+
+// Hatch spacing, marker size and the arrowhead height, in px. Drawing style,
+// not axis math, so they stay module constants; promote them to settings only
+// if the tuning page shows they must scale with plot height.
+const CLAMP_HATCH = 5;
+const CLAMP_HEAD = 9;   // the arrowhead's height; the shaft tops out here
+const CLAMP_MARK = 6;   // the arrowhead's half-width at its base
+export const CLAMP_HEAD_PX = CLAMP_HEAD;
+
+/**
+ * Normalised read of the clamp record: null when the block has none.
+ */
+export function clampOf(plot) {
+  return (plot && plot._clamped) ? plot._clamped : null;
+}
+
+/**
+ * Clamp a single drawn value in both directions. Value space, exactly the
+ * space the extent scan sampled in — a renderer's `Y` already carries the
+ * block's `_vscale`, so nothing here may multiply it again.
+ */
+export function clampValue(cl, v) {
+  if (cl) {
+    if (cl.up && v > cl.up.limit) return cl.up.limit;
+    if (cl.down && v < -cl.down.limit) return -cl.down.limit;
+  }
+  return v;
+}
+
+/**
+ * The DRAWN pixel of a glyph value under clamping: `Y(v)` normally, but a
+ * value the clamp actually cut sits at the shaft line — CLAMP_HEAD px below
+ * the top edge (or above the bottom edge) — so the arrowhead, whose apex
+ * touches the edge, has room and the shaft never reaches into the head.
+ * Values the clamp did not touch pass through Y unchanged.
+ */
+export function clampY(rctx, cl, raw) {
+  var cv = clampValue(cl, raw);
+  if (cv === raw || !cl) return Y_of(rctx, cv);
+  return raw > 0 ? rctx.margin.top + CLAMP_HEAD
+                 : rctx.margin.top + rctx.plotHeight - CLAMP_HEAD;
+}
+function Y_of(rctx, v) { return rctx.Y(v); }
+
+/**
+ * The outlier group of one direction's samples: the largest contiguous prefix
+ * from the top with `k <= K` members whose minimum exceeds factor × the max of
+ * the rest. Returns `{ bulk, limit }` or null. `limit = bulk / bulkFrac` puts
+ * the bulk at clampBulkFrac of the plot height; `limit` is the value AT the
+ * plot edge, where the arrowhead's apex touches (see doc/internals/core.md).
+ *
+ * `K = max(1, floor(n × share))` softens the strict "< 5 %" reading below 20
+ * samples, where the floor would be 0 and the feature permanently inert on
+ * small windows; `n < 4` declines to mean anything at all, and the bulk always
+ * keeps at least two samples. `bulk <= 0` (everything else at zero) has no
+ * meaningful scale to clamp against either.
+ */
+export function clampOne(arr, cp) {
+  var n = arr.length;
+  if (n < 4) return null;
+  arr.sort(function (a, b) { return b - a; });
+  var K = Math.max(1, Math.floor(n * cp.share));
+  var out = null;
+  // The group is the largest k <= K whose minimum exceeds factor × the max of
+  // the rest — evaluated for every k up to K rather than breaking at the first
+  // gap, or a group of near-equal spikes (five equal bars, say) would fail the
+  // very first comparison and never be detected at all.
+  // `limit = bulk / bulkFrac` is the value AT the plot edge: the bulk lands at
+  // clampBulkFrac of the plot height, and the clamped ink (shaft) tops out
+  // CLAMP_HEAD px below the edge, where the arrowhead (apex touching the edge)
+  // completes the arrow — the shaft never reaches into the head.
+  for (var k = 1; k <= K && k <= n - 2; k++) {
+    if (arr[k - 1] > cp.factor * arr[k] && arr[k] > 0)
+      out = { bulk: arr[k], limit: arr[k] / cp.bulkFrac };
+  }
+  return out;
+}
+
+/**
+ * Detect both directions at once. Null when neither side has an outlier group.
+ */
+export function deriveClamp(ups, downs, cp) {
+  var u = clampOne(ups, cp);
+  var d = clampOne(downs, cp);
+  return (u || d) ? { up: u, down: d } : null;
+}
+
+/**
+ * The per-slot drawn extents of one block across the pixel window [xLo, xHi],
+ * in drawn value space — the same numbers the y-extent scan measures, collected
+ * so detection and extent can never disagree about what the block draws.
+ *
+ * Samples: the stack total for a stacked type, every array entry for a banded
+ * type, every series value otherwise; point blocks contribute per series
+ * value per point. Hidden series are skipped, `part.skip` bins contribute
+ * nothing and a partial bin contributes `val × part.scale` — the value the
+ * renderer paints. Cumulative (waterfall) and laned/span blocks contribute
+ * nothing at all: clamping a running total shifts the base of every later bar,
+ * and a laned block has no magnitude axis to clamp against (both exclusions
+ * are pinned by test).
+ *
+ * Culling is by pixels, not timestamps, on purpose: `coalesceBlocks` re-derives
+ * the merged block's clamp state from inside plotData, where the timestamps
+ * are not reachable but rctx is. `X(tmin)` === margin.left and
+ * `X(tmax)` === margin.left + plotWidth, so the two callers agree by
+ * construction. `rctx` here is minimal: { X, ppms, hidden }.
+ */
+export function collectClampSamples(plot, xLo, xHi, rctx) {
+  var ups = [], downs = [];
+  if (!plot || !plot.data) return { ups: ups, downs: downs };
+  var type = plot.type;
+  if (isCumulativeType(type) || isLanedType(type) || plot.category === 'span') return { ups: ups, downs: downs };
+  var hidden = rctx && rctx.hidden;
+  var X = rctx.X;
+  var dirs = plot.series_directions;
+  var stacked = isStackedType(type);
+  var banded = isBandedType(type);
+  if (plot.category === 'point') {
+    for (const pt of plot.data) {
+      var x = X(pt.t);
+      if (x < xLo || x > xHi) continue;
+      for (var pk in pt.values) {
+        if (hidden && hidden.has(pk)) continue;
+        var pv = pt.values[pk];
+        if (pv == null) continue;
+        if (pv >= 0) ups.push(pv); else downs.push(-pv);
+      }
+    }
+    return { ups: ups, downs: downs };
+  }
+  for (var sk in plot.data) {
+    var part = partialAt(plot, +sk);
+    if (part && part.skip) continue;
+    var g = binGeom(plot, +sk, rctx);
+    if (!g) continue;
+    // `>=` on the right edge: the extent scan measures a slot only while
+    // `slotTime < tmax`, and xHi === X(tmax), so an exactly-on-tmax slot must
+    // not be sampled either — a clamp on an unmeasured bin would disagree with
+    // the axis.
+    if (g.x0 + g.w < xLo || g.x0 >= xHi) continue;
+    var ks = g.k;
+    var slot = plot.data[sk];
+    if (stacked) {
+      var upSum = 0, downSum = 0;
+      for (var key in slot) {
+        if (hidden && hidden.has(key)) continue;
+        var val = slot[key];
+        if (val == null) continue;
+        if (banded) {
+          for (var qi = 0; qi < val.length; qi++) {
+            var qv = val[qi] * ks;
+            if (dirs && dirs[key] === 'down') { if (-qv > downSum) downSum = -qv; }
+            else if (qv > upSum) upSum = qv;
+          }
+        } else if (dirs && dirs[key] === 'down') downSum += val * ks;
+        else upSum += val * ks;
+      }
+      if (upSum > 0) ups.push(upSum);
+      if (downSum > 0) downs.push(downSum);
+    } else {
+      for (var key2 in slot) {
+        if (hidden && hidden.has(key2)) continue;
+        var val2 = slot[key2];
+        if (val2 == null) continue;
+        if (banded) {
+          for (var qj = 0; qj < val2.length; qj++) {
+            var qv2 = val2[qj] * ks;
+            if (qv2 >= 0) ups.push(qv2); else downs.push(-qv2);
+          }
+        } else {
+          var v2 = val2 * ks;
+          if (v2 >= 0) ups.push(v2); else downs.push(-v2);
+        }
+      }
+    }
+  }
+  return { ups: ups, downs: downs };
+}
+
+/**
+ * Cross-hatch overlay on the clamped section of a bar: a translucent wash in
+ * the crossing series' colour plus the two diagonal line families that make the
+ * truncation legible. The ink below is untouched; the overlay is what reads as
+ * "clamped". Alpha lives on the colour, never on globalAlpha — that belongs to
+ * the tier cross-fade.
+ *
+ * Deterministic: both 45° families are anchored at the section's own top-left
+ * corner, so the pattern is a property of the section and reproduces exactly.
+ * The segments are computed analytically (line–rect intersection), so no
+ * ctx.clip() is needed — none of the chart content uses one, and this helper
+ * is not going to be the first.
+ */
+export function clampHatch(c, x, y0, y1, w, fillStyle, strokeStyle) {
+  var h = y1 - y0;
+  if (!(h > 0) || !(w > 0)) return;
+  c.fillStyle = fillStyle;
+  c.fillRect(x, y0, w, h);
+  c.strokeStyle = strokeStyle;
+  c.beginPath();
+  // ↘ family: x - y = C, anchored at the section's own top-left corner.
+  for (var d = 0; d < w + h; d += CLAMP_HATCH) {
+    var C = x + d - y0;
+    var ex = Math.max(x, C + y0), ey = ex - C;
+    var sx = Math.min(x + w, C + y1), sy = sx - C;
+    if (sx > ex) { c.moveTo(ex, ey); c.lineTo(sx, sy); }
+  }
+  // ↗ family: x + y = C.
+  for (var d2 = 0; d2 < w + h; d2 += CLAMP_HATCH) {
+    var C2 = x + y0 + d2;
+    var ex2, ey2, sx2, sy2;
+    if (C2 - x <= y1) { ex2 = x; ey2 = C2 - x; } else { ex2 = C2 - y1; ey2 = y1; }
+    if (C2 - y0 <= x + w) { sx2 = C2 - y0; sy2 = y0; } else { sx2 = x + w; sy2 = C2 - x - w; }
+    if (sx2 > ex2) { c.moveTo(ex2, ey2); c.lineTo(sx2, sy2); }
+  }
+  c.stroke();
+}
+
+/**
+ * The arrowhead that completes a clamped bar/glyph/marker into an arrow: a
+ * filled triangle whose APEX sits exactly at the y passed in (the plot edge,
+ * so the tip touches the edge), with the base CLAMP_HEAD px inward — the ink
+ * (the shaft) tops out at the base line and never reaches into the head.
+ */
+export function clampMark(c, x, y, dir, fillStyle) {
+  c.fillStyle = fillStyle;
+  c.beginPath();
+  if (dir === 'down') {
+    c.moveTo(x, y);                       // apex at the edge, pointing down
+    c.lineTo(x - CLAMP_MARK, y - CLAMP_HEAD);
+    c.lineTo(x + CLAMP_MARK, y - CLAMP_HEAD);
+  } else {
+    c.moveTo(x, y);                       // apex at the edge, pointing up
+    c.lineTo(x - CLAMP_MARK, y + CLAMP_HEAD);
+    c.lineTo(x + CLAMP_MARK, y + CLAMP_HEAD);
+  }
+  c.closePath();
+  c.fill();
 }
 
 /**
@@ -272,7 +543,7 @@ export function plotData(activePlot, data, rctx) {
           group.push(j);
           (done || (done = new Set())).add(j);
         }
-      plugin.draw(coalesceBlocks(group, data), vctx);
+      plugin.draw(coalesceBlocks(group, data, rctx), vctx);
     } else {
       plugin.draw(data[i], vctx);
     }
@@ -448,7 +719,7 @@ function withAlpha(color, t) {
 }
 
 function highlight_multibar(plot, n, item, rctx, mode) {
-  var { c, X, Y, ppms, ppv, margin, plotWidth } = rctx;
+  var { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight } = rctx;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   // The same geometry the draw pass used for this slot. A highlight at full
@@ -459,6 +730,12 @@ function highlight_multibar(plot, n, item, rctx, mode) {
   var barWidth = ppms * step * (part ? part.frac : 1);
   var k = part ? part.scale : 1;
   var dirs = plot.series_directions;
+  // The outline must frame the bar as it was DRAWN, not as it is stored: with
+  // outlier clamping on, a clamped segment draws at the clamp line, so the
+  // outline applies the very same headroom arithmetic the draw pass does.
+  var cl = clampOf(plot);
+  var limUp = (cl && cl.up) ? cl.up.limit : Infinity;
+  var limDown = (cl && cl.down) ? cl.down.limit : Infinity;
   var heightUp = 0;
   var heightDown = 0;
   var x = X(start + n * step);
@@ -466,6 +743,16 @@ function highlight_multibar(plot, n, item, rctx, mode) {
     var down = dirs && dirs[i] === 'down';
     var v = bar * k;
     if (i === item) {
+      if (!down && limUp < Infinity) {
+        var roomU = limUp - heightUp;
+        if (roomU <= 0) return;      // no ink drawn → no outline to frame
+        if (v > roomU) v = roomU;
+      }
+      if (down && limDown < Infinity) {
+        var roomD = limDown - heightDown;
+        if (roomD <= 0) return;
+        if (v > roomD) v = roomD;
+      }
       if (mode === 'outline') {
         // The same clip the draw pass applies: a selection whose slot is
         // scrolled out of the viewport paints no outline at all, rather than
@@ -480,8 +767,18 @@ function highlight_multibar(plot, n, item, rctx, mode) {
         c.lineWidth = 2;
         c.strokeStyle = (rctx.colors && rctx.colors.selection) || '#2f6fd0';
         var top, h;
-        if (down) { top = Y(-heightDown);  h = ppv * v; }
-        else      { top = Y(heightUp + v); h = ppv * v; }
+        if (down) {
+          // The outline frames the bar as DRAWN: with the clamp on, the shaft
+          // tops out CLAMP_HEAD px above the bottom edge (the head sits above
+          // it), so the outline tops there too.
+          top = Y(-heightDown);
+          var yBot = Math.min(Y(-heightDown) + ppv * v,
+                              margin.top + plotHeight - CLAMP_HEAD);
+          h = yBot - top;
+        } else {
+          top = Math.max(Y(heightUp + v), margin.top + CLAMP_HEAD);
+          h = Y(heightUp) - top;
+        }
         c.strokeRect(x - 1, top - 1, barWidth + 2, h + 2);
         c.restore();
       } else {
@@ -497,11 +794,16 @@ function highlight_multibar(plot, n, item, rctx, mode) {
 }
 
 function multibar(plot, rctx) {
-  var { c, X, Y, ppms, ppv, margin, plotWidth, hidden } = rctx;
+  var { c, X, Y, ppms, ppv, margin, plotWidth, plotHeight, hidden } = rctx;
   var start = plot.interval_start * 1000;
   var step = plot.interval * 1000;
   var fullWidth = ppms * step;
   var dirs = plot.series_directions;
+  // Outlier clamping: null-safe read; with the feature off these stay Infinity
+  // and the loop below runs exactly the arithmetic it ran before the feature.
+  var cl = clampOf(plot);
+  var limUp = (cl && cl.up) ? cl.up.limit : Infinity;
+  var limDown = (cl && cl.down) ? cl.down.limit : Infinity;
   for (const [t, bars] of Object.entries(plot.data)) {
     var heightUp = 0;
     var heightDown = 0;
@@ -516,35 +818,99 @@ function multibar(plot, rctx) {
     var barWidth = part ? fullWidth * part.frac : fullWidth;
     var k = part ? part.scale : 1;
     var x = X(start + t * step);
-    if (x + barWidth >= margin.left && x <= margin.left + plotWidth)
+    if (x + barWidth >= margin.left && x <= margin.left + plotWidth) {
+      // The stack total is the detection sample, so the clamp is on the stack:
+      // each segment gets only the headroom left under the clamp line, the
+      // series that straddles it provides the clamped ink and carries the
+      // hatch overlay. A segment past the limit is skipped entirely (a
+      // zero-height rect would still paint a hairline).
+      var crossingUp = null, crossingDown = null;
       for (const [i, bar] of Object.entries(bars)) {
         // Skipped entirely, not drawn transparent: a hidden series must not
         // occupy stack height either, or the visible bars float off the axis.
         if (hidden && hidden.has(i)) continue;
+        var down = dirs && dirs[i] === 'down';
         var v = bar * k;
-        c.fillStyle = resolveColor(plot, i, 0.8);
-        if (dirs && dirs[i] === 'down') {
-          c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
+        if (down) {
+          if (limDown < Infinity) {
+            var roomD = limDown - heightDown;
+            if (roomD <= 0) continue;
+            if (v > roomD) { v = roomD; crossingDown = i; }
+          }
+          c.fillStyle = resolveColor(plot, i, 0.8);
+          if (limDown < Infinity) {
+            // Shaft rule: the bar tops out CLAMP_HEAD px above the bottom edge
+            // — the arrowhead fills the rest, apex at the edge, and the shaft
+            // never reaches into the head.
+            var yBotD = Math.min(Y(-heightDown) + ppv * v,
+                                 margin.top + plotHeight - CLAMP_HEAD);
+            c.fillRect(x, Y(-heightDown), barWidth, yBotD - Y(-heightDown));
+          } else {
+            c.fillRect(x, Y(-heightDown), barWidth, ppv * v);
+          }
           heightDown += v;
         } else {
-          c.fillRect(x, Y(heightUp), barWidth, -ppv * v);
+          if (limUp < Infinity) {
+            var roomU = limUp - heightUp;
+            if (roomU <= 0) continue;
+            if (v > roomU) { v = roomU; crossingUp = i; }
+          }
+          c.fillStyle = resolveColor(plot, i, 0.8);
+          if (limUp < Infinity) {
+            // Shaft rule: the bar tops out CLAMP_HEAD px below the top edge —
+            // the arrowhead fills the last CLAMP_HEAD px (apex at the edge)
+            // and the shaft never reaches into the head.
+            var yTopU = Math.max(Y(heightUp) - ppv * v, margin.top + CLAMP_HEAD);
+            c.fillRect(x, yTopU, barWidth, Y(heightUp) - yTopU);
+          } else {
+            c.fillRect(x, Y(heightUp), barWidth, -ppv * v);
+          }
           heightUp += v;
         }
       }
+      if (crossingUp) {
+        clampHatch(c, x, margin.top + CLAMP_HEAD, Y(cl.up.bulk), barWidth,
+                   resolveColor(plot, crossingUp, 0.25),
+                   resolveColor(plot, crossingUp, 0.55));
+        clampMark(c, x + barWidth / 2, margin.top, 'up',
+                  resolveColor(plot, crossingUp, 0.9));
+      }
+      if (crossingDown) {
+        clampHatch(c, x, Y(-cl.down.bulk), margin.top + plotHeight - CLAMP_HEAD, barWidth,
+                   resolveColor(plot, crossingDown, 0.25),
+                   resolveColor(plot, crossingDown, 0.55));
+        clampMark(c, x + barWidth / 2, margin.top + plotHeight, 'down',
+                  resolveColor(plot, crossingDown, 0.9));
+      }
+    }
   }
 }
 
 function multipoint(plot, rctx) {
-  var { c, X, Y, margin, plotWidth, hidden } = rctx;
+  var { c, X, Y, margin, plotHeight, plotWidth, hidden } = rctx;
   var r = POINT_RADIUS.multipoint;
+  // Outlier clamping: the marker is the arrow's shaft — it sits just below the
+  // arrowhead (whose apex touches the plot edge) and never reaches into it.
+  // The colour, radius and culling are untouched — and with the feature off,
+  // nothing here changes at all.
+  var cl = clampOf(plot);
   if (plot.category === 'point') {
     for (const pt of plot.data) {
       var x = X(pt.t);
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(pt.values)) {
           if (v == null || (hidden && hidden.has(i))) continue;
+          var cv = clampValue(cl, v);
+          var clampedUp = cv !== v && v > 0;
+          var clampedDown = cv !== v && v <= 0;
+          var py = clampedUp ? margin.top + CLAMP_HEAD + r
+                 : clampedDown ? margin.top + plotHeight - CLAMP_HEAD - r
+                 : Y(cv);
           c.fillStyle = resolveColor(plot, i, 0.8);
-          c.fillRect(x - r, Y(v) - r, 2 * r, 2 * r);
+          c.fillRect(x - r, py - r, 2 * r, 2 * r);
+          if (clampedUp) clampMark(c, x, margin.top, 'up', resolveColor(plot, i, 0.9));
+          if (clampedDown) clampMark(c, x, margin.top + plotHeight, 'down',
+                                     resolveColor(plot, i, 0.9));
         }
       }
     }
@@ -556,14 +922,22 @@ function multipoint(plot, rctx) {
       if (x >= margin.left && x <= margin.left + plotWidth) {
         for (const [i, v] of Object.entries(value)) {
           if (hidden && hidden.has(i)) continue;
+          var cv2 = clampValue(cl, v);
+          var clampedUp2 = cv2 !== v && v > 0;
+          var clampedDown2 = clampedUp2 ? false : (cv2 !== v);
+          var py2 = clampedUp2 ? margin.top + CLAMP_HEAD + r
+                  : clampedDown2 ? margin.top + plotHeight - CLAMP_HEAD - r
+                  : Y(cv2);
           c.fillStyle = resolveColor(plot, i, 0.8);
-          c.fillRect(x - r, Y(v) - r, 2 * r, 2 * r);
+          c.fillRect(x - r, py2 - r, 2 * r, 2 * r);
+          if (clampedUp2) clampMark(c, x, margin.top, 'up', resolveColor(plot, i, 0.9));
+          if (clampedDown2) clampMark(c, x, margin.top + plotHeight, 'down',
+                                      resolveColor(plot, i, 0.9));
         }
       }
     }
   }
 }
-
 /**
  * Runs of drawable points for one series, chronologically — one run per unbroken
  * stretch of data, so a caller can stroke or fill each without bridging a gap.
@@ -644,6 +1018,13 @@ function traceRun(c, Y, run, step, binW) {
 // multiline — one gap-aware polyline per series. `plot.step` ('after'|'before')
 // draws it as a staircase instead of interpolating, and `plot.fill` shades the
 // area down to the zero line. Both apply to binned and point blocks.
+//
+// Outlier clamping deliberately does NOT touch the ink: the line is drawn
+// through the TRUE values, so it runs diagonally out of the plot box toward
+// the real point outside it — connecting a clamped vertex instead would
+// falsify the slope and lie about where the data went. The axis still clamps
+// (the extent entry comes from the bulk), which is exactly what makes the
+// line leave the box.
 function multiline(plot, rctx) {
   var { c, Y, margin, plotHeight, hidden } = rctx;
   var step = (plot.step === 'after' || plot.step === 'before') ? plot.step : null;
@@ -678,8 +1059,13 @@ function multiline(plot, rctx) {
 
 // scatter — PointSeries only: draws a filled circle per data point per series
 function scatter(plot, rctx) {
-  var { c, X, Y, margin, plotWidth, hidden } = rctx;
+  var { c, X, Y, margin, plotHeight, plotWidth, hidden } = rctx;
   var r = POINT_RADIUS.scatter;
+  // Outlier clamping: the marker is the arrow's shaft — it sits just below the
+  // arrowhead (whose apex touches the plot edge) and never reaches into it.
+  // This is the renderer where a clamped value is otherwise least evident,
+  // since a single point leaves no line to cut.
+  var cl = clampOf(plot);
   for (const sid of plotSeriesIds(plot)) {
     if (hidden && hidden.has(sid)) continue;
     c.fillStyle = resolveColor(plot, sid, 0.75);
@@ -688,9 +1074,21 @@ function scatter(plot, rctx) {
       if (v == null) continue;
       var x = X(pt.t);
       if (x < margin.left || x > margin.left + plotWidth) continue;
+      var cv = clampValue(cl, v);
+      // Shaft rule: a clamped marker sits CLAMP_HEAD + r px below the edge so
+      // the arrowhead (apex at the edge, base at the shaft line) has room and
+      // the marker never reaches into the head.
+      var clampedUp = cv !== v && v > 0;
+      var clampedDown = cv !== v && v <= 0;
+      var py = clampedUp ? margin.top + CLAMP_HEAD + r
+             : clampedDown ? margin.top + plotHeight - CLAMP_HEAD - r
+             : Y(cv);
       c.beginPath();
-      c.arc(x, Y(v), r, 0, 2 * Math.PI);
+      c.arc(x, py, r, 0, 2 * Math.PI);
       c.fill();
+      if (clampedUp) clampMark(c, x, margin.top, 'up', resolveColor(plot, sid, 0.9));
+      if (clampedDown) clampMark(c, x, margin.top + plotHeight, 'down',
+                                 resolveColor(plot, sid, 0.9));
     }
   }
 }
@@ -726,6 +1124,12 @@ function edgePoints(run, cols, vals, step, binW) {
 // A separate type rather than a `stack: true` flag on multiline: prepare_grid
 // decides how to measure the y-extent from the *type* (see isStackedType), and a
 // per-plot flag would leave that decision somewhere the registry cannot see.
+//
+// Outlier clamping deliberately does NOT touch the ink — same rule as
+// multiline: the bands are drawn through the TRUE cumulative edges and the
+// clamped band leaves the plot box upward, instead of being flattened onto a
+// fake edge (clamping an individual band would also tear the bands above it
+// off their baselines). Only the axis clamps.
 function stackarea(plot, rctx) {
   var { c, X, Y, hidden } = rctx;
   var step = (plot.step === 'after' || plot.step === 'before') ? plot.step : null;
@@ -777,7 +1181,7 @@ function stackarea(plot, rctx) {
       var bot = edgePoints(run, cols, lower, step, binW);
       c.beginPath();
       c.moveTo(top[0].x, Y(top[0].v));
-      for (var t = 1; t < top.length; t++) c.lineTo(top[t].x, Y(top[t].v));
+      for ( var t = 1; t < top.length; t++) c.lineTo(top[t].x, Y(top[t].v));
       for (var b = bot.length - 1; b >= 0; b--) c.lineTo(bot[b].x, Y(bot[b].v));
       c.closePath();
       c.fill();
@@ -1194,7 +1598,10 @@ function quantilebands(plot, rctx) {
   if (skipPart && skipPart.skip)
     slots = slots.filter(function (s) { return s !== skipPart.slot; });
   var medianIdx = Math.floor((npct - 1) / 2);   // which line to draw bold
-
+  // Outlier clamping deliberately does NOT touch the ink — same rule as
+  // multiline: the bands and lines are drawn through the TRUE entries, so a
+  // clamped slot's band leaves the plot box upward rather than being
+  // flattened onto a fake rung. Only the axis clamps.
   for (const id of plotSeriesIds(plot)) {
     if (hidden && hidden.has(id)) continue;
     // Fills: one polygon per band segment, broken on slot gaps so disjoint
@@ -1252,6 +1659,13 @@ function quantilesteps(plot, rctx) {
   if (plot.category === 'point') return;        // binned series only
   var connect = plot.connect !== false;
   var medianIdx = Math.floor((npct - 1) / 2);   // which line to draw bold
+  // Outlier clamping deliberately does NOT touch the ink — same rule as
+  // multiline: the ribbons and step lines are drawn through the TRUE entries,
+  // so a clamped bin's ribbon leaves the plot box upward (a riser rises past
+  // the box edge) instead of being flattened onto a fake rung. Only the axis
+  // clamps.
+  // Geometry once per slot: the fills and every percentile line read it, and a
+  // partial bin has to narrow all of them by the very same amount.
 
   // Geometry once per slot: the fills and every percentile line read it, and a
   // partial bin has to narrow all of them by the very same amount.
@@ -1283,9 +1697,8 @@ function quantilesteps(plot, rctx) {
         if (b) run.push(b);
       }
     }
-    // Lines: one path per percentile over all runs. The riser is simply the
-    // lineTo that starts the next bin — it is vertical because an unbroken run
-    // has bins sharing an edge (only the last bin of a block can be narrowed).
+    // Lines: one path per percentile over all runs. The riser into a clamped
+    // bin rises straight past the plot box edge — the TRUE entry, unflattened.
     for (var jl = 0; jl < npct; jl++) {
       c.lineWidth = (jl === medianIdx) ? 2 : 1;
       c.strokeStyle = resolveColor(plot, id, (jl === medianIdx) ? 0.9 : 0.55);
@@ -1339,6 +1752,11 @@ function errorbars(plot, rctx) {
   var lad = ladderPairs(npct);
   var ids = visibleIds(plot, rctx.hidden);
   if (!ids.length) return;
+  // Outlier clamping: the whisker/cap tops (and bottoms) and the centre marker
+  // are clamped — the glyph flattens onto the clamp line and carries the
+  // "continues beyond" arrow. Hatch would make no sense on a hairline whisker,
+  // so this family is marked with the arrow alone.
+  var cl = clampOf(plot);
 
   for (const s of sortedSlots(plot)) {
     var g = binGeom(plot, s, rctx);
@@ -1355,8 +1773,8 @@ function errorbars(plot, rctx) {
         var inner = (p === lad.pairs.length - 1);
         c.lineWidth = 1 + p;
         c.strokeStyle = resolveColor(plot, ids[ki], inner ? 0.9 : 0.55);
-        var yLo = Y(v[lad.pairs[p][0]] * g.k);
-        var yHi = Y(v[lad.pairs[p][1]] * g.k);
+        var yLo = clampY(rctx, cl, v[lad.pairs[p][0]] * g.k);
+        var yHi = clampY(rctx, cl, v[lad.pairs[p][1]] * g.k);
         c.beginPath();
         c.moveTo(d.cx, yLo);
         c.lineTo(d.cx, yHi);
@@ -1370,9 +1788,16 @@ function errorbars(plot, rctx) {
       }
       if (lad.centre != null) {
         c.fillStyle = resolveColor(plot, ids[ki], 0.9);
-        var yc = Y(v[lad.centre] * g.k);
+        var yc = clampY(rctx, cl, v[lad.centre] * g.k);
         c.fillRect(d.cx - ERRORBAR_MARKER, yc - ERRORBAR_MARKER,
                    2 * ERRORBAR_MARKER, 2 * ERRORBAR_MARKER);
+      }
+      // The clamped outermost rung carries the arrow, at the clamped cap.
+      if (cl && cl.up && v[lad.pairs[0][1]] * g.k > cl.up.limit) {
+        clampMark(c, d.cx, Y(cl.up.limit), 'up', resolveColor(plot, ids[ki], 0.9));
+      }
+      if (cl && cl.down && v[lad.pairs[0][0]] * g.k < -cl.down.limit) {
+        clampMark(c, d.cx, Y(-cl.down.limit), 'down', resolveColor(plot, ids[ki], 0.9));
       }
     }
   }
@@ -1416,6 +1841,10 @@ function candlestick(plot, rctx) {
   var cc = plot.candleColors;
   var ids = visibleIds(plot, rctx.hidden);
   if (!ids.length) return;
+  // Outlier clamping: wick top, body top and the median tick are clamped —
+  // the candle flattens onto the clamp line and carries the arrow. With the
+  // feature off, clampValue passes every value through unchanged.
+  var cl = clampOf(plot);
 
   for (const s of sortedSlots(plot)) {
     var g = binGeom(plot, s, rctx);
@@ -1432,12 +1861,12 @@ function candlestick(plot, rctx) {
       if (role.wick) {
         c.strokeStyle = resolveColor(plot, ids[ki], 0.8);
         c.beginPath();
-        c.moveTo(d.cx, Y(v[role.wick[0]] * g.k));
-        c.lineTo(d.cx, Y(v[role.wick[1]] * g.k));
+        c.moveTo(d.cx, clampY(rctx, cl, v[role.wick[0]] * g.k));
+        c.lineTo(d.cx, clampY(rctx, cl, v[role.wick[1]] * g.k));
         c.stroke();
       }
-      var y0 = Y(v[role.body[0]] * g.k);
-      var y1 = Y(v[role.body[1]] * g.k);
+      var y0 = clampY(rctx, cl, v[role.body[0]] * g.k);
+      var y1 = clampY(rctx, cl, v[role.body[1]] * g.k);
       var top = Math.min(y0, y1);
       // A doji — open equal to close — still has to be visible as a line.
       var h = Math.max(Math.abs(y1 - y0), 1);
@@ -1459,12 +1888,19 @@ function candlestick(plot, rctx) {
       if (role.tick != null) {
         c.strokeStyle = resolveColor(plot, ids[ki], 0.9);
         c.lineWidth = 2;
-        var yt = Y(v[role.tick] * g.k);
+        var yt = clampY(rctx, cl, v[role.tick] * g.k);
         c.beginPath();
         c.moveTo(bx, yt);
         c.lineTo(bx + bw, yt);
         c.stroke();
         c.lineWidth = 1;
+      }
+      // The clamped wick top carries the arrow, at the clamp line.
+      if (role.wick && cl && cl.up && v[role.wick[1]] * g.k > cl.up.limit) {
+        clampMark(c, d.cx, Y(cl.up.limit), 'up', resolveColor(plot, ids[ki], 0.9));
+      }
+      if (role.wick && cl && cl.down && v[role.wick[0]] * g.k < -cl.down.limit) {
+        clampMark(c, d.cx, Y(-cl.down.limit), 'down', resolveColor(plot, ids[ki], 0.9));
       }
     }
   }
@@ -1484,6 +1920,9 @@ function ohlc(plot, rctx) {
   var cc = plot.candleColors;
   var ids = visibleIds(plot, rctx.hidden);
   if (!ids.length) return;
+  // Outlier clamping: the wick and the open/close ticks are clamped — the
+  // glyph flattens onto the clamp line and carries the arrow.
+  var cl = clampOf(plot);
 
   for (const s of sortedSlots(plot)) {
     var g = binGeom(plot, s, rctx);
@@ -1503,19 +1942,26 @@ function ohlc(plot, rctx) {
       c.lineWidth = 1;
       c.beginPath();
       if (role.wick) {
-        c.moveTo(d.cx, Y(v[role.wick[0]] * g.k));
-        c.lineTo(d.cx, Y(v[role.wick[1]] * g.k));
+        c.moveTo(d.cx, clampY(rctx, cl, v[role.wick[0]] * g.k));
+        c.lineTo(d.cx, clampY(rctx, cl, v[role.wick[1]] * g.k));
       }
       // Open left, close right. These ticks are the whole difference between an
       // OHLC bar and a plain whisker, so they are drawn even when the ladder
       // yielded no separate wick pair to hang them on.
-      var yOpen = Y(v[role.body[0]] * g.k);
-      var yClose = Y(v[role.body[1]] * g.k);
+      var yOpen = clampY(rctx, cl, v[role.body[0]] * g.k);
+      var yClose = clampY(rctx, cl, v[role.body[1]] * g.k);
       c.moveTo(d.cx - tw, yOpen);
       c.lineTo(d.cx, yOpen);
       c.moveTo(d.cx, yClose);
       c.lineTo(d.cx + tw, yClose);
       c.stroke();
+      // The clamped wick top carries the arrow, at the clamp line.
+      if (role.wick && cl && cl.up && v[role.wick[1]] * g.k > cl.up.limit) {
+        clampMark(c, d.cx, Y(cl.up.limit), 'up', resolveColor(plot, ids[ki], 0.9));
+      }
+      if (role.wick && cl && cl.down && v[role.wick[0]] * g.k < -cl.down.limit) {
+        clampMark(c, d.cx, Y(-cl.down.limit), 'down', resolveColor(plot, ids[ki], 0.9));
+      }
     }
   }
   c.lineWidth = 1;

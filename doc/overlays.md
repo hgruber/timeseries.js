@@ -31,6 +31,11 @@ Numeric ladder entries print as `p95`, `p50`; string ones (`'avg'`, `'min'`) ver
 `percentileLabel(entry, i, plot)` retargets just those labels; `valueFormat` still formats
 each number.
 
+With [outlier clamping](configuration.md#outlier-clamping) on, the value shown stays the
+**real** one; when the hit's ink was truncated by the clamp, a muted hint row —
+`▲ clamped to axis` — is appended underneath. The flag reaches the overlay as the fifth,
+additive argument of the hover callback and is exposed to `formatter` as `ctx.clamped`.
+
 ### Options
 
 ```js
@@ -50,7 +55,7 @@ TimeSeries.attachTooltip(ts, {
 ### Full control: `formatter`
 
 `formatter(ctx)` replaces the body. `ctx` carries
-`{ plot, n, key, value, label, color, time, interval, colors, defaultContent() }`.
+`{ plot, n, key, value, label, color, time, interval, colors, clamped, defaultContent() }`.
 
 Call `ctx.defaultContent()` to get the standard nodes and build on them, rather than
 starting over:

@@ -20,6 +20,10 @@ const ts = new TimeSeries({
   partialBins:    'full',        // 'full' | 'clip' | 'scale' — how an incomplete bin is drawn
   yAxisFormat:    null,          // (value) => string; defaults to SI prefixes
   yAxisLabel:     '',            // unit text above the y-axis, e.g. 'txn/s'
+  clampOutliers:  false,         // clamp a few extreme values so the bulk stays legible
+  clampOutliersFactor: 3,        // outlier group min > F × max of the rest
+  clampOutliersShare:  0.05,     // outlier group ≤ this share of the visible samples
+  clampBulkFrac:  0.8,           // bulk max at this fraction of the plot height
   colors:         { … },         // full palette object — see below
   holidays:       { … },         // holiday map — see below
   watermark:      null,          // URL string or HTMLImageElement, drawn behind the chart
@@ -47,6 +51,10 @@ const ts = new TimeSeries({
 | `partialBins` | string | `'full'` | How the bin holding a block's `data_until` is drawn — see [Partial bins](api.md#partial-bins). |
 | `yAxisFormat` | function | SI format | `(value) => string` for y-axis tick labels. |
 | `yAxisLabel` | string | `''` | Unit caption above the axis. |
+| `clampOutliers` | boolean | `false` | Clamp a few extreme values so the bulk stays legible — see [below](#outlier-clamping). Off by default: with it off nothing about the chart changes at all. |
+| `clampOutliersFactor` | number | `3` | The factor rule: the outlier group's minimum must exceed this × the max of the rest. |
+| `clampOutliersShare` | number | `0.05` | Cap on the outlier group's share of the visible samples; must be `0 < share < 0.5`. |
+| `clampBulkFrac` | number | `0.8` | Where the bulk max sits, as a fraction of the plot height. The clamp scale is `bulk / clampBulkFrac` — the value that lands at the plot edge. |
 | `colors` | object | light theme | A **full palette object**, not a name — see below. |
 | `holidays` | object | German set | Fixed and Easter-relative holidays — see below. |
 | `watermark` | string \| Image | `null` | Background image, behind all chart content. |
@@ -61,6 +69,54 @@ the palette. Everything else — **including `holidays`** — replaces the defau
 That asymmetry is deliberate: an undefined colour would reach the canvas as an invalid
 `fillStyle`, whereas replacing the holiday map wholesale is exactly how you swap the German
 set for another country's.
+
+---
+
+## Outlier clamping
+
+One or a few extreme values can own almost the whole y-axis and squash the rest of the data
+against the zero line. With `clampOutliers: true` the chart detects that top group per
+visible window and rescales the axis from the bulk alone: the bulk keeps `clampBulkFrac`
+(80 % by default) of the plot height, the axis edge lands on `bulk / clampBulkFrac`, and the
+truncated ink is marked so it visibly continues beyond — an arrowhead whose apex touches
+the plot edge. [Which renderers mark it how](data-formats.md#outlier-clamping).
+
+```js
+new TimeSeries({ canvas: 'chart', clampOutliers: true });   // everything else defaults
+```
+
+The detection is one rule: the **contiguous top group** of samples whose minimum exceeds
+`clampOutliersFactor` × the max of the rest, capped at `clampOutliersShare` of the visible
+samples. At the defaults (factor 3, share 5 %) a bin past 3× the bulk clamps and one at 2×
+does not. Detection runs per window, so panning an outlier out of view releases the axis
+again.
+
+Worth knowing:
+
+- **Per plot it is a property of the signal, not of the chart.** A block may carry
+  `clampOutliers: true` or `false` itself and overrides the global setting in both
+  directions — see [Data formats](data-formats.md#binned-series).
+- **The ink policy is per family.** Bars truncate at the plot edge: the shaft tops out a few
+  pixels below it and an arrowhead — apex touching the edge — completes the arrow, with a
+  cross-hatch over the clamped section. Point and glyph renderers draw their marker or
+  whisker just below the same arrowhead. The line and area family deliberately does neither:
+  it draws through the **true** values, so the line visibly leaves the plot box toward the
+  real point — connecting to a flattened vertex would falsify the slope and lie about where
+  the data went. The full table is in [Data formats](data-formats.md#outlier-clamping).
+- **`waterfall` and the laned family do not take part at all.** Clamping a waterfall's
+  deltas would detach every later bar from the running total, and a laned block has no
+  magnitude axis to squash.
+- **The tooltip keeps the real value** and appends a muted `▲ clamped to axis` hint — see
+  [Overlays](overlays.md#tooltip).
+- **Invalid combinations do not half-apply.** A `clampBulkFrac` outside `0 < bulkFrac < 1`,
+  a factor ≤ 1 or a share outside `0 < share < 0.5` warn and fall back to the defaults —
+  which means the feature is off, exactly as if the option had been absent.
+
+The defaults are **visual-tuned starting values, not derived constants**.
+`demo/clamp-tuning.html` (needs a server: `npm run serve`) puts sliders on the factor, the
+share and the bulk fraction next to twelve chart cards — one viewport-sync group, so a pan
+on any card moves all of them — and reports each card's bulk, limit and axis, so a tuning
+pass is interactive rather than a rebuild-and-squint loop.
 
 ---
 
