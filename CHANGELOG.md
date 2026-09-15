@@ -12,7 +12,7 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
-## [Unreleased]
+## [0.10.8] - 2026-09-15
 
 ### Added
 
@@ -498,7 +498,8 @@ For anyone arriving at the project with this release, the library covers:
 - Opt-in tooltip and series-visibility legend overlays that follow the palette.
 - Four built-in themes and a fully overridable colour palette.
 
-[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.7...HEAD
+[Unreleased]: https://github.com/hgruber/timeseries.js/compare/v0.10.8...HEAD
+[0.10.8]: https://github.com/hgruber/timeseries.js/compare/v0.10.7...v0.10.8
 [0.10.7]: https://github.com/hgruber/timeseries.js/compare/v0.10.6...v0.10.7
 [0.10.6]: https://github.com/hgruber/timeseries.js/compare/v0.10.5...v0.10.6
 [0.10.5]: https://github.com/hgruber/timeseries.js/compare/v0.10.4...v0.10.5
