@@ -274,3 +274,40 @@ test('a pinned bar is not hittable outside its own band (no whole-lane forgivene
   canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.y - 3 });
   assert.equal(hovered, null, 'pinned events must not be hittable outside their drawn rect');
 });
+
+// The regression this whole pinning rework exists for. `yPos` promises a place
+// that does not move; before pinnedCenterY() it was resolved through Y(), and
+// Y() belongs to the axis every *other* block votes on too. A gap bracket
+// drawn over a bar chart therefore wandered and resized whenever the bars'
+// maximum changed — which is on every zoom. Same plot, same viewport here;
+// only the axis differs between the two rctx.
+test('a pinned glyph keeps its place and size when a neighbour moves the axis', async () => {
+  const plot = freshPlot();
+  plot.data.push(Object.assign(mk('gap', 'B', 3, 6), { yPos: 0.382, appearance: 'bracket' }));
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  const ev = plot.data[plot.data.length - 1];
+
+  const lane = makeRctx(ts, plot.laneCount);   // span block owns the axis
+  const tall = makeRctx(ts, 1271);             // a bar block's data maximum wins
+  const a = barRect(plot, ev, lane);
+  const b = barRect(plot, ev, tall);
+
+  assert.equal(b.lineY, a.lineY, 'pinned centre must not move with the axis');
+  assert.equal(b.h, a.h, 'glyph box must not resize with the axis');
+  assert.equal(b.headLen, a.headLen);
+  assert.equal(b.headHalf, a.headHalf);
+  assert.equal(b.tickH, a.tickH);
+
+  // And it lands where the pin says: 0.382 of the plot height up from the floor.
+  const area = ts.getPlotArea();
+  const want = area.margin.top + (1 - 0.382) * area.plotHeight;
+  assert.ok(Math.abs(a.lineY - want) < 0.5, `pinned at ${a.lineY}, expected ${want}`);
+
+  // Draw and hit test share pinnedCenterY, so the hover still finds it.
+  let hovered = null;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  canvas.onmousemove({ clientX: b.x + b.w / 2, clientY: b.lineY });
+  assert.equal(hovered && hovered.id, 'gap', 'pinned bracket must stay hoverable');
+});

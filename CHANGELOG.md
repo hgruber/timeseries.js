@@ -12,6 +12,22 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
+## [0.10.9] - 2026-09-15
+
+### Fixed
+
+- **Pinned span events (`yPos`) keep their place when a neighbour moves the axis.**
+  `yPos` promises an event a position that does not move, but it was resolved
+  through the shared value axis — whose extent is a weighted blend over every
+  active block, so a span block's `laneCount` and a bar block's data maximum
+  both vote on it. A pinned bracket drawn over a bar chart therefore wandered
+  and resized on every zoom that changed the bars' maximum. Pinned events are
+  now placed against the plot's pixel box and their glyph size derived from
+  `plotHeight`, so a neighbour's axis no longer reaches them. A span-only
+  chart is unchanged — the two expressions are identical when the span block
+  owns the axis alone — and the hit band follows into the same frame so hover
+  still finds the pinned glyph.
+
 ## [0.10.8] - 2026-09-15
 
 ### Added

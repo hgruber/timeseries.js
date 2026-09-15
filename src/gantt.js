@@ -30,10 +30,12 @@
 // and can be overridden per event.
 //
 // `yPos` pins an event *absolutely* inside the plot: 0 is the plot floor, 1
-// the ceiling, regardless of any lane. Pinned events take no part in the row
-// packing (nor in lane discovery — `lane` may be omitted entirely) and are
-// stamped `_row = FLOAT_ROW` instead of a packed row; the user accepts that
-// pinned events may overlap each other. Omitted `yPos` keeps the packing
+// the ceiling, regardless of any lane — and regardless of what any other
+// block does to the shared value axis, which is the whole point of pinning
+// (see `pinnedCenterY` for why that needs saying). Pinned events take no part
+// in the row packing (nor in lane discovery — `lane` may be omitted entirely)
+// and are stamped `_row = FLOAT_ROW` instead of a packed row; the user accepts
+// that pinned events may overlap each other. Omitted `yPos` keeps the packing
 // behaviour unchanged. Pinned events' vertical extent is shared with the hit
 // test through `spanHitBand()`, so it cannot drift between draw and hover.
 //
@@ -68,6 +70,12 @@ var LINE_ALPHA = 0.9;
 // and max caps so degenerate rows stay drawable. tickH is additionally capped
 // at the bar thickness (ppv·(1−ROW_GAP)) so a bracket never outgrows a bar in
 // the same lane.
+//
+// A *pinned* event sits in no lane, so neither base applies to it: its
+// metrics come from `plotHeight` and the lane cap is dropped (see
+// `pinnedCenterY`). With the same fractions and caps this lands on the MAX
+// for any usable plot height, which is exactly the point — a pinned glyph
+// keeps one size no matter what the value axis is doing.
 var HEAD_LEN_FRAC = 0.22, HEAD_LEN_MIN = 4, HEAD_LEN_MAX = 10;
 var HEAD_HALF_FRAC = 0.20, HEAD_HALF_MIN = 3, HEAD_HALF_MAX = 7;
 var TICK_FRAC = 0.34, TICK_MIN = 6, TICK_MAX = 14;
@@ -194,6 +202,40 @@ function spanStyle(plot, ev) {
   return APPEARANCES.indexOf(s) < 0 ? 'bar' : s;
 }
 
+// Centre line (canvas pixels) of an event pinned with `yPos`, clamped so a
+// glyph of half-height `halfPx` stays inside the plot box.
+//
+// Measured against the plot's **pixel** box rather than through Y(), which is
+// what makes `yPos` mean what its documentation says. Y() and ppv belong to
+// the *shared* value axis, and that axis's ymax is a weighted blend over the
+// active blocks (see the ymax_array merge in timeseries.js): a span block
+// contributes its laneCount, a bar block its data maximum. Pinning through
+// Y() therefore moved the event whenever a *neighbouring* plot's extent
+// changed — zooming a chart that draws bars underneath a pinned bracket made
+// the bracket wander and, through ppv, resize with it.
+//
+// Where the span block owns the axis alone (ymax = laneCount, ymin = 0) this
+// is arithmetically the same expression as before:
+//   Y(yPos·laneCount) = margin.top + (1 − yPos)·plotHeight
+// so nothing about a span-only chart changes.
+function pinnedCenterY(ev, margin, plotHeight, halfPx) {
+  var cy = margin.top + (1 - ev.yPos) * plotHeight;
+  return Math.min(Math.max(cy, margin.top + halfPx),
+                  margin.top + plotHeight - halfPx);
+}
+
+// Glyph metrics for a line-style span. `base` is one row's height (ppv) for a
+// packed event and the plot height for a pinned one; `lane` is false for
+// pinned events, which have no lane thickness to be capped against.
+function lineMetrics(base, w, lane) {
+  var headLen = Math.min(Math.max(base * HEAD_LEN_FRAC, HEAD_LEN_MIN), HEAD_LEN_MAX);
+  headLen = Math.min(headLen, Math.max(1, (w - 2) / 2));
+  var headHalf = Math.min(Math.max(base * HEAD_HALF_FRAC, HEAD_HALF_MIN), HEAD_HALF_MAX);
+  var tickH = Math.min(Math.max(base * TICK_FRAC, TICK_MIN), TICK_MAX);
+  if (lane) tickH = Math.min(tickH, base * (1 - ROW_GAP));
+  return { headLen: headLen, headHalf: headHalf, tickH: tickH };
+}
+
 /**
  * Pixel rect / glyph box for one event. Returns null when the event is
  * entirely off-screen. Shared by draw() and highlight() so both stay in
@@ -205,7 +247,7 @@ function spanStyle(plot, ev) {
  * which mirrors this rect's vertical extent exactly.
  */
 export function barRect(plot, ev, rctx) {
-  var { X, Y, ppv, margin, plotWidth } = rctx;
+  var { X, Y, ppv, margin, plotWidth, plotHeight } = rctx;
   var left = margin.left;
   var right = margin.left + plotWidth;
   var x0 = X(ev.start);
@@ -225,32 +267,31 @@ export function barRect(plot, ev, rctx) {
     var gap = h * ROW_GAP / 2;
     return { x: cx0, y: top + gap, w: w, h: Math.max(h - 2 * gap, 1), clipped: x0 < left, style: 'bar' };
   }
-  // Pinned bar: same thickness as a packed bar, centred on the pinned value
-  // (yPos 0..1 over the whole plot band 0..laneCount), clamped so it never
-  // pokes out of the canvas.
-  var barH = Math.max(ppv * (1 - ROW_GAP), 1);
-  var half = (1 - ROW_GAP) / 2;
-  var yv = Math.min(Math.max(ev.yPos * laneCount, half), laneCount - half);
-  var cy = Y(yv);
-  if (style === 'bar') return { x: cx0, y: cy - barH / 2, w: w, h: barH, clipped: x0 < left, style: 'bar' };
+  // Pinned bar: same thickness as a packed bar, but placed against the plot
+  // box rather than the value axis — see pinnedCenterY.
+  var pinned = ev._row === FLOAT_ROW;
+  if (style === 'bar') {
+    var barH = Math.max(ppv * (1 - ROW_GAP), 1);
+    var cyb = pinnedCenterY(ev, margin, plotHeight, barH / 2);
+    return { x: cx0, y: cyb - barH / 2, w: w, h: barH, clipped: x0 < left, style: 'bar' };
+  }
 
   // Line glyphs (arrow / bracket / line): the rect is the glyph's bounding
   // box — highlight() redraws from the rect alone, so the metrics ride along.
-  var headLen = Math.min(Math.max(ppv * HEAD_LEN_FRAC, HEAD_LEN_MIN), HEAD_LEN_MAX);
-  headLen = Math.min(headLen, Math.max(1, (w - 2) / 2));
-  var headHalf = Math.min(Math.max(ppv * HEAD_HALF_FRAC, HEAD_HALF_MIN), HEAD_HALF_MAX);
-  var tickH = Math.min(Math.max(ppv * TICK_FRAC, TICK_MIN), TICK_MAX);
-  tickH = Math.min(tickH, ppv * (1 - ROW_GAP));
-  var ext = Math.max(headHalf, style === 'arrow' ? 0 : tickH / 2);
-  yv = ev._row === FLOAT_ROW
-    ? Math.min(Math.max(ev.yPos * laneCount, 0), laneCount)
-    : laneCount - ev._row - 0.5;
-  var extV = ext / ppv;
-  yv = Math.min(Math.max(yv, extV), laneCount - extV);
-  cy = Y(yv);
+  var m = lineMetrics(pinned ? plotHeight : ppv, w, !pinned);
+  var ext = Math.max(m.headHalf, style === 'arrow' ? 0 : m.tickH / 2);
+  var cy;
+  if (pinned) {
+    cy = pinnedCenterY(ev, margin, plotHeight, ext);
+  } else {
+    var yv = laneCount - ev._row - 0.5;
+    var extV = ext / ppv;
+    yv = Math.min(Math.max(yv, extV), laneCount - extV);
+    cy = Y(yv);
+  }
   return {
     x: cx0, y: cy - ext, w: w, h: 2 * ext, clipped: x0 < left,
-    style: style, lineY: cy, headLen: headLen, headHalf: headHalf, tickH: tickH,
+    style: style, lineY: cy, headLen: m.headLen, headHalf: m.headHalf, tickH: m.tickH,
   };
 }
 
@@ -360,27 +401,31 @@ function drawSpan(c, plot, ev, rect, alpha, halo) {
 }
 
 /**
- * Vertical hit band, in lane value space, for one span event. Returns null
+ * Vertical hit band, in **canvas pixels**, for one span event. Returns null
  * for packed events, which keep the forgiving whole-row band derived from
  * `_row` in get_element; pinned (yPos) events get their band from here so it
  * mirrors barRect()'s vertical extent exactly. The yPos clamp is the one
  * piece of the geometry that is easy to get subtly wrong twice, so
  * get_element imports this instead of re-deriving it.
+ *
+ * Pixels, not lane values, because that is the space barRect() places a
+ * pinned event in (see pinnedCenterY) — expressing the band in lane values
+ * would mean converting back through the very axis the pinning escapes.
+ * `geom` carries `{ margin, plotHeight, ppv }`.
  */
-export function spanHitBand(plot, ev, ppv) {
+export function spanHitBand(plot, ev, geom) {
   if (ev._row !== FLOAT_ROW) return null;
-  var laneCount = plot.laneCount || 1;
   var half;
   if (spanStyle(plot, ev) === 'bar') {
-    half = (1 - ROW_GAP) / 2;
+    half = Math.max(geom.ppv * (1 - ROW_GAP), 1) / 2;
   } else {
     // Line glyphs are hairlines; give them a small tolerance band so they
     // stay hoverable, clamped inside the plot band.
-    var tolPx = Math.min(Math.max(4, 2 * Math.min(Math.max(ppv * HEAD_HALF_FRAC, HEAD_HALF_MIN), HEAD_HALF_MAX)), 12);
-    half = tolPx / ppv;
+    var m = lineMetrics(geom.plotHeight, Infinity, false);
+    half = Math.min(Math.max(4, 2 * m.headHalf), 12);
   }
-  var yv = Math.min(Math.max(ev.yPos * laneCount, half), laneCount - half);
-  return { lo: yv - half, hi: yv + half };
+  var cy = pinnedCenterY(ev, geom.margin, geom.plotHeight, half);
+  return { lo: cy - half, hi: cy + half };
 }
 
 // Reads the same base size the month/weekday axis labels use — xFont() in

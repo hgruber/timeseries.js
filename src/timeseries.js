@@ -2201,7 +2201,11 @@ export default function TimeSeries(options) {
     // the draw order (last painted is on top). Events pinned with `yPos`
     // instead carry `_row === FLOAT_ROW` and are hit-tested through
     // spanHitBand(), which mirrors their drawn vertical extent exactly;
-    // packed events keep today's forgiving whole-row band.
+    // packed events keep today's forgiving whole-row band. A pinned event's
+    // band comes back in canvas pixels — it is placed against the plot box,
+    // not the value axis — so it is compared against the raw `y`, while the
+    // packed path stays in lane values.
+    var spanGeom = { margin: margin, plotHeight: plotHeight, ppv: ppv };
     for (const i of activePlot) {
       if (!data[i] || data[i].category !== 'span') continue;
       var sp = data[i];
@@ -2211,8 +2215,8 @@ export default function TimeSeries(options) {
       for (var e = sp.data.length - 1; e >= 0; e--) {
         var ev = sp.data[e];
         if (ev._row === FLOAT_ROW) {
-          var band = spanHitBand(sp, ev, ppv);
-          if (!band || py < band.lo || py > band.hi) continue;
+          var band = spanHitBand(sp, ev, spanGeom);
+          if (!band || y < band.lo || y > band.hi) continue;
         } else {
           if (!inRange || ev._row !== row) continue;
         }
