@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { layoutSpans } from '../src/gantt.js';
+import { layoutSpans, FLOAT_ROW } from '../src/gantt.js';
 
 const H = 3600000;
 const T0 = Date.UTC(2026, 0, 5, 8);
@@ -197,4 +197,78 @@ test('group: no two events in one row ever overlap', () => {
     for (let i = 1; i < evs.length; i++)
       assert.ok(evs[i].start >= evs[i - 1].end, evs[i - 1].id + ' overlaps ' + evs[i].id);
   }
+});
+
+// ── `yPos`: events pinned absolutely in the plot ─────────────────────────────
+
+const pmk = (id, lane, h0, h1, yPos) => Object.assign(mk(id, lane, h0, h1), { yPos });
+const pinPlot = data => ({
+  type: 'gantt', category: 'span', layout: 'calendar',
+  tmin: T0, tmax: T0 + 12 * H, lanes: [{ id: 'A', label: 'A' }], data,
+});
+
+test('yPos: pinned events are excluded from packing', () => {
+  // Two events that overlap AND pin to the same height: with packing they
+  // would need two rows; pinned they consume none.
+  const plot = pinPlot([
+    mk('a1', 'A', 0, 4), pmk('p1', 'A', 0, 6, 0.5), pmk('p2', 'A', 2, 8, 0.5),
+  ]);
+  layoutSpans(plot);
+  assert.equal(plot.laneCount, 1);
+  assert.equal(rowOf(plot, 'p1'), FLOAT_ROW);
+  assert.equal(rowOf(plot, 'p1'), rowOf(plot, 'p2'));
+  assert.equal(rowOf(plot, 'a1'), 0);
+});
+
+test('yPos: laneCount/yticks/laneBounds are unaffected by pinned events', () => {
+  const base = freshPlot('calendar');
+  const withPins = freshPlot('calendar');
+  withPins.data.push(pmk('pin1', 'A', 5, 7, 0.2), pmk('pin2', 'GHOST', 1, 3, 0.8));
+  layoutSpans(base);
+  layoutSpans(withPins);
+  assert.equal(withPins.laneCount, base.laneCount);
+  assert.deepEqual(withPins.yticks.map(t => t.label), base.yticks.map(t => t.label));
+  assert.deepEqual(withPins.laneBounds, base.laneBounds);
+  // The pinned event with an unknown lane appended no lane either.
+  assert.ok(withPins.lanes.every(l => l.id !== 'GHOST'));
+});
+
+test('yPos: pinned events keep _row === FLOAT_ROW across re-layouts', () => {
+  const plot = pinPlot([pmk('p1', 'A', 0, 2, 0.5)]);
+  layoutSpans(plot);
+  assert.equal(rowOf(plot, 'p1'), FLOAT_ROW);
+  // Force a re-layout: the sentinel must be re-stamped, not left stale.
+  plot._laidOut = null;
+  layoutSpans(plot);
+  assert.equal(rowOf(plot, 'p1'), FLOAT_ROW);
+});
+
+test('yPos: an event that becomes pinned loses its stale packed row', () => {
+  const plot = pinPlot([mk('a1', 'A', 0, 2)]);
+  layoutSpans(plot);
+  assert.equal(rowOf(plot, 'a1'), 0);
+  plot.data[0].yPos = 0.3;              // mutate in place, then re-layout
+  plot._laidOut = null;
+  layoutSpans(plot);
+  assert.equal(rowOf(plot, 'a1'), FLOAT_ROW);
+});
+
+test('yPos: invalid values do not pin — a numeric string packs normally', () => {
+  const plot = pinPlot([
+    mk('a1', 'A', 0, 4), pmk('p1', 'A', 0, 6, 0.5),
+    Object.assign(mk('s1', 'A', 1, 2), { yPos: '0.5' }),   // string → not pinned
+  ]);
+  layoutSpans(plot);
+  assert.equal(rowOf(plot, 'p1'), FLOAT_ROW);
+  assert.equal(typeof rowOf(plot, 's1'), 'number', 'string yPos must not pin');
+  assert.notEqual(rowOf(plot, 's1'), FLOAT_ROW);
+});
+
+test('yPos: out-of-range numbers are tolerated (clamped at draw time)', () => {
+  // layoutSpans does not clamp — barRect/spanHitBand do, so a yPos of 1.4 or
+  // -0.4 still renders (inside the plot) instead of vanishing or throwing.
+  const plot = pinPlot([pmk('p1', 'A', 0, 2, 1.4), pmk('p2', 'A', 2, 4, -0.3)]);
+  assert.doesNotThrow(() => layoutSpans(plot));
+  assert.equal(rowOf(plot, 'p1'), FLOAT_ROW);
+  assert.equal(rowOf(plot, 'p2'), FLOAT_ROW);
 });

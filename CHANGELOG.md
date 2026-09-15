@@ -12,6 +12,24 @@ Each release section is used verbatim as the body of the matching
 [GitHub release](https://github.com/hgruber/timeseries.js/releases), so write it
 for a reader who has not seen the commits.
 
+## [Unreleased]
+
+### Added
+
+- **Span options `appearance` and `yPos` in the gantt renderer.** A span was drawn as one
+  glyph, a solid bar, at whatever row the packer gave it — a Gantt chart that wants
+  dependency arrows or reference lines had to fake them as thin bars, and an event that
+  must sit at a fixed height (a deadline line, a marker between lanes) could not leave the
+  packing at all. `appearance` picks the glyph per plot block or per event: `'bar'` (as
+  before), `'arrow'` (thin line, arrowheads both ends), `'bracket'` (arrowheads plus
+  vertical end ticks) or `'line'` (end ticks only); any other value falls back to `'bar'`.
+  `yPos` (0 = plot floor, 1 = plot ceiling) pins an event **absolutely** in the plot,
+  independent of any lane: it takes no part in the row packing, may overlap other pinned
+  events, and may omit `lane` entirely. A line glyph on a normally packed event draws
+  through the centre of its own row, which is the bars-plus-dependency-arrows case. Colors
+  work as always (`data[].color`, `lanes[].color`). Hover works for every glyph — pinned
+  events are hit-tested on their drawn extent instead of the packed whole-row band.
+
 ## [0.10.7] - 2026-09-12
 
 ### Added

@@ -152,3 +152,125 @@ test('an event clipped by the left edge still renders its visible part', async (
   assert.ok(rect.x >= rctx.margin.left);
   assert.equal(rect.clipped, true);
 });
+
+// ── `yPos` + appearance: pinned events and line glyphs ───────────────────────
+
+const pmk = (id, lane, h0, h1, yPos) => Object.assign(mk(id, lane, h0, h1), { yPos });
+
+test('the centre of a pinned bar hits its own event', async () => {
+  const plot = freshPlot();
+  plot.data.push(pmk('pin1', 'A', 5, 7, 0.5), pmk('pin2', 'B', 0, 2, 0.8));
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  let hovered;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  const rctx = makeRctx(ts, plot.laneCount);
+  for (const ev of plot.data.filter(e => e.yPos != null)) {
+    const rect = barRect(plot, ev, rctx);
+    assert.ok(rect, `barRect returned null for ${ev.id}`);
+    hovered = null;
+    canvas.onmousemove({ clientX: rect.x + rect.w / 2, clientY: rect.y + rect.h / 2 });
+    assert.equal(hovered && hovered.id, ev.id, `centre of ${ev.id}'s pinned bar should hit ${ev.id}`);
+  }
+});
+
+test('two overlapping pinned events: the later data index wins', async () => {
+  const plot = freshPlot();
+  plot.data.push(pmk('p1', 'A', 0, 6, 0.5), pmk('p2', 'A', 2, 8, 0.5));
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  let hovered;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  const rctx = makeRctx(ts, plot.laneCount);
+  const r = barRect(plot, plot.data.find(e => e.id === 'p2'), rctx);
+  // p1 and p2 overlap in time and height; the later data index (p2) wins,
+  // matching the draw order.
+  canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.y + r.h / 2 });
+  assert.equal(hovered && hovered.id, 'p2');
+});
+
+test('a clamped pinned event is hit inside the plot and missed outside it', async () => {
+  const plot = freshPlot();
+  plot.data.push(pmk('p1', 'A', 5, 7, 1.2));   // clamped into the plot top
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  let hovered;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  const rctx = makeRctx(ts, plot.laneCount);
+  const ev = plot.data[plot.data.length - 1];
+  const rect = barRect(plot, ev, rctx);
+  const area = ts.getPlotArea();
+  canvas.onmousemove({ clientX: rect.x + rect.w / 2, clientY: rect.y + rect.h / 2 });
+  assert.equal(hovered && hovered.id, 'p1', 'clamped bar centre should hit');
+  // Above the plot top nothing is hittable, not even for a pinned event.
+  canvas.onmousemove({ clientX: rect.x + rect.w / 2, clientY: area.margin.top - 1 });
+  assert.equal(hovered, null);
+});
+
+test('line glyphs on packed events: thin box, row band still forgiving', async () => {
+  const plot = freshPlot();
+  plot.data.push(
+    Object.assign(mk('arw', 'B', 6, 8), { appearance: 'arrow' }),
+    Object.assign(mk('brk', 'B', 6, 8), { appearance: 'bracket' }),
+    Object.assign(mk('lin', 'B', 6, 8), { appearance: 'line' }),
+  );
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  let hovered;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  const rctx = makeRctx(ts, plot.laneCount);
+  for (const ev of plot.data.filter(e => e.appearance)) {
+    const r = barRect(plot, ev, rctx);
+    assert.ok(r, `barRect returns null for ${ev.id}`);
+    assert.ok(r.h < 0.5 * rctx.ppv, 'glyph box should be thin');
+    hovered = null;
+    canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.lineY });
+    assert.equal(hovered && hovered.id, ev.id, `row centre of ${ev.id} should hit ${ev.id}`);
+    hovered = null;
+    // A packed event is hittable anywhere in its whole row band, even where
+    // only the forgiving hit band — not the thin glyph — covers the pointer.
+    canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.lineY + 0.45 * rctx.ppv });
+    assert.equal(hovered && hovered.id, ev.id, 'whole-row band stays forgiving');
+  }
+});
+
+test('a pinned line glyph is hit through its tolerance band, not the whole lane', async () => {
+  const plot = freshPlot();
+  plot.data.push(Object.assign(mk('dep', 'B', 8, 10), { yPos: 0.35, appearance: 'arrow' }));
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  let hovered;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  const rctx = makeRctx(ts, plot.laneCount);
+  const ev = plot.data[plot.data.length - 1];
+  const r = barRect(plot, ev, rctx);
+  canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.lineY });
+  assert.equal(hovered && hovered.id, 'dep', 'the line itself should hit');
+  // Half a row away is outside the tolerance band (≤12px) at this ppv.
+  canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.lineY + 0.5 * rctx.ppv });
+  assert.equal(hovered, null);
+});
+
+test('a pinned bar is not hittable outside its own band (no whole-lane forgiveness)', async () => {
+  const plot = freshPlot();
+  plot.data.push(pmk('p1', 'A', 5, 7, 0.85));
+  plot._laidOut = null;
+  const { ts, canvas } = buildInstance(plot);
+  await setView(ts, T0, T0 + 12 * H);
+  let hovered;
+  ts.onHoverDataCallback((_p, _n, _key, value) => { hovered = value; });
+  const rctx = makeRctx(ts, plot.laneCount);
+  const ev = plot.data[plot.data.length - 1];
+  const r = barRect(plot, ev, rctx);
+  // Inside the drawn rect: hit. Just above it (same lane): miss — pinned
+  // events do not inherit the packed path's whole-row-band forgiveness.
+  canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.y + r.h / 2 });
+  assert.equal(hovered && hovered.id, 'p1', 'drawn centre should hit');
+  canvas.onmousemove({ clientX: r.x + r.w / 2, clientY: r.y - 3 });
+  assert.equal(hovered, null, 'pinned events must not be hittable outside their drawn rect');
+});

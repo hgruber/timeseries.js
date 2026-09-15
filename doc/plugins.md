@@ -81,7 +81,10 @@ labelled with names rather than quantities.
 
 `layout(plot)` is where you stamp what the axis needs *before* draw time: `laneCount`, and
 `yticks` as `[{y, label}]` with `y` in that value space. It runs every frame, so it must be
-idempotent. Lane *k* conventionally owns the band `[laneCount-k-1, laneCount-k)`.
+idempotent. Lane *k* conventionally owns the band `[laneCount-k-1, laneCount-k)`. Stamp
+*every* event that arrives with the layout — if your shape supports events pinned outside
+the row packing the way `gantt`'s `yPos` events are, they still need a stamped `_row`
+(sentinel or packed row), or the hit test cannot route them.
 
 `gantt` derives its lanes by packing events into rows (`layoutSpans`); `heatmap` and
 `horizon` simply give each series one. `prepare_grid` used to call `layoutSpans` by name

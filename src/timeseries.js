@@ -19,7 +19,7 @@ import { initSources, registerSource } from './sources.js';
 // — the renderer declares it as its `layout` hook — but prepare_grid still needs
 // it for the back-compat path that gives *any* span block a lane axis, whether
 // or not its renderer declares one.
-import { layoutSpans } from './gantt.js';
+import { layoutSpans, FLOAT_ROW, spanHitBand } from './gantt.js';
 import { lttb } from './lttb.js';
 import { rollupBinned } from './rollup.js';
 import { attachTooltip } from './tooltip.js';
@@ -2198,16 +2198,24 @@ export default function TimeSeries(options) {
     var py = rY(y);
     // span identification — mirrors barRect() in gantt.js: row r covers the
     // value band [laneCount - r - 1, laneCount - r). Later events win, matching
-    // the draw order (last painted is on top).
+    // the draw order (last painted is on top). Events pinned with `yPos`
+    // instead carry `_row === FLOAT_ROW` and are hit-tested through
+    // spanHitBand(), which mirrors their drawn vertical extent exactly;
+    // packed events keep today's forgiving whole-row band.
     for (const i of activePlot) {
       if (!data[i] || data[i].category !== 'span') continue;
       var sp = data[i];
       if (!sp.data || !sp.laneCount) continue;
       var row = Math.floor(sp.laneCount - py);
-      if (row < 0 || row >= sp.laneCount) continue;
+      var inRange = row >= 0 && row < sp.laneCount;   // packed path only
       for (var e = sp.data.length - 1; e >= 0; e--) {
         var ev = sp.data[e];
-        if (ev._row !== row) continue;
+        if (ev._row === FLOAT_ROW) {
+          var band = spanHitBand(sp, ev, ppv);
+          if (!band || py < band.lo || py > band.hi) continue;
+        } else {
+          if (!inRange || ev._row !== row) continue;
+        }
         // Widen zero-length events to the 2px minimum the renderer draws.
         var evEnd = Math.max(ev.end, ev.start + 2 * mspp);
         if (ev.start <= +t && +t <= evEnd)

@@ -76,15 +76,34 @@ width means duration rather than a slot on a shared grid:
   type: 'gantt', category: 'span',
   tmin, tmax,                        // ms epoch — window this block covers
   layout: 'calendar' | 'packed',     // one row-block per lane, or greedy-packed into one band
+  appearance: 'bar',                 // default glyph; override per event
   lanes: [{ id, label, color }],     // 'calendar' layout
-  data: [{ id, lane, start, end, label, color, group }],   // start/end in ms epoch
+  data: [{ id, lane, start, end, label, color, group, appearance, yPos }],
 }
 ```
-`layoutSpans(plot)` (`src/gantt.js`) assigns `_row` to each event and derives `laneCount`,
-`yticks` (lane names for the y-axis) and `laneBounds`. It's idempotent and stamped via
-`plot._laidOut`; `prepare_grid` calls it before computing the y-extent, so **mutating `data` in
-place requires clearing `plot._laidOut`**. Rows occupy the value space `0…laneCount`, which is
-what lets the existing `Y()`/`ppv` transforms and axis animation carry them unchanged.
+`layoutSpans(plot)` (`src/gantt.js`) assigns `_row` to each event — a packed row, or the
+`FLOAT_ROW` (-1) sentinel for events pinned with `yPos` — and derives `laneCount`, `yticks`
+(lane names for the y-axis) and `laneBounds`. It's idempotent and stamped via
+`plot._laidOut`; `prepare_grid` calls it before computing the y-extent, so **mutating `data`
+(or the span options) in place requires clearing `plot._laidOut`**. Rows occupy the value
+space `0…laneCount`, which is what lets the existing `Y()`/`ppv` transforms and axis
+animation carry them unchanged.
+
+**`appearance`** picks the glyph per event: `'bar'` (default), `'arrow'`, `'bracket'` or
+`'line'`; any other value falls back to `'bar'`. It is read by `spanStyle()` and resolved
+once in `barRect()`, which carries the glyph metrics (`lineY`, `headLen`, `headHalf`,
+`tickH`) on the returned rect so draw, highlight and the hit test all read the same
+geometry. Line glyphs need no `yPos` — a packed line glyph draws through the centre of its
+own row.
+
+**`yPos`** pins an event absolutely in the plot (0 = floor, 1 = ceiling), independent of any
+lane: pinned events are excluded from `pack()` **and** from lane discovery (so `lane` may be
+omitted, and a pinned event appends no lane), stamped `_row = FLOAT_ROW`, and may overlap
+each other. Their vertical extent lives in `spanHitBand(plot, ev, ppv)` — also in
+`gantt.js` and also exported — which `get_element` **imports** rather than re-derives: the
+yPos clamp is the one piece of the geometry that is easy to get subtly wrong twice, and the
+import makes the drift impossible. Packed events deliberately keep the forgiving whole-row
+band.
 
 `group` is optional and only affects row *packing*, not drawing: within one lane, `pack()`
 prefers to reuse the same row for every event sharing a `group` value, as long as that row is
@@ -97,7 +116,10 @@ does; each event is its own thing, nothing to keep together).
 
 Core support for `'span'` lives in four guarded spots in `src/timeseries.js`: extent in `pushData`
 and `prepare_grid`, the y-extent shortcut, and the hit test in `get_element` (which mirrors
-`barRect()` in `gantt.js` — keep the two in step).
+`barRect()` in `gantt.js` for packed rows and imports `spanHitBand()` for pinned ones —
+keep the packed path in step). The hit test's row-range guard moved inside the packed path
+when pinned events arrived: a `yPos: 0` event in the topmost lane would otherwise be
+silently dropped by the pre-check.
 
 ## The area family — `multiline`'s `step`/`fill`, and `stackarea`
 
@@ -161,6 +183,9 @@ renderer that could ever have a lane axis. The two concerns are now separate:
   bare span renderer to pin it (verified to fail without the fallback).
 - Lane *k* owns `[laneCount-k-1, laneCount-k)`, and the hit test finds a cell from the row
   and the slot alone — structurally the span branch, not the value branches.
+- **Events pinned with `yPos` need no lane and append none.** They sit absolutely in the
+  plot band (0 = floor, 1 = ceiling), outside the packing, and never shift `laneCount`,
+  `yticks` or `laneBounds`; a lane whose every event is pinned still reserves its one row.
 - **A hidden lane is blanked, not closed up.** Removing the row would relabel every lane
   below it, so the axis would shift under the user's pointer.
 

@@ -269,6 +269,7 @@ grid. Calendar events, batch jobs, outages, maintenance windows.
   tmin: 1717200000000,                 // Unix MILLISECONDS — window this block covers
   tmax: 1717804800000,
   layout: 'calendar',                  // 'calendar' | 'packed'
+  appearance: 'bar',                   // default glyph — see below
   lanes: [                             // 'calendar' layout: one row-block per lane
     { id: 'work',     label: 'Work',     color: '#2d6a9f' },
     { id: 'personal', label: 'Personal', color: '#7fbf3f' },
@@ -278,6 +279,10 @@ grid. Calendar events, batch jobs, outages, maintenance windows.
       label: 'Standup', location: 'Room A' },
     { id: 'e2', lane: 'work', start: 1717221600000, end: 1717229000000,
       label: 'Review', group: 'ci' },
+    // A dependency arrow, pinned to the top quarter of the plot —
+    // no `lane` needed, and it never participates in the row packing.
+    { id: 'dep', start: 1717221600000, end: 1717229000000,
+      appearance: 'arrow', yPos: 0.9 },
     // …
   ],
 }
@@ -288,31 +293,49 @@ grid. Calendar events, batch jobs, outages, maintenance windows.
 | `category` | `'span'` | ✓ | Selects this shape |
 | `tmin` / `tmax` | number | ✓ | Unix **milliseconds** |
 | `layout` | string | | `'calendar'` (default) — one row block per lane, lane names on the y-axis. `'packed'` — greedy-packed into a single band, minimising rows |
+| `appearance` | string | | Default glyph for every event — see below. Other values fall back to `'bar'` |
 | `lanes` | array | for `'calendar'` | `{ id, label, color }` |
 | `data[].start` / `.end` | number | ✓ | Unix **milliseconds** |
-| `data[].lane` | string | | Matches a `lanes[].id` |
-| `data[].label` | string | | Drawn inside the bar when it fits |
+| `data[].lane` | string | | Matches a `lanes[].id` (may be omitted on events carrying `yPos`) |
+| `data[].label` | string | | Drawn inside the bar when it fits (bar glyph only) |
 | `data[].color` | string | | Overrides the lane colour for one event |
 | `data[].group` | string | | Row-packing hint — see below |
+| `data[].appearance` | string | | Glyph override for one event — see below |
+| `data[].yPos` | number 0…1 | | Absolute vertical position in the plot — see below |
 
-### `group`: keeping related events on one row
+### `appearance`: bars, arrows, brackets and lines
 
-Within a lane, the packer prefers to reuse the same row for every event sharing a `group`
-value, as long as that row is free at the event's start. Without it, several short
-non-overlapping events that you consider "the same thing" — one flapping trigger firing
-repeatedly, say — land in whichever row happened to be free at each moment, and read as
-unrelated.
+`appearance` picks the glyph a span is drawn as, for the whole plot or overridden per event:
 
-It never causes an incorrect overlap: if the preferred row is taken, packing falls back to
-ordinary first-fit. Leave it unset for independent events; the CalDAV source does, since
-each calendar entry is its own thing.
+| Value | Glyph |
+|---|---|
+| `'bar'` (default) | solid rounded bar, as always |
+| `'arrow'` | thin line with arrowheads on both ends `<──────>` |
+| `'bracket'` | thin line with arrowheads **and** vertical end ticks `|<─────>|` |
+| `'line'` | thin line with vertical end ticks `|──────|` |
+
+Any other value falls back to `'bar'`. A line glyph on a normally packed event draws
+through the centre of its own row — that is the "bars plus dependency arrows in the same
+lane" case, no `yPos` needed. Labels are drawn only on bars; hover/tooltip still show the
+event label for line glyphs.
+
+### `yPos`: pinning an event in the plot
+
+`yPos` (0 = plot floor, 1 = plot ceiling) pins an event **absolutely** in the plot,
+independent of any lane: the event takes no part in the row packing, may overlap other
+pinned events, and may omit `lane` entirely — it neither needs nor appends one. The bar
+keeps the packed bar's thickness and is centred on the pinned height, clamped so it stays
+inside the plot; a line glyph's line sits exactly on the pinned height. Out-of-range
+numbers are clamped at draw time. Omitted `yPos` keeps the packing behaviour unchanged.
 
 ### Mutating spans in place
 
-`layoutSpans(plot)` assigns each event a `_row` and derives `laneCount`, `yticks` and
-`laneBounds`. It is idempotent, stamped via `plot._laidOut`, and runs before the y-extent is
-computed. **If you mutate `data` in place, clear `plot._laidOut`** and call `ts.redraw()`,
-or the old layout is reused.
+`layoutSpans(plot)` assigns each event a `_row` (packed row, or the internal
+`FLOAT_ROW`-equivalent sentinel for events pinned with `yPos`) and derives `laneCount`,
+`yticks` and `laneBounds`. It is idempotent, stamped via `plot._laidOut`, and runs before
+the y-extent is computed. **If you mutate `data` or the span options (`appearance`,
+`yPos`) in place, clear `plot._laidOut`** and call `ts.redraw()`, or the old layout is
+reused.
 
 ---
 

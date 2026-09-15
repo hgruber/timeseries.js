@@ -173,11 +173,14 @@ One line of intent per file, so a new test lands beside the ones that already
 own its subject rather than duplicating them.
 
 `test/caldav.test.mjs` (iCalendar parsing, DST-aware TZID resolution),
-`test/gantt.test.mjs` (row packing, `layoutSpans`, and the `group` reservation —
-including the interleaving case a foreign event used to split a group on),
+`test/gantt.test.mjs` (row packing, `layoutSpans`, the `group` reservation —
+including the interleaving case a foreign event used to split a group on — and the
+`yPos`/`appearance` span options: pinned events excluded from packing and lane discovery,
+stale `_row` re-stamped, invalid values),
 `test/gantt-hittest.test.mjs`
 (confirms `barRect()` in `gantt.js` and `get_element()` in `timeseries.js` agree — the
-two are hand-kept in sync rather than sharing code), `test/binned-regression.test.mjs`
+two are hand-kept in sync rather than sharing code, with pinned `yPos` events hit-tested
+through the imported `spanHitBand()` instead), `test/binned-regression.test.mjs`
 (guards the pre-existing multibar path against the `category: 'span'` changes),
 `test/dates.test.mjs` (`Easter` against published dates, `isoWeekStart`, and the
 week/day presets for every weekday — Sunday being the case `(d.getDay() || 7)` exists
