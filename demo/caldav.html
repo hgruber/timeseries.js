@@ -36,6 +36,7 @@
           <button id="layout-calendar" aria-pressed="true">Lanes per calendar</button>
           <button id="layout-packed" aria-pressed="false">Packed</button>
           <span class="spacer"></span>
+          <button id="showcase" aria-pressed="true">Showcase spans</button>
           <button id="today">Today</button>
           <button id="week">This week</button>
           <span class="status" id="status"></span>
@@ -45,7 +46,11 @@
           <code>demo/fixtures/</code> and shifts them onto the current week. To talk to a real
           server, set <code>CALDAV</code> at the top of the page script — the
           <code>caldav</code> source then discovers the calendars and refetches as you pan.
-          A cross-origin server must answer the <code>OPTIONS</code> preflight
+          The pinned <em>depends on</em> / <em>release window</em> / <em>freeze</em> events are
+          synthetic showcase events for the span <code>appearance</code> (arrow, bracket, line)
+          and <code>yPos</code> options, toggleable with the <em>Showcase spans</em> button;
+          they are not part of the fixture calendars. A
+          cross-origin server must answer the <code>OPTIONS</code> preflight
           <em>without</em> demanding authentication, listing <code>PROPFIND</code> and
           <code>REPORT</code> in <code>Access-Control-Allow-Methods</code> and
           <code>Authorization</code>, <code>Depth</code>, <code>Content-Type</code> in
@@ -75,6 +80,29 @@
       };
 
       const status = document.getElementById('status');
+
+      // ── Showcase events (span `appearance`/`yPos` options) ─────────────────
+      // Fixture mode only — a live calendar's events arrive from the server
+      // as they are. Pinned with `yPos` the glyphs sit absolutely in the
+      // plot, take no part in the row packing and need no lane; one lane
+      // (row) deeper than the Personal calendar's top row, in dark grey via
+      // `color` rather than the auto lane hash. Toggled by the
+      // "Showcase spans" button further down. `appearance` can also be set
+      // per event *without* `yPos`, drawing the glyph through that row's
+      // centre — the packed case the doc example shows.
+      let showcaseOn = true;
+      let weekMonday = null;   // ms, set by the fixture source once parsed
+      const showcaseEvents = monday => {
+        const wed = monday + 2 * 86400000 + 9 * 3600000;
+        return [
+          { id: 'demo:arrow', start: wed, end: wed + 4 * 3600000,
+            appearance: 'arrow', yPos: 0.69, color: '#555555', label: 'depends on' },
+          { id: 'demo:bracket', start: wed + 3600000, end: wed + 6 * 3600000,
+            appearance: 'bracket', yPos: 0.62, color: '#555555', label: 'release window' },
+          { id: 'demo:line', start: wed + 2 * 3600000, end: wed + 8 * 3600000,
+            appearance: 'line', yPos: 0.55, color: '#555555', label: 'freeze' },
+        ];
+      };
 
       // ── Fixture source ─────────────────────────────────────────────────────
       // Exercises the same parser and the same span-plot shape as the real
@@ -106,6 +134,9 @@
               allDay: e.allDay,
               location: e.location,
             })));
+            // Showcase events: see the comment at showcaseEvents() above.
+            weekMonday = monday.getTime();
+            if (showcaseOn) data.push(...showcaseEvents(weekMonday));
             const starts = data.map(e => e.start), ends = data.map(e => e.end);
 
             plot = {
@@ -183,6 +214,23 @@
 
       document.getElementById('today').onclick = () => ts.today();
       document.getElementById('week').onclick = () => ts.thisWeek();
+
+      // ── Showcase toggle ────────────────────────────────────────────────────
+      // Fixture mode only: pulls the three synthetic showcase events out of
+      // the plot's data (or puts them back). Pinned events take no part in
+      // the packing, so removing them shifts nothing — but the documented
+      // in-place-mutation rule still applies: clear `_laidOut`, then redraw.
+      const btnShowcase = document.getElementById('showcase');
+      btnShowcase.onclick = () => {
+        showcaseOn = !showcaseOn;
+        btnShowcase.setAttribute('aria-pressed', String(showcaseOn));
+        if (!plot) return;
+        plot.data = plot.data.filter(e => !e.id || String(e.id).indexOf('demo:') !== 0);
+        if (showcaseOn && weekMonday != null) plot.data.push(...showcaseEvents(weekMonday));
+        plot._laidOut = null;
+        ts.redraw();
+      };
+      if (CALDAV.url) btnShowcase.style.display = 'none';   // live mode: no synthetic events
 
       // ── Tooltip ────────────────────────────────────────────────────────────
       // The library's default already renders an event's title and its
